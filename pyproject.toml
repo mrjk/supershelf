@@ -1,0 +1,14 @@
+[project]
+name = "barbu-accounting"
+version = "0.1.0"
+description = "Barbu Accounting Helper"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+barbu-accounting = "barbu_accounting:main"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
