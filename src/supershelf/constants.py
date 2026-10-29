@@ -21,6 +21,7 @@ KEY_ROOT_DIR = "root_dir"
 KEY_DATABASE_FILE = "database_file"
 KEY_CACHE_FILE = "cache_file"
 KEY_INPUTS = "inputs"
+KEY_MATCH_RULES = "match_rules"
 
 VAR_PROFILE = "__profile__"
 VAR_PROFILE_NAME = "__profile_name__"

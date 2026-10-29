@@ -1,11 +1,13 @@
 """`supershelf profiles` command."""
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from supershelf.cli import App
+from supershelf.constants import LOGGER_NAME
 
 
 def _write(path: Path, text: str) -> None:
@@ -164,3 +166,58 @@ def test_scan_files_quick_omits_metadata(
     assert "a.txt" in output
     assert "sha256" not in output
     assert "mtime" not in output
+
+
+def test_scan_kinds_lists_matches_and_warns_for_the_rest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "kinds"])
+    captured = capsys.readouterr()
+
+    assert "kind" in captured.out
+    assert "rule" in captured.out
+    assert "note" in captured.out
+    assert "notes" in captured.out
+    assert "a.txt" in captured.out
+    assert "b.txt" not in captured.out
+    assert "sha256" not in captured.out
+    assert "No match_rule for b.txt in profile work input 1" in captured.err
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_kinds_rejects_a_bad_regex_before_walking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    _isolate(monkeypatch, tmp_path)
+    _write(
+        tmp_path / "profile.work.toml",
+        "[[inputs]]\npath = 'missing-inbox'\n\n"
+        "[[match_rules]]\nname = 'bad'\nkind = 'k'\nregex = '('\n",
+    )
+
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "kinds"])
+
+    assert caught.value.code == 1
+    assert "Invalid regex" in capsys.readouterr().err
+    assert "missing-inbox" not in caplog.text

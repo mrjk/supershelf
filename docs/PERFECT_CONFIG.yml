@@ -131,27 +131,61 @@
 2.2 Matching:
   command:
     - supershelf scan kinds:
-        - Process supershelf scan files command
-        - And display what kind matched for each file, according the match_rules
+        - Use the files kept by the scan files walk. Do not hash, and do not read mtime or ctime.
+        - Print matched files only. Columns: profile, input, path, kind, rule.
+        - input is the 1-based index in that profile's inputs list, same as scan files.
+        - path is relative to the input directory.
+        - Do not create the database file or the cache file.
+        - vars, overrides, and outputs are not part of this step.
 
   algorithm:
-    - Focus on match_rules configuration. For each scanned files, process the match loop.
-
-  match loop algorithm:
-    - test each files against regex/glob.
-      - Processing order:
+    - match_rules is a profile-level list, sibling of inputs. Every input of that profile uses it.
+    - Compile patterns once per profile, before the walk. A bad pattern fails the command before that walk.
+    - For each kept file, try rules in list order. The first rule that matches wins. Later rules are not tried.
+    - A rule matches when one field matches. Try fields in this order. The first hit wins. Later fields are not tried.
         - regex
-        - glob
         - directory_regex
         - filename_regex
+        - glob
         - directory_glob
         - filename_glob
-      - If any rules matches, then it's valid, otherwise, go to next rule.
-        - Attach any matched variables, if any.
-    - Implementation: 
-      - regex and globs accept a list of regex, first match win, if none, go next on next fields.
-      - All regex patterns must be compiled before processing. This can be cached per input.
-      - If regex have named pattern, then results are extracted and can be reused later in the process.
+    - Candidates, for input directory /srv/in and file /srv/in/a/b/c.pdf:
+        - regex and glob see a/b/c.pdf. That is the path relative to the input directory, with / separators.
+        - directory_regex and directory_glob see a/b. That is the path between the input directory and the file: no filename, no leading or trailing slash.
+        - filename_regex and filename_glob see c.pdf.
+        - A file in the input directory has an empty directory string. directory_* does not match it.
+        - The input directory is that input's path, not config.root_dir.
+        - A symlink uses the path stored under the input.
+    - Regex is anchored to the whole candidate. The engine full-matches. Authors do not write ^ or $.
+      A pattern that stops before the extension does not match a file that has one.
+      directory_regex has no filename, so it does not include an extension.
+    - Globs full-match the whole candidate, same rules as include and exclude.
+      * stays in one directory. ** crosses directories.
+      ** also matches a file sitting in the input directory, so glob: '**' claims every kept file.
+      A glob does not capture groups. * does consume the extension, so filename_glob REL* matches REL_1.pdf.
+    - A field may be a string or a list of strings. A string is one pattern.
+      Patterns in a list are tried in order. The first hit wins.
+      An omitted field or an empty list is skipped.
+    - A rule with no patterns is a config error.
+    - A rule needs a name, a kind, or both. A blank value counts as omitted.
+      When both are set, the kind is the explicit kind and the rule name stays name.
+      When only name is set, the kind is that name.
+      When only kind is set, the rule name is that kind.
+    - The rule name must be unique in the profile. A duplicate is a config error.
+      Several rules may share one kind when their names differ.
+    - A rule with neither name nor kind is a config error.
+    - Named groups from the winning regex are kept. Unnamed groups are ignored.
+      Groups are not merged across fields or rules. Globs keep no groups.
+    - Patterns are literal. Do not template them.
+    - Unknown keys on a rule, including vars, are ignored in this step.
+    - A pattern that is not a string, a rule with neither name nor kind, or any other bad shape is a config error.
+    - match_rules missing, or a file that no rule claims:
+        - Log a warning with profile, input, and relative path.
+        - Keep the file on the scan result, with the data the walk already gathered.
+        - Leave it out of the matched set. Do not store a kind.
+        - The kinds table does not show that file.
+        - Warnings do not fail the command.
+    - Files the walk skipped never reach matching.
 
 
 
@@ -227,31 +261,33 @@ default_vars:
     - '{{file_mtime}}'
 
 
-# Match rules. Each rule is a logical AND, only focus on what the file provides.
+# Match rules. Tried in list order. The first rule that matches wins.
+# Inside a rule, the first matching field wins. Order is regex, directory_regex,
+# filename_regex, then glob, directory_glob, filename_glob.
 match_rules:
 
-  # Define a first rule, if it does not match iterate on next one
   - name: rule1
     kind: facture
 
-    # Match any kind of those, try all items one by one. On first match, match is validated, otherwise go on next rule.
-    # Try first any regex if defined. Feed variables
+    # A field is one pattern or a list. The first pattern that matches the whole candidate wins.
+    # Regex is anchored to that whole candidate, so filename patterns include the extension.
     regex:
-      - 'banking_(?P<account>\d{12})/REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})'
-    filename_regex:
-      - 'REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})'
+      - 'banking_(?P<account>\d{12})/REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})\.pdf'
     directory_regex:
       - 'banking_(?P<account>\d{12})'
+    filename_regex:
+      - 'REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})\.pdf'
 
-    # Then fallback on glob (No variable feed)
+    # Globs full-match the same candidates. They do not capture groups.
     glob:
       - banking*/REL*
-    filename_glob:
-      - REL*
     directory_glob:
       - banking*
+    filename_glob:
+      - REL*
 
 
+    # vars is not part of step 2.2. Sketch only, completed later.
     # When matched, then creates variables. 
     # - Build var scope:
     #   - add any default variables
@@ -280,9 +316,11 @@ match_rules:
         - '{{regex_time_var(__date__:fmt1:fmt2:fmt3:...)}}'
         - '{{__date__}}'  # Fallback on default value, if variable is a list, try all of it's combination
 
-  # By default, if a file does not matched to rule, then it raises a warning/error. Use this as fallback rule
+  # A file that no rule claims is a warning and is omitted from the matched set.
+  # This catch-all claims the rest. It must stay last.
+  # kind is omitted, so the kind is the rule name.
   - name: unsorted
-    glob: '**' # Match all by default
+    glob: '**'
 
 
 

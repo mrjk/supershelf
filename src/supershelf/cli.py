@@ -4,6 +4,7 @@ from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
 from supershelf.constants import LOGGER_NAME
+from supershelf.match import Matcher
 from supershelf.profile import ShelfProfile
 
 
@@ -69,10 +70,38 @@ class ScanFilesCommand(ListViewMixin, Parser):
         return rows
 
 
+class ScanKindsCommand(ListViewMixin, Parser):
+    """List the kind matched for each kept file."""
+
+    def cli_run(self, config=None, profile=None, **_):
+        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        prepared = []
+        for item in loaded.config_list:
+            shelf = ShelfProfile.from_config(item)
+            prepared.append(
+                (shelf, Matcher.from_document(shelf.document, shelf.name))
+            )
+        rows = []
+        for shelf, matcher in prepared:
+            for result in shelf.scan(quick=True):
+                for found in matcher.collect(result):
+                    rows.append(
+                        {
+                            "profile": found.profile,
+                            "input": found.index,
+                            "path": found.path,
+                            "kind": found.kind,
+                            "rule": found.rule,
+                        }
+                    )
+        return rows
+
+
 class ScanCommand(Parser):
     """Scan profile inputs."""
 
     files = Command(ScanFilesCommand, help="List files kept by each input")
+    kinds = Command(ScanKindsCommand, help="List the kind matched for each kept file")
 
 
 class App(LoggingOptMixin, GlobalFlags, Parser):
