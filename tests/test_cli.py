@@ -1,5 +1,6 @@
 """`supershelf profiles` command."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -79,3 +80,87 @@ def test_profiles_missing_config_exits(
 
     assert caught.value.code == 1
     assert "No supershelf config found" in capsys.readouterr().err
+
+
+def test_profiles_does_not_render_templates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nroot_dir = '{{ missing }}'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["profiles"])
+
+    output = capsys.readouterr().out
+    assert "work" in output
+    assert "profile.work.toml" in output
+
+
+def test_scan_files_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\ndefault_date_format = '%d/%m/%Y'\n\n"
+        "[[inputs]]\npath = 'inbox'\n",
+    )
+    _write(
+        tmp_path / "profile.home.toml",
+        "[config]\nprofile = 'home'\ndefault_date_format = '%d/%m/%Y'\n\n"
+        "[[inputs]]\npath = 'other'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "files"])
+    output = capsys.readouterr().out
+    shown = datetime.fromtimestamp(
+        (inbox / "a.txt").stat().st_mtime,
+        timezone.utc,
+    ).strftime("%d/%m/%Y")
+
+    assert "profile" in output
+    assert "sha256" in output
+    assert "a.txt" in output
+    assert "b.txt" in output
+    assert "work" in output
+    assert "home" in output
+    assert shown in output
+    assert "+00:00" not in output
+    assert str(inbox.resolve()) not in output
+    assert str(other.resolve()) not in output
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+    assert (tmp_path / "profile.home.sqlite").exists() is False
+
+
+def test_scan_files_quick_omits_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+
+    app = App(parse=False)
+    app.dispatch(["scan", "files", "--quick"])
+    output = capsys.readouterr().out
+
+    assert "a.txt" in output
+    assert "sha256" not in output
+    assert "mtime" not in output

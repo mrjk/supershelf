@@ -53,48 +53,79 @@
 
 
 2. Profile initialization:
-  - When a ShelfConfig is loaded, create a new ShelfProfile python instance. This actually loads all the Profile implementation.
+  - supershelf profiles only lists profile, type, and path. It does not build a ShelfProfile.
+  - A command that needs rendered paths, such as scan, creates one ShelfProfile per selected ShelfConfig.
     - Read config dict:
         - setup vars:
           - base:
             - __profile_name__ = profile name from the loader
-            - __default_date_format__ = Direct value
+            - __profile__ = alias of __profile_name__
+            - __default_date_format__ = Direct value, not templated. scan files uses it to show mtime and ctime.
           - template config values in this order: 
             - root_dir
             - database_file
             - cache_file
+          - After each value is rendered, a relative path is resolved from __profile_dir__, then stored before the next value is rendered.
+          - Built-in defaults when the key is omitted:
+            - default_date_format = '%Y-%m-%d'
+            - root_dir = "{{ __profile_dir__ }}"
+            - database_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
+            - cache_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
 
-    - User Exposed Var Scope as template. Profile values are flat __profile_KEY__ names. No dotted __profile__.key.
+    - User Exposed Var Scope as template. Common values use flat keys. Dot notation remains for inner config, such as __config_data__.
         # Main
+        - __profile__ # Alias of __profile_name__
         - __default_date_format__
         # Core config
         - __root_dir__
         - __database_file__
         - __cache_file__
         # Profile vars
-        - __profile_name__
+        - __profile_name__ # Profile name
         - __profile_type__
-        - __profile_path__
-        - __profile_dir__ # Directory containing the config file
-        - __profile_file__ # Config file path
+        - __profile_path__ # Full path of the config file, from /
+        - __profile_dir__ # Full directory of the config file
+        - __profile_file__ # Filename of the config file
         # Config vars
         - __config_data__ # Allow access to any config parameter, actually allow to self reference this file.
 
 
 2.1 Scanning: parse input[] items
     command: 
-      - supershelf scan files: return a list of files into stdout, allow user to see what files match what
-      - supershelf scan files --quick: same as above, but do not get file metadata, for quicker scan.
-    Alorithm:
+      - supershelf scan files: clak table of the files kept by each input.
+      - supershelf scan files --quick: same table, but skip mtime, ctime, and sha256.
+    Algorithm:
+    - Each selected profile is scanned on its own. Profiles do not share results.
+    - scan files only prints. It does not create the database file or the cache file.
     - For each input, get the path value, and template render it.
-    - Get parameters depth, include, then exclude globs
+    - If that path is relative, resolve it from __root_dir__. Relative input paths are resolved when the input is processed.
+    - The input path must be a valid path. If it exists and is not a directory, that is an error.
+    - If the input directory is missing, log a warning and skip that input.
+    - Get parameters depth, include, exclude, and follow_symlinks.
+    - depth: 0 means no recursion limit. 1 means only the input directory. 2 means that directory and one subdirectory level. 3 adds the next level, and so on.
+    - Omitted depth means 0. Negative depth is an error.
+    - follow_symlinks is an input option. Default true. False skips symlinks.
+    - A followed symlink is stored as the path under the input. A symlink cycle logs a warning and that path is skipped.
+    - Globs match the path relative to the input directory. * stays in one directory. ** crosses directories.
+    - If include is set, keep files that match at least one include pattern. If include is omitted, start from every file the walk found.
+    - If exclude is set, drop matching files from that set. If exclude is omitted, drop nothing.
+    - Empty files are ignored.
+    - An unreadable file logs a warning and is skipped.
+    - An unreadable directory logs a warning and is not descended.
     - Do the filesystem walk
     - store results in a InputScanResult:
         config: hold the input config
+        index: 1-based position in that profile's inputs list. A skipped input keeps its position.
         results: hold a list of InputFile objects
-    - Get file metadata:
-        - For each InputFile objects, get mtime, ctime, sha256
+    - Get file metadata, unless --quick:
+        - mtime is filesystem st_mtime. ctime is filesystem st_ctime. Stored as UTC ISO-8601 with a numeric offset, so datetime.fromisoformat can parse them. Example: 2026-10-29T16:28:00+00:00. Include fractional seconds when the filesystem value has them.
+        - sha256 is the lowercase hex digest of the file contents.
         - InputFile expose all Path primitives (parent, stem, ext, etc ...)
+    - Table columns: profile, input, path, mtime, ctime, sha256.
+      input is the 1-based index in that profile's inputs list, not the directory path.
+      path is relative to the input directory.
+      mtime and ctime are the stored UTC times shown with config.default_date_format.
+      --quick omits mtime, ctime, and sha256.
 
 
 2.2 Matching:
@@ -132,17 +163,17 @@
 # =====================
 config:
   profile: default # Can be overriden if profile is not set in filename.
-  default_date_format: '%Y-%m-%d' # Default parsing date format
-  root_dir: "{{ __profile_dir__ }}" # By default, it match to ~/.config/supershelf when configs are here.
+  default_date_format: '%Y-%m-%d' # Shows mtime and ctime in scan files. Not templated.
+  root_dir: "{{ __profile_dir__ }}" # Default. Full directory of the config file.
 
   # Default paths
-  database_file: "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.sqlite"
-  cache_file: "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.cache"
+  database_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
+  cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
   kind_overrides_config: # On resolution, first one matches. Cache lookup result.
-    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.csv"
-    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.toml"
-    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.yaml"
-    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.yml"
+    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv"
+    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml"
+    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml"
+    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml"
 
   # Possible overrides per input
   # root_dir: /srv/data_processing/
@@ -169,7 +200,8 @@ inputs:
       - '*.jpeg'
     exclude:
       - '**/cache/**'
-    depth: -1
+    depth: 0 # 0 is unlimited. 1 is the input directory only.
+    # follow_symlinks: true # Default. Set false to skip symlinks.
 
 
 # Correctly rename destination extensions

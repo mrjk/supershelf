@@ -4,6 +4,7 @@ from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
 from supershelf.constants import LOGGER_NAME
+from supershelf.profile import ShelfProfile
 
 
 class GlobalFlags:
@@ -39,8 +40,43 @@ class ProfilesCommand(ListViewMixin, Parser):
         ]
 
 
+class ScanFilesCommand(ListViewMixin, Parser):
+    """List files kept by each input."""
+
+    quick = Argument(
+        "--quick",
+        action="store_true",
+        help="Skip mtime, ctime, and sha256.",
+    )
+
+    def cli_run(self, config=None, profile=None, quick=False, **_):
+        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        rows = []
+        for item in loaded.config_list:
+            shelf = ShelfProfile.from_config(item)
+            for result in shelf.scan(quick=bool(quick)):
+                for found in result.results:
+                    row = {
+                        "profile": result.profile,
+                        "input": result.index,
+                        "path": found.path,
+                    }
+                    if not quick:
+                        row["mtime"] = shelf.show_time(found.mtime or "")
+                        row["ctime"] = shelf.show_time(found.ctime or "")
+                        row["sha256"] = found.sha256
+                    rows.append(row)
+        return rows
+
+
+class ScanCommand(Parser):
+    """Scan profile inputs."""
+
+    files = Command(ScanFilesCommand, help="List files kept by each input")
+
+
 class App(LoggingOptMixin, GlobalFlags, Parser):
-    """Load supershelf profiles and show which ones are active."""
+    """Load supershelf profiles and scan their inputs."""
 
     class Meta:
         app_name = LOGGER_NAME
@@ -53,6 +89,7 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
         ]
 
     profiles = Command(ProfilesCommand, help="List profile names and config paths")
+    scan = Command(ScanCommand, help="Scan profile inputs")
 
 
 def main() -> None:

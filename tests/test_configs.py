@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from supershelf.configs import ShelfConfig, ShelfConfigs, ShelfDocument, _drop_duplicate_profiles
+from supershelf.configs import ShelfConfig, ShelfConfigs, ShelfDocument
 from supershelf.constants import (
     CONFIG_SECTION,
     DEFAULT_PROFILE,
@@ -268,7 +268,7 @@ def test_duplicate_resolved_profile_keeps_the_first(caplog: pytest.LogCaptureFix
     second = ShelfConfig(profile="work", type="yaml", path=Path("/b.yaml"), config={})
     logger = logging.getLogger(LOGGER_NAME)
 
-    kept = _drop_duplicate_profiles([first, second], logger)
+    kept = ShelfConfigs._drop_duplicate_profiles([first, second], logger)
 
     assert kept == [first]
     assert "b.yaml" in caplog.text
