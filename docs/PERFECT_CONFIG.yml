@@ -1,0 +1,278 @@
+
+# Implementation
+###################################################
+1. App initialization:
+  - Create one ShelfConfigs python instance, that will hold a list of ShelfConfig.
+  - Find profile configs. First source wins. Do not merge files from a later source.
+    Format preference inside one directory: toml, then yaml, then yml.
+    A later format for the same profile warns and is ignored. .yml is stored as type yaml.
+  - Profile selection, applied after the files are loaded:
+    - --profile wins over $SUPERSHELF_PROFILES.
+    - Both accept a comma-separated list. Spaces around names are ignored.
+    - The result keeps the requested order. A repeated name is kept once.
+    - An unknown name is an error. With no selector, every discovered profile is kept.
+  - Config source, first hit wins:
+    - --config
+      - Missing path, or a directory with no matching file: error. Do not fall through.
+      - A file: load that file only.
+        %PROFILE_NAME applies only when the filename is profile.%PROFILE_NAME.(toml|yaml|yml).
+      - A directory: same rules as the current directory below.
+    - $SUPERSHELF_CONFIG
+      - Same processing as --config.
+    - Current directory:
+      - If supershelf.toml, supershelf.yaml, or supershelf.yml exists, load only the first of those.
+        Do not also load profile.%PROFILE_NAME.* from that directory.
+      - Otherwise load every:
+        - profile.%PROFILE_NAME.toml
+        - profile.%PROFILE_NAME.yaml
+        - profile.%PROFILE_NAME.yml
+        One file per %PROFILE_NAME, toml then yaml then yml. Names are sorted.
+        A later format warns and is ignored.
+    - User config directory ($XDG_CONFIG_HOME/supershelf, or ~/.config/supershelf):
+      - Load only profile.%PROFILE_NAME.toml, then .yaml, then .yml.
+      - A supershelf.toml in this directory is not a profile source.
+    - If none found, fail.
+  - Check consistency and prepare:
+    - __profile__ is %PROFILE_NAME when the filename has one.
+      If config.profile is a different non-empty string, warn that it is ignored.
+      The same name does not warn. A blank config.profile is treated as unset.
+    - If the filename has no %PROFILE_NAME, __profile__ is config.profile when that is set, otherwise default.
+    - Write config.profile = __profile__ on the stored dict.
+    - If two files resolve to the same profile, warn and keep the first.
+  - App is inited:
+    - config_list is one or more ShelfConfig:
+      - profile: __profile__
+      - type: toml or yaml
+      - path: config file path
+      - config: parsed file contents
+    - The file must be a mapping. config, when present, must be a mapping.
+      config.profile, when present, must be a string. Other keys are stored and not interpreted in this step.
+  - App commands:
+    - supershelf profiles: table of profile, type, and path.
+      This is the list selected by --config / $SUPERSHELF_CONFIG and --profile / $SUPERSHELF_PROFILES.
+
+
+2. Profile initialization:
+  - When a ShelfConfig is loaded, create a new ShelfProfile python instance. This actually loads all the Profile implementation.
+    - Read config dict:
+        - setup vars:
+          - base:
+            - __profile_name__ = profile name from the loader
+            - __default_date_format__ = Direct value
+          - template config values in this order: 
+            - root_dir
+            - database_file
+            - cache_file
+
+    - User Exposed Var Scope as template. Profile values are flat __profile_KEY__ names. No dotted __profile__.key.
+        # Main
+        - __default_date_format__
+        # Core config
+        - __root_dir__
+        - __database_file__
+        - __cache_file__
+        # Profile vars
+        - __profile_name__
+        - __profile_type__
+        - __profile_path__
+        - __profile_dir__ # Directory containing the config file
+        - __profile_file__ # Config file path
+        # Config vars
+        - __config_data__ # Allow access to any config parameter, actually allow to self reference this file.
+
+
+2.1 Scanning: parse input[] items
+    command: 
+      - supershelf scan files: return a list of files into stdout, allow user to see what files match what
+      - supershelf scan files --quick: same as above, but do not get file metadata, for quicker scan.
+    Alorithm:
+    - For each input, get the path value, and template render it.
+    - Get parameters depth, include, then exclude globs
+    - Do the filesystem walk
+    - store results in a InputScanResult:
+        config: hold the input config
+        results: hold a list of InputFile objects
+    - Get file metadata:
+        - For each InputFile objects, get mtime, ctime, sha256
+        - InputFile expose all Path primitives (parent, stem, ext, etc ...)
+
+
+2.2 Matching:
+  command:
+    - supershelf scan kinds:
+        - Process supershelf scan files command
+        - And display what kind matched for each file, according the match_rules
+
+  algorithm:
+    - Focus on match_rules configuration. For each scanned files, process the match loop.
+
+  match loop algorithm:
+    - test each files against regex/glob.
+      - Processing order:
+        - regex
+        - glob
+        - directory_regex
+        - filename_regex
+        - directory_glob
+        - filename_glob
+      - If any rules matches, then it's valid, otherwise, go to next rule.
+        - Attach any matched variables, if any.
+    - Implementation: 
+      - regex and globs accept a list of regex, first match win, if none, go next on next fields.
+      - All regex patterns must be compiled before processing. This can be cached per input.
+      - If regex have named pattern, then results are extracted and can be reused later in the process.
+
+
+
+# YAML example File
+###################################################
+
+
+# Profile configuration
+# =====================
+config:
+  profile: default # Can be overriden if profile is not set in filename.
+  default_date_format: '%Y-%m-%d' # Default parsing date format
+  root_dir: "{{ __profile_dir__ }}" # By default, it match to ~/.config/supershelf when configs are here.
+
+  # Default paths
+  database_file: "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.sqlite"
+  cache_file: "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.cache"
+  kind_overrides_config: # On resolution, first one matches. Cache lookup result.
+    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.csv"
+    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.toml"
+    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.yaml"
+    - "{{ __root_dir__ }}/profile.{{ __profile_name__ }}.{{ __kind__ }}.yml"
+
+  # Possible overrides per input
+  # root_dir: /srv/data_processing/
+  # database_file: "{{ __root_dir__ }}/state.sqlite"
+  # kind_overrides_config: # On resolution, first one matches. Cache lookup result for each input.
+  #   - "{{ __input__.path }}/data/{{ __kind__ }}.csv"
+  #   - "{{ __input__.path }}/data/{{ __kind__ }}.toml"
+  #   - "{{ __input__.path }}/data/{{ __kind__ }}.yaml"
+  #   - "{{ __input__.path }}/data/{{ __kind__ }}.yml"
+  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.csv"
+  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.toml"
+  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.yaml"
+  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.yml"
+
+
+# Source of files
+# =====================
+inputs:
+  # Path to scan, with include and exclude. Generate a list of files paths (relative to path), with hashs, ctime, mtime.
+  # All the matched files will be tested against match_rules.
+  - path: /.../input1
+    include:
+      - '*.jpg'
+      - '*.jpeg'
+    exclude:
+      - '**/cache/**'
+    depth: -1
+
+
+# Correctly rename destination extensions
+#extension_remap:
+#  jpg: jpeg
+#  tif: tiff
+#  yml: yaml
+
+# Default vars, support templating
+default_vars:
+  fournisseur: UNKNOWN
+  date: UNKNOWN
+  doc_type: '{{ __kind__ }}' 
+
+  # Default the
+  __date__:
+    - '{{regex_time_var(__date__:fmt1:fmt2:fmt3:...)}}'
+    - '{{pdf_cdate}}'
+    - '{{pdf_mdate}}'
+    - '{{file("ctime")}}'
+    - '{{file("mtime")}}'
+    - '{{file_ctime}}'
+    - '{{file_mtime}}'
+
+
+# Match rules. Each rule is a logical AND, only focus on what the file provides.
+match_rules:
+
+  # Define a first rule, if it does not match iterate on next one
+  - name: rule1
+    kind: facture
+
+    # Match any kind of those, try all items one by one. On first match, match is validated, otherwise go on next rule.
+    # Try first any regex if defined. Feed variables
+    regex:
+      - 'banking_(?P<account>\d{12})/REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})'
+    filename_regex:
+      - 'REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})'
+    directory_regex:
+      - 'banking_(?P<account>\d{12})'
+
+    # Then fallback on glob (No variable feed)
+    glob:
+      - banking*/REL*
+    filename_glob:
+      - REL*
+    directory_glob:
+      - banking*
+
+
+    # When matched, then creates variables. 
+    # - Build var scope:
+    #   - add any default variables
+    #   - add any custom KIND variables (from csv)
+    #   - add internal variables: __kind__, __ctime__, __mtime__, __file_ext__, __file_stem__, __file_name__, __file_path__, __file_dir__, __file_hash__, __rule_name__
+    #   - add any regex variables that matched above
+    # - Processing:
+    #   - for each var:
+    #     - if a string: template the string. If templating fails, abort
+    #     - if a list of string, try to template each strings. If all fails, abort
+    vars:
+      # Simple static vars
+      key1: 'val1'
+      key2: 'val2'
+      fournisseur: 'BNC'
+      owner: 'barbu'
+
+      # Undefined vars are fetch from *_regex directives above
+      account:
+        - '{{account}}'
+      account2:
+        - '{{regex_replace(account, "REGEX")}}'
+      account3:
+        - '{{account}}-{{owner}}'
+      __date__: # This example show how to append a __date__ detection method, but fallback on defaults.
+        - '{{regex_time_var(__date__:fmt1:fmt2:fmt3:...)}}'
+        - '{{__date__}}'  # Fallback on default value, if variable is a list, try all of it's combination
+
+  # By default, if a file does not matched to rule, then it raises a warning/error. Use this as fallback rule
+  - name: unsorted
+    glob: '**' # Match all by default
+
+
+
+# Perfile overrides
+overrides:
+  - path: bnc/mastercard/MASTERCARD_1234_20211231.pdf
+    vars:
+      __kind__: custom_kind # Not allowed in CSV/TOML file, only in this file.
+      __date__: 2026-04-25   # Override the date
+      key6: val6
+
+
+outputs:
+  - name: compta
+    path: /.../output/compta
+    directory_layout: "{yyyy}/{mm}/{payeur}"
+    filename_layout: "{yyyy}-{mm}-{dd}_{fournisseur}"
+    mode: copy
+    on_conflict: rename
+    
+    directory_for:
+      bnc_mastercard: '{yyyy}/{mm}/videos'
+    filename_for:
+      bnc_mastercard: '{yyyy}-{mm}-{dd}_vid_{seq:05}'
+
