@@ -5,8 +5,10 @@ description = "Supershelf profile configuration"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "jinja2",
     "mrjk.clak[colors,config]",
     "pydantic",
+    "pypdf",
 ]
 
 [project.scripts]

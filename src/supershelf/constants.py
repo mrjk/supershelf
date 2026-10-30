@@ -22,6 +22,45 @@ KEY_DATABASE_FILE = "database_file"
 KEY_CACHE_FILE = "cache_file"
 KEY_INPUTS = "inputs"
 KEY_MATCH_RULES = "match_rules"
+KEY_DEFAULT_VARS = "default_vars"
+KEY_KIND_OVERRIDES = "kind_overrides_config"
+KEY_VAR_MODULES = "var_modules"
+KEY_OVERRIDES = "overrides"
+KEY_RULE_VARS = "vars"
+KEY_OVERRIDE_PATH = "path"
+
+VAR_KIND = "__kind__"
+VAR_RULE_NAME = "__rule_name__"
+VAR_CTIME = "__ctime__"
+VAR_MTIME = "__mtime__"
+VAR_FILE_HASH = "__file_hash__"
+VAR_FILE_NAME = "__file_name__"
+VAR_FILE_STEM = "__file_stem__"
+VAR_FILE_EXT = "__file_ext__"
+VAR_FILE_PATH = "__file_path__"
+VAR_FILE_DIR = "__file_dir__"
+VAR_FILE_CTIME = "file_ctime"
+VAR_FILE_MTIME = "file_mtime"
+VAR_DATE = "__date__"
+VAR_INPUT = "__input__"
+
+INTERNAL_NAMES = (
+    VAR_KIND,
+    VAR_RULE_NAME,
+    VAR_CTIME,
+    VAR_MTIME,
+    VAR_FILE_HASH,
+    VAR_FILE_NAME,
+    VAR_FILE_STEM,
+    VAR_FILE_EXT,
+    VAR_FILE_PATH,
+    VAR_FILE_DIR,
+)
+ALIAS_NAMES = (VAR_FILE_CTIME, VAR_FILE_MTIME)
+DATE_TEXT = "%Y-%m-%d"
+
+VAR_GLOBALS = "GLOBALS"
+VAR_FILTERS = "FILTERS"
 
 VAR_PROFILE = "__profile__"
 VAR_PROFILE_NAME = "__profile_name__"

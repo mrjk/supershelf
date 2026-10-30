@@ -17,14 +17,14 @@ from supershelf.match import (
 )
 from supershelf.scan import InputFile, InputScanResult, ResolvedInput
 
-FACTURE = {
+INVOICE = {
     "name": "rule1",
-    "kind": "facture",
+    "kind": "invoice",
     "regex": [
-        r"banking_(?P<account>\d{12})/REL_(?P<date>\d+)_(?P<recept_id>\w{8})\.pdf"
+        r"banking_(?P<account>\d{12})/REL_(?P<date>\d+)_(?P<receipt_id>\w{8})\.pdf"
     ],
     "directory_regex": [r"banking_(?P<account>\d{12})"],
-    "filename_regex": [r"REL_(?P<date>\d+)_(?P<recept_id>\w{8})\.pdf"],
+    "filename_regex": [r"REL_(?P<date>\d+)_(?P<receipt_id>\w{8})\.pdf"],
     "glob": ["banking*/REL*"],
     "directory_glob": ["banking*"],
     "filename_glob": ["REL*"],
@@ -55,16 +55,16 @@ def _scan(*files: InputFile, profile: str = "work", index: int = 1) -> InputScan
 
 
 def test_full_regex_wins_and_keeps_every_group() -> None:
-    hit = _matcher([FACTURE]).claim(
+    hit = _matcher([INVOICE]).claim(
         _file("banking_123456789012/REL_20211231_ABCD1234.pdf")
     )
     assert hit is not None
     assert hit.rule == "rule1"
-    assert hit.kind == "facture"
+    assert hit.kind == "invoice"
     assert hit.groups == {
         "account": "123456789012",
         "date": "20211231",
-        "recept_id": "ABCD1234",
+        "receipt_id": "ABCD1234",
     }
 
 
@@ -82,13 +82,13 @@ def test_regex_without_the_extension_does_not_match() -> None:
 
 
 def test_filename_regex_wins_when_the_path_and_directory_miss() -> None:
-    hit = _matcher([FACTURE]).claim(_file("other/REL_20211231_ABCD1234.pdf"))
+    hit = _matcher([INVOICE]).claim(_file("other/REL_20211231_ABCD1234.pdf"))
     assert hit is not None
-    assert hit.groups == {"date": "20211231", "recept_id": "ABCD1234"}
+    assert hit.groups == {"date": "20211231", "receipt_id": "ABCD1234"}
 
 
 def test_directory_regex_stops_before_the_filename_fields() -> None:
-    hit = _matcher([FACTURE]).claim(_file("banking_123456789012/notes.txt"))
+    hit = _matcher([INVOICE]).claim(_file("banking_123456789012/notes.txt"))
     assert hit is not None
     assert hit.groups == {"account": "123456789012"}
 
@@ -132,21 +132,21 @@ def test_explain_directory_glob_compares_the_directory() -> None:
     matcher = _matcher(
         [
             {
-                "name": "bnc_mastercard",
-                "kind": "facture",
-                "directory_glob": ["company/bnc_mastercard/*"],
+                "name": "bank2000_card",
+                "kind": "invoice",
+                "directory_glob": ["company/bank2000_card/*"],
             }
         ]
     )
     inspection = matcher.explain(
-        _file("company/bnc_mastercard/CARTCRED_CREDCARD_5258818501521549.pdf")
+        _file("company/bank2000_card/CARD_1234.pdf")
     )
     misses = [trial for trial in inspection.trials if trial.status == STATUS_MISS]
     assert inspection.match is None
     assert len(misses) == 1
     assert misses[0].field == "directory_glob"
-    assert misses[0].pattern == "company/bnc_mastercard/*"
-    assert misses[0].candidate == "company/bnc_mastercard"
+    assert misses[0].pattern == "company/bank2000_card/*"
+    assert misses[0].candidate == "company/bank2000_card"
 
 
 def test_explain_stops_after_the_first_hit() -> None:
@@ -251,19 +251,19 @@ def test_omitted_kind_uses_the_rule_name() -> None:
 
 
 def test_kind_alone_is_also_the_rule_name() -> None:
-    matcher = _matcher([{"kind": "facture", "glob": "**"}])
+    matcher = _matcher([{"kind": "invoice", "glob": "**"}])
     hit = matcher.claim(_file("a.pdf"))
     assert hit is not None
-    assert hit.rule == "facture"
-    assert hit.kind == "facture"
+    assert hit.rule == "invoice"
+    assert hit.kind == "invoice"
 
 
 def test_explicit_kind_overrides_the_rule_name() -> None:
-    matcher = _matcher([{"name": "rule1", "kind": "facture", "glob": "**"}])
+    matcher = _matcher([{"name": "rule1", "kind": "invoice", "glob": "**"}])
     hit = matcher.claim(_file("a.pdf"))
     assert hit is not None
     assert hit.rule == "rule1"
-    assert hit.kind == "facture"
+    assert hit.kind == "invoice"
 
 
 def test_vars_key_is_ignored() -> None:

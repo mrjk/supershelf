@@ -419,6 +419,22 @@ class Matcher:
                 f"{field_name}: {pattern}: {exc}"
             ) from exc
 
+    def named_groups(self) -> tuple[str, ...]:
+        """Named groups from the compiled regexes, in first-seen order."""
+        names: list[str] = []
+        seen: set[str] = set()
+        for rule in self._rules:
+            for field in rule.fields:
+                if not isinstance(field, _RegexField):
+                    continue
+                for pattern in field.patterns:
+                    for name in pattern.groupindex:
+                        if name in seen:
+                            continue
+                        seen.add(name)
+                        names.append(name)
+        return tuple(names)
+
     def claim(self, file: InputFile) -> FileMatch | None:
         """Return the first matching rule, or None."""
         for rule in self._rules:

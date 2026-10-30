@@ -200,6 +200,37 @@ def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     assert (tmp_path / "profile.work.sqlite").exists() is False
 
 
+def test_scan_vars_lists_resolved_values_and_skips_unmatched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars"])
+    captured = capsys.readouterr()
+
+    assert "vendor" in captured.out
+    assert "Bank2000" in captured.out
+    assert "note" in captured.out
+    assert "a.txt" in captured.out
+    assert "b.txt" not in captured.out
+    assert "No match_rule for b.txt in profile work input 1" in captured.err
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
 def test_scan_kinds_rejects_a_bad_regex_before_walking(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -229,27 +260,27 @@ def test_scan_inspect_named_file_prints_the_pattern(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _isolate(monkeypatch, tmp_path)
-    folder = tmp_path / "inbox" / "company" / "bnc_mastercard"
+    folder = tmp_path / "inbox" / "company" / "bank2000_card"
     folder.mkdir(parents=True)
     (folder / "file.pdf").write_bytes(b"hello")
     _write(
         tmp_path / "profile.work.toml",
         "[config]\nprofile = 'work'\n\n"
         "[[inputs]]\npath = 'inbox'\n\n"
-        "[[match_rules]]\nname = 'bnc_mastercard'\nkind = 'facture'\n"
-        "directory_glob = ['company/bnc_mastercard/*']\n",
+        "[[match_rules]]\nname = 'bank2000_card'\nkind = 'invoice'\n"
+        "directory_glob = ['company/bank2000_card/*']\n",
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "inspect", "company/bnc_mastercard/file.pdf"])
+    app.dispatch(["scan", "inspect", "company/bank2000_card/file.pdf"])
     captured = capsys.readouterr()
 
     assert (
-        "directory_glob 'company/bnc_mastercard/*' "
-        "against 'company/bnc_mastercard': miss"
+        "directory_glob 'company/bank2000_card/*' "
+        "against 'company/bank2000_card': miss"
     ) in captured.out
     assert (
-        "No match_rule for company/bnc_mastercard/file.pdf in profile work input 1"
+        "No match_rule for company/bank2000_card/file.pdf in profile work input 1"
     ) in captured.out
     assert "skipped" not in captured.out
     assert "directory_glob" not in captured.err

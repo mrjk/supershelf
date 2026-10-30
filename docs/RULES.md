@@ -26,11 +26,19 @@
                 - how to build, release, debug
                 - license, code of conduct
                 - informations
-
+* Each new code changes should come with documentation and tests. Codes changes should be small and reviewable.
 * We use mise, aka mise-en-place. Ensure a config is present, and it must provide all the development toolkit to be able to run the whole project. Language domain dependency take the relay (pyproject.toml for python, etc ...)
+* Do not use personal or private data in examples, documentations and test. Always use agnostic or fake names (ie: intead of using a name of real bank instution use Bank2000 ). As well, always use english names, no french, spanish, german or whatsoever. English should be the main language of the project.
+
+
 
 ## Python Coding rules
 
+* Use modular code:
+    * Organise code in specific files and dir
+        * It should somewhat always easy to copy a folder into another project and have the logic self contained (minus all common things, just keep the domain logic together, other dependencies are implementations dependenant)
+    * Sometimes the project will allow the user to extend application functionnalities by allowing custom code to be loaded
+        * On this case, ensure the API is defined and documented
 * Always use OOP and classes: inheritance, composition, and so on. THIS IS NOT OPTIONAL
     * Use methods and private methods when logic belongs to a class or object. A clean file only has class definitions.
     * Use a parent class when several classes share the same behavior.
@@ -52,7 +60,11 @@
 * If there is any configuration:
     * Ensure the vocabulary is clear or not confusing
 * Avoid any confusing terms or vocabulary
-
+* The program must provides different kind of exceptions
+    * There is ONE parent exception, and many children exceptions, that can be class nested/inherited
+    * EAch exceptions should have a specific error message, that allow customization via vars. It's also possible to override exception error message.
+    * Each exception should return am exit code, with a way to add a custom message or parameters.
+    * Each exception should provide a tips field, that give user instructions to solve the issue. This is optional.
 
 
 ## Development workflow

@@ -216,6 +216,7 @@
           A fact replaced by an assignment is printed once, with the final value, in its fact position.
         - Log the same unmatched-file warning as scan kinds, once per file. Do not log it again.
         - Do not create the database file, the cache file, or any output tree.
+          scan vars may create or append a kind file. Step 2.3.2.
         - outputs and extension_remap are not part of this step.
         - Step 2.2 still ignores vars. This step reads them from the raw rule mapping.
 
@@ -238,15 +239,16 @@
     - Named groups from the winning regex are facts. Unnamed groups stay ignored.
       A group name that starts with __ is a config error before the walk.
       A group cannot replace an internal or a profile key.
-    - Assignments are the user layers. Later wins on the same key. Each layer is rendered before the next one starts.
+    - Assignments are the user layers. Later wins on the same key. Each layer is applied before the next one starts.
+      Var tables are rendered. The per-file row is stored as text. Step 2.3.2.
         1. default_vars
-        2. Kind-wide vars from the first matching kind_overrides_config file. One mapping for every file of that kind.
-        3. match_rules[].vars
-        4. Reserved for a later step: a per-file row from those same kind files.
-           That row will replace a value the rule already computed. It will not change what the rule template already read.
-           This step does not read per-file rows.
-        5. The first matching overrides[] entry. This is the highest layer, and the only layer that may set __kind__.
-    - default_vars, kind-wide vars, and rule vars must not set an internal name, file_ctime, or file_mtime.
+        2. match_rules[].vars
+        3. The per-file row from the kind file. Step 2.3.2.
+           One literal string per cell. It replaces a value the rule already stored.
+           It does not change what the rule template already read.
+        4. The first matching overrides[] entry. This is the highest layer, and the only layer that may set __kind__.
+    - default_vars and rule vars must not set an internal name, file_ctime, or file_mtime.
+      A per-file row must not either. Step 2.3.2.
       __date__ is not an internal.
     - Only overrides may set __kind__. That changes the printed kind and the __kind__ fact seen by later override templates.
       It does not load another kind file and does not change rule.
@@ -255,14 +257,15 @@
       It cannot read a key later in the same mapping. That name is not defined yet.
       The key being rendered sees the previous layer's string, not the candidate list being tried.
       account: ['{{account}}'] reads the group when no earlier layer defined account.
-      A kind-wide account hides the group from the rule template of the same name.
+      A default_vars account hides the group from the rule template of the same name.
+      The per-file cell is applied after the rule template has stored its string.
       A rule's {{__date__}} reads the __date__ string the earlier layer already kept. It does not run that layer's other candidates again.
     - Omitted default_vars, omitted rule vars, or an omitted kind file means that layer is empty.
     - A var table is a mapping. Each key matches [A-Za-z_][A-Za-z0-9_]*.
       Each value is a string, or a list of strings. A string is one candidate. A list is an ordered fallback.
       An empty list is a config error.
       Numbers, booleans, nulls, dates, and nested mappings are config errors. Quote scalars such as 2026-04-25.
-    - Each layer is rendered in mapping order before the next layer.
+    - Each var table is rendered in mapping order before the next layer.
       A new key is appended. A key that already exists is rendered again and keeps its first position.
       The printed row uses the final string.
     - A string is one candidate. A list means try each candidate in order. The first one that does not fail is kept.
@@ -307,17 +310,11 @@
     - kind_overrides_config is an optional list of path templates. Omitted or empty means no kind files.
       Render each path with the step 2 language, the profile scope, __kind__ set to the rule kind, and __input__.path set to the absolute input directory.
       A relative result is resolved from __root_dir__.
-      The first path that exists and is a file wins. A missing path tries the next. None found means no kind vars.
+      The first path that exists and is a file wins. A missing path tries the next.
+      None found means no per-file row, unless step 2.3.2 creates the file.
       A path that exists and is not a file is an error.
       The parsed file is cached for the process by its absolute path. Nothing is written to cache_file.
-    - Kind file shape follows the suffix. Files are UTF-8. Invalid UTF-8 is an error.
-        - .toml, .yaml, and .yml: one mapping, same value rules as default_vars.
-        - .csv: header name,value, and two columns. A row that does not have two columns is an error.
-          A repeated name appends a candidate in row order. One row for a name is one candidate.
-          Blank lines are skipped. A header with no data rows adds no vars.
-    - This step reads the winning kind file as kind-wide vars: the same mapping for every file of that kind.
-      A kind-wide file must not set __kind__ or any other internal name, nor file_ctime or file_mtime.
-      Other __ names, including __date__, are allowed.
+      The file shape, the cell values, and when a file is created or extended are step 2.3.2.
     - overrides is an optional list. Each item has path and vars. Unknown keys are ignored.
       path is a glob, full-matched against the path relative to the input, with the same * and ** rules as include.
       A path with no glob characters is an exact match.
@@ -326,15 +323,110 @@
     - Files the walk skipped never reach this step.
 
 
+2.3.2 Kind file rows:
+  command:
+    - supershelf scan vars reads the kind file from step 2.3 and may create or append it.
+      scan files and scan kinds do not read or write kind files.
+    - --update-overrides forces kind_overrides_mode auto.
+      --no-update-overrides forces manual.
+      Both flags together is a usage error.
+      The flags belong to scan vars only.
+    - SUPERSHELF_KIND_OVERRIDES_MODE may be manual or auto. Any other value is an error.
+      A flag wins over the env var. The env var wins over config.kind_overrides_mode.
+      Omitted everywhere means manual.
+    - --dry-run reads existing rows and does not create or append.
+      Log the file that would be created, or how many rows would be appended.
+
+  file:
+    - The winning kind file is a list of rows. CSV, TOML, and YAML are the same list.
+      One row per relative path. A missing var is omitted.
+      The examples are under Kind overrides example files. .yml is the same text as .yaml.
+    - Files are UTF-8. Invalid UTF-8 is an error.
+    - .csv: header path, then one column per var. One data row per file.
+      Column order is the user's. path is found by name, not by position.
+      The comma is the separator. A leading BOM is accepted and left in place.
+    - .yaml and .yml: a bare list. No overrides key above it.
+      Each item has path and vars, same as one profile overrides item.
+      vars is a mapping of var name to text. Omitted vars, or an empty mapping, adds no vars.
+      Any other shape for vars is a config error. Unknown keys on the item are ignored.
+    - .toml cannot be a root list, so the file is [[rows]] tables.
+      Each table has path and a [rows.vars] table. The items are the same as yaml.
+    - path is the path relative to the input, with / separators. It is an exact match, not a glob.
+      In CSV, every column except path is a var name.
+      In TOML and YAML, the names under vars are the var names.
+      A var name must match [A-Za-z_][A-Za-z0-9_]*.
+      A duplicate column, a duplicate name in one vars mapping, a missing path column, a bad name,
+      or a forbidden internal name is a config error.
+      A blank line is skipped. A row with values and an empty path is an error.
+      Two rows with the same path: warn, keep the first, leave the later row in the file.
+    - A cell is one stored string. It is not a candidate list, and it is not compiled as Jinja,
+      even when the text contains {{, {%, or {#.
+      The rule layer has already stored its string, so the row does not change what that layer read.
+      A later profile override template reads the cell string.
+    - An empty cell, a blank string, or a yaml or toml null is absent. The previous layer stays.
+      This is not the template rule that an empty string is a success.
+      There is no way to force an empty string over a previous value.
+      A non-empty value is kept as text, including surrounding spaces, except __date__ below.
+      A var value that is a number, boolean, date, list, or nested mapping is a config error. Quote scalars.
+    - A cell that sets an existing key keeps that key's first position and replaces the stored string.
+      A new key is appended. CSV uses column order. TOML and YAML use key order inside vars.
+    - A row must not set an internal name, file_ctime, or file_mtime.
+      Other __ names, including __date__, are allowed.
+      Only profile overrides may set __kind__.
+
+  date:
+    - A kind-file cell may set __date__. A profile overrides value is already YYYY-MM-DD.
+      The kind-file cell is the one that is parsed.
+    - config.kind_overrides_date_format is an optional strptime format.
+      When it is omitted, use config.default_date_format. That default is %Y-%m-%d.
+      A blank or non-string value is a config error.
+      The format must be valid for strptime and must include a year, a month, and a day.
+      A time portion is allowed. Check that before the walk.
+    - Strip the cell, then parse the whole string. Store year, month, and day as YYYY-MM-DD.
+      Drop any parsed time. scan vars prints that stored value.
+      A value that does not match stops the command and names profile, input, path, and __date__.
+      There is no next candidate. A blank __date__ cell does not omit __date__.
+    - This format applies to __date__ only. Another column, including date, stays raw text.
+    - default_date_format still shows mtime and ctime in scan files, and it is this fallback.
+
+  load:
+    - For each input and each rule kind, render the path list once.
+      Cache that winner for the process by input index and kind.
+      Cache the parsed rows by absolute path. Two inputs that resolve the same file share one table.
+    - The first existing file wins. Later hits are ignored, with no log.
+    - Create uses the first template only, and only when no candidate exists.
+      Create missing parent directories.
+      The rule kind picks the file. A profile override that changes __kind__ does not switch files
+      and does not change the row lookup.
+    - The row key is the relative path alone.
+      Two inputs that share one kind file treat the same relative path as one row.
+      Put {{ __input__.path }} in the template when those inputs must not share rows.
+    - config.kind_overrides_mode is manual or auto. Omitted means manual. Any other value is a config error.
+      manual still reads an existing file. It does not create a file and does not add rows.
+      auto ensures one row for every matched file of that kind in the scanned inputs.
+      Unmatched files have no kind, so they get no row. Files the walk skipped get no row.
+    - Supershelf may append missing paths.
+      It must not delete a row, edit a cell, drop a column, reorder rows, or rewrite the existing bytes.
+      Append in walk order, input index first.
+      Do that once per absolute path, after the rows for this run have been read.
+      New cells are empty, so a row created on this run does not change this run's values.
+    - A new CSV file is a path header and one row per matched file. Auto mode does not invent var columns.
+      A new TOML or YAML file is the same rows, with path set and vars omitted.
+    - An omitted or empty kind_overrides_config creates nothing in either mode.
+
+
 # YAML example File
 ###################################################
 
+```
 
 # Profile configuration
 # =====================
 config:
   profile: default # Can be overriden if profile is not set in filename.
   default_date_format: '%Y-%m-%d' # Shows mtime and ctime in scan files. Not templated.
+  kind_overrides_mode: manual # Step 2.3.2. manual reads an existing kind file. auto also creates and appends rows.
+  kind_overrides_date_format: '%d/%m/%Y' # Optional. Kind-file __date__ cells. Omitted uses default_date_format. Stored as YYYY-MM-DD.
   root_dir: "{{ __profile_dir__ }}" # Default. Full directory of the config file.
 
   # Default paths
@@ -342,7 +434,7 @@ config:
   cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See step 2.3.
   #   - my_package.supershelf_vars
-  kind_overrides_config: # Step 2.3. First existing file wins. Kind-wide vars. Cached by path. Per-file rows are later.
+  kind_overrides_config: # Step 2.3.2. First existing file wins. Per-file rows. Cached by input and kind, and by path.
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv"
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml"
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml"
@@ -351,7 +443,7 @@ config:
   # Possible overrides per input
   # root_dir: /srv/data_processing/
   # database_file: "{{ __root_dir__ }}/state.sqlite"
-  # kind_overrides_config: # Same resolution. __input__.path is the absolute input directory.
+  # kind_overrides_config: # Same resolution. __input__.path keeps each input in its own kind file.
   #   - "{{ __input__.path }}/data/{{ __kind__ }}.csv"
   #   - "{{ __input__.path }}/data/{{ __kind__ }}.toml"
   #   - "{{ __input__.path }}/data/{{ __kind__ }}.yaml"
@@ -385,7 +477,7 @@ inputs:
 
 # Lowest assignment layer. Specified in step 2.3.
 default_vars:
-  fournisseur: UNKNOWN
+  vendor: UNKNOWN
   date: UNKNOWN
   doc_type: '{{ __kind__ }}'
 
@@ -407,16 +499,16 @@ default_vars:
 match_rules:
 
   - name: rule1
-    kind: facture
+    kind: invoice
 
     # A field is one pattern or a list. The first pattern that matches the whole candidate wins.
     # Regex is anchored to that whole candidate, so filename patterns include the extension.
     regex:
-      - 'banking_(?P<account>\d{12})/REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})\.pdf'
+      - 'banking_(?P<account>\d{12})/REL_(?P<date>[\d]*)_(?P<receipt_id>\w{8})\.pdf'
     directory_regex:
       - 'banking_(?P<account>\d{12})'
     filename_regex:
-      - 'REL_(?P<date>[\d]*)_(?P<recept_id>\w{8})\.pdf'
+      - 'REL_(?P<date>[\d]*)_(?P<receipt_id>\w{8})\.pdf'
 
     # Globs full-match the same candidates. They do not capture groups.
     glob:
@@ -434,8 +526,8 @@ match_rules:
       # Simple static vars
       key1: 'val1'
       key2: 'val2'
-      fournisseur: 'BNC'
-      owner: 'barbu'
+      vendor: 'Bank2000'
+      owner: 'sample'
 
       account:
         - '{{account}}'
@@ -457,7 +549,7 @@ match_rules:
 
 # Perfile overrides
 overrides:
-  - path: bnc/mastercard/MASTERCARD_1234_20211231.pdf
+  - path: Bank2000/card/CARD_1234_20211231.pdf
     vars:
       __kind__: custom_kind # Only this layer may set __kind__. Kind files cannot.
       __date__: '2026-04-25' # Quote it. An unquoted date is a config error.
@@ -465,15 +557,64 @@ overrides:
 
 
 outputs:
-  - name: compta
-    path: /.../output/compta
-    directory_layout: "{yyyy}/{mm}/{payeur}"
-    filename_layout: "{yyyy}-{mm}-{dd}_{fournisseur}"
+  - name: books
+    path: /.../output/books
+    directory_layout: "{yyyy}/{mm}/{payer}"
+    filename_layout: "{yyyy}-{mm}-{dd}_{vendor}"
     mode: copy
     on_conflict: rename
     
     directory_for:
-      bnc_mastercard: '{yyyy}/{mm}/videos'
+      invoice: '{yyyy}/{mm}/videos'
     filename_for:
-      bnc_mastercard: '{yyyy}-{mm}-{dd}_vid_{seq:05}'
+      invoice: '{yyyy}-{mm}-{dd}_vid_{seq:05}'
 
+```
+
+
+# Kind overrides example files
+###################################################
+
+# Step 2.3.2. Not part of the profile above.
+# Same two rows in each format. .yml is the yaml text.
+# __date__ is written with kind_overrides_date_format (%d/%m/%Y).
+# Stored values are 2026-04-25 and 2026-01-15. An empty cell is absent.
+
+
+# profile.default.invoice.csv
+```
+path,vendor,__date__,owner
+banking_1/REL_20260425.pdf,Bank2000,25/04/2026,
+Bank2000/card/CARD_1234_20211231.pdf,,15/01/2026,sample
+```
+
+
+# profile.default.invoice.toml
+```
+[[rows]]
+path = "banking_1/REL_20260425.pdf"
+
+[rows.vars]
+vendor = "Bank2000"
+__date__ = "25/04/2026"
+
+[[rows]]
+path = "Bank2000/card/CARD_1234_20211231.pdf"
+
+[rows.vars]
+__date__ = "15/01/2026"
+owner = "sample"
+```
+
+# profile.default.invoice.yaml
+```
+- path: banking_1/REL_20260425.pdf
+  vars:
+    vendor: Bank2000
+    __date__: "25/04/2026"
+
+- path: Bank2000/card/CARD_1234_20211231.pdf
+  vars:
+    __date__: "15/01/2026"
+    owner: sample
+```

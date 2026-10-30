@@ -17,6 +17,7 @@ from supershelf.match import (
 )
 from supershelf.profile import ShelfProfile
 from supershelf.scan import InputFile
+from supershelf.vars import VarPlan
 
 
 class GlobalFlags:
@@ -105,6 +106,53 @@ class ScanKindsCommand(ListViewMixin, Parser):
                             "rule": found.rule,
                         }
                     )
+        return rows
+
+
+class ScanVarsCommand(ListViewMixin, Parser):
+    """List variables for each matched file."""
+
+    def cli_run(self, config=None, profile=None, **_):
+        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        prepared = []
+        for item in loaded.config_list:
+            shelf = ShelfProfile.from_config(item)
+            matcher = Matcher.from_document(shelf.document, shelf.name)
+            prepared.append(
+                (
+                    shelf,
+                    matcher,
+                    VarPlan.from_document(
+                        shelf.document,
+                        shelf.name,
+                        matcher,
+                        shelf.root_dir,
+                        shelf.scope,
+                    ),
+                )
+            )
+        rows = []
+        for shelf, matcher, plan in prepared:
+            for result in shelf.scan(quick=False):
+                files = {found.path: found for found in result.results}
+                for matched in matcher.collect(result):
+                    resolved = plan.resolve(
+                        files[matched.path],
+                        matched,
+                        result.config.path,
+                    )
+                    for name, value in resolved.items:
+                        rows.append(
+                            {
+                                "profile": matched.profile,
+                                "input": matched.index,
+                                "path": matched.path,
+                                "kind": resolved.kind,
+                                "rule": matched.rule,
+                                "var": name,
+                                "value": value,
+                            }
+                        )
         return rows
 
 
@@ -235,6 +283,7 @@ class ScanCommand(Parser):
 
     files = Command(ScanFilesCommand, help="List files kept by each input")
     kinds = Command(ScanKindsCommand, help="List the kind matched for each kept file")
+    vars = Command(ScanVarsCommand, help="List variables for each matched file")
     inspect = Command(ScanInspectCommand, help="Show how match rules test kept files")
 
 
