@@ -137,6 +137,18 @@
         - path is relative to the input directory.
         - Do not create the database file or the cache file.
         - vars, overrides, and outputs are not part of this step.
+    - supershelf scan inspect [PATH]:
+        - Use the files kept by the scan files walk. Do not hash, and do not read mtime or ctime.
+        - PATH is the relative path of one kept file. Omit it to print one line per kept file: match or miss, with profile, input, rule, and kind. That mode never prints patterns.
+        - A PATH that no kept file has is an error. The same path in two inputs is traced twice. Each line includes profile and input.
+        - Compile patterns once per profile, before the walk. A bad pattern fails the command before that walk.
+        - Do not create the database file or the cache file.
+        - Lines go to stdout. -v and -vv choose how many lines, not the log level. -vvv adds no extra inspect lines.
+        - With a PATH, default prints each pattern that was actually tried, in rule and field order, and stops at the first hit:
+            rule NAME FIELD 'pattern' against 'candidate': hit or miss
+          A miss ends with the same warning as scan kinds. A hit ends with: Matched rule NAME kind KIND for PATH in profile PROFILE input INDEX
+        - -v also prints the path, directory, and filename candidates, skipped fields (no patterns, or empty directory), captured groups, and "stopped, later rules not tried" when an earlier rule won.
+        - -vv also prints later patterns and later rules that matching never runs, marked not tried, with the candidate they would have used.
 
   algorithm:
     - match_rules is a profile-level list, sibling of inputs. Every input of that profile uses it.

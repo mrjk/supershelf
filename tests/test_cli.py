@@ -221,3 +221,186 @@ def test_scan_kinds_rejects_a_bad_regex_before_walking(
     assert caught.value.code == 1
     assert "Invalid regex" in capsys.readouterr().err
     assert "missing-inbox" not in caplog.text
+
+
+def test_scan_inspect_named_file_prints_the_pattern(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    folder = tmp_path / "inbox" / "company" / "bnc_mastercard"
+    folder.mkdir(parents=True)
+    (folder / "file.pdf").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'bnc_mastercard'\nkind = 'facture'\n"
+        "directory_glob = ['company/bnc_mastercard/*']\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "inspect", "company/bnc_mastercard/file.pdf"])
+    captured = capsys.readouterr()
+
+    assert (
+        "directory_glob 'company/bnc_mastercard/*' "
+        "against 'company/bnc_mastercard': miss"
+    ) in captured.out
+    assert (
+        "No match_rule for company/bnc_mastercard/file.pdf in profile work input 1"
+    ) in captured.out
+    assert "skipped" not in captured.out
+    assert "directory_glob" not in captured.err
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_inspect_without_a_path_does_not_print_patterns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "inspect"])
+    captured = capsys.readouterr()
+
+    assert "match profile work input 1 a.txt rule notes kind note" in captured.out
+    assert "miss profile work input 1 b.txt" in captured.out
+    assert "against" not in captured.out
+    assert "filename_glob" not in captured.out
+    assert "match profile" not in captured.err
+
+
+def test_scan_inspect_verbose_prints_skipped_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["-v", "scan", "inspect", "b.txt"])
+    captured = capsys.readouterr()
+
+    assert "rule notes regex: skipped, no patterns" in captured.out
+    assert "filename_glob 'a.txt' against 'b.txt': miss" in captured.out
+    assert "skipped" not in captured.err
+
+
+def test_scan_inspect_debug_prints_rules_that_were_not_tried(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n\n"
+        "[[match_rules]]\nname = 'later'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["-vv", "scan", "inspect", "a.txt"])
+    captured = capsys.readouterr()
+
+    assert "filename_glob 'a.txt' against 'a.txt': hit" in captured.out
+    assert "rule later filename_glob 'a.txt' against 'a.txt': not tried" in captured.out
+    assert "stopped, later rules not tried" in captured.out
+    assert "not tried" not in captured.err
+
+
+def test_scan_inspect_traces_the_same_path_in_each_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    for name in ("inbox", "other"):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[inputs]]\npath = 'other'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "inspect", "a.txt"])
+    captured = capsys.readouterr()
+
+    assert "profile work input 1" in captured.out
+    assert "profile work input 2" in captured.out
+    assert captured.out.count(": hit") == 2
+    assert ": hit" not in captured.err
+
+
+def test_scan_inspect_unknown_path_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "inspect", "missing.pdf"])
+
+    assert caught.value.code == 1
+    assert "No kept file 'missing.pdf'" in capsys.readouterr().err
+
+
+def test_scan_inspect_rejects_a_bad_regex_before_walking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    _isolate(monkeypatch, tmp_path)
+    _write(
+        tmp_path / "profile.work.toml",
+        "[[inputs]]\npath = 'missing-inbox'\n\n"
+        "[[match_rules]]\nname = 'bad'\nkind = 'k'\nregex = '('\n",
+    )
+
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "inspect", "a.txt"])
+
+    assert caught.value.code == 1
+    assert "Invalid regex" in capsys.readouterr().err
+    assert "missing-inbox" not in caplog.text

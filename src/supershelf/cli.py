@@ -4,8 +4,19 @@ from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
 from supershelf.constants import LOGGER_NAME
-from supershelf.match import Matcher
+from supershelf.errors import SupershelfError
+from supershelf.match import (
+    DETAIL_NO_PATTERNS,
+    STATUS_HIT,
+    STATUS_MISS,
+    STATUS_NOT_TRIED,
+    STATUS_SKIPPED,
+    FileInspection,
+    Matcher,
+    PatternTrial,
+)
 from supershelf.profile import ShelfProfile
+from supershelf.scan import InputFile
 
 
 class GlobalFlags:
@@ -97,11 +108,134 @@ class ScanKindsCommand(ListViewMixin, Parser):
         return rows
 
 
+class ScanInspectCommand(Parser):
+    """Show how match rules test kept files."""
+
+    path = Argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Relative path of one kept file. Omit to list match or miss only.",
+    )
+
+    def cli_run(self, config=None, profile=None, path=None, verbosity=0, **_):
+        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        prepared = []
+        for item in loaded.config_list:
+            shelf = ShelfProfile.from_config(item)
+            prepared.append((shelf, Matcher.from_document(shelf.document, shelf.name)))
+        level = int(verbosity or 0)
+        seen = 0
+        for shelf, matcher in prepared:
+            for result in shelf.scan(quick=True):
+                for found in result.results:
+                    if path is not None and found.path != path:
+                        continue
+                    seen += 1
+                    self._show_inspection(
+                        level,
+                        result.profile,
+                        result.index,
+                        found,
+                        matcher.explain(found),
+                        named=path is not None,
+                    )
+        if path is not None and seen == 0:
+            raise SupershelfError(f"No kept file {path!r}")
+        return None
+
+    def _show_inspection(
+        self,
+        verbosity: int,
+        profile: str,
+        index: int,
+        file: InputFile,
+        inspection: FileInspection,
+        *,
+        named: bool,
+    ) -> None:
+        prefix = f"profile {profile} input {index}"
+        if not named:
+            self._show_summary(prefix, file, inspection)
+            return
+        if verbosity >= 1:
+            self._print(
+                f"{prefix} path {file.path!r} directory {file.directory!r} "
+                f"filename {file.name!r}"
+            )
+        for trial in inspection.trials:
+            self._show_trial(verbosity, prefix, trial)
+        if inspection.match is None:
+            self._print(
+                f"No match_rule for {file.path} in profile {profile} input {index}"
+            )
+            return
+        self._print(
+            f"Matched rule {inspection.match.rule} kind {inspection.match.kind} "
+            f"for {file.path} in profile {profile} input {index}"
+        )
+        if verbosity < 1:
+            return
+        if inspection.match.groups:
+            rendered = " ".join(
+                f"{name}={value!r}" for name, value in inspection.match.groups.items()
+            )
+            self._print(f"{prefix} groups {rendered}")
+        if any(trial.rule != inspection.match.rule for trial in inspection.trials):
+            self._print(f"{prefix} stopped, later rules not tried")
+
+    def _show_summary(
+        self,
+        prefix: str,
+        file: InputFile,
+        inspection: FileInspection,
+    ) -> None:
+        if inspection.match is None:
+            self._print(f"miss {prefix} {file.path}")
+            return
+        self._print(
+            f"match {prefix} {file.path} rule {inspection.match.rule} "
+            f"kind {inspection.match.kind}"
+        )
+
+    def _show_trial(self, verbosity: int, prefix: str, trial: PatternTrial) -> None:
+        if trial.status in (STATUS_HIT, STATUS_MISS):
+            self._print(
+                f"{prefix} rule {trial.rule} {trial.field} {trial.pattern!r} "
+                f"against {trial.candidate!r}: {trial.status}"
+            )
+            return
+        if trial.status == STATUS_SKIPPED and verbosity >= 1:
+            self._show_skipped(prefix, trial)
+            return
+        if trial.status == STATUS_NOT_TRIED and verbosity >= 2:
+            self._print(
+                f"{prefix} rule {trial.rule} {trial.field} {trial.pattern!r} "
+                f"against {trial.candidate!r}: not tried"
+            )
+
+    def _show_skipped(self, prefix: str, trial: PatternTrial) -> None:
+        if trial.detail == DETAIL_NO_PATTERNS:
+            self._print(
+                f"{prefix} rule {trial.rule} {trial.field}: skipped, {trial.detail}"
+            )
+            return
+        self._print(
+            f"{prefix} rule {trial.rule} {trial.field} {trial.pattern!r} "
+            f"against {trial.candidate!r}: skipped, {trial.detail}"
+        )
+
+    @staticmethod
+    def _print(line: str) -> None:
+        print(line)
+
+
 class ScanCommand(Parser):
     """Scan profile inputs."""
 
     files = Command(ScanFilesCommand, help="List files kept by each input")
     kinds = Command(ScanKindsCommand, help="List the kind matched for each kept file")
+    inspect = Command(ScanInspectCommand, help="Show how match rules test kept files")
 
 
 class App(LoggingOptMixin, GlobalFlags, Parser):

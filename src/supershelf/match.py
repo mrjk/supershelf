@@ -33,6 +33,13 @@ _FIELDS = (
 _PATTERN_FIELDS = tuple(attr for _, attr, _, _ in _FIELDS)
 _DIRECTORY = "directory"
 
+STATUS_HIT = "hit"
+STATUS_MISS = "miss"
+STATUS_SKIPPED = "skipped"
+STATUS_NOT_TRIED = "not tried"
+DETAIL_NO_PATTERNS = "no patterns"
+DETAIL_EMPTY_DIRECTORY = "empty directory"
+
 
 class MatchRuleSpec(BaseModel):
     """One match rule. Unknown keys, including vars, are ignored."""
@@ -77,20 +84,112 @@ class MatchRuleSpec(BaseModel):
             return value
         raise ValueError("must be a string or a list of strings")
 
+    def labels(self) -> tuple[str, str]:
+        """Return the rule name and the kind. An explicit kind wins."""
+        name = self.name if self.name is not None else self.kind
+        kind = self.kind if self.kind is not None else self.name
+        if name is None or kind is None:
+            raise SupershelfError("match rule needs a name or a kind")
+        return name, kind
+
+    @classmethod
+    def from_item(cls, profile_name: str, index: int, item: object) -> MatchRuleSpec:
+        """Parse one rule mapping. A bad shape or a rule with no patterns fails."""
+        if not isinstance(item, dict):
+            raise SupershelfError(
+                f"Profile {profile_name} match rule {index} must be a mapping"
+            )
+        try:
+            spec = cls.model_validate(item)
+        except ValidationError as exc:
+            raise SupershelfError(
+                f"Invalid match rule {index} in profile {profile_name}: {exc}"
+            ) from exc
+        if not any(getattr(spec, name) for name in _PATTERN_FIELDS):
+            raise SupershelfError(
+                f"Profile {profile_name} match rule {spec.labels()[0]!r} has no patterns"
+            )
+        return spec
+
 
 @dataclass(frozen=True)
-class _RegexField:
+class _CompiledField:
+    """One compiled pattern field. Subclasses know how to match it."""
+
+    name: str
     source: str
+    patterns: tuple[re.Pattern[str] | str, ...]
+
+    def candidate(self, file: InputFile) -> str:
+        """The string this field compares against."""
+        return getattr(file, self.source)
+
+    def skip_reason(self, file: InputFile) -> str | None:
+        """Why this field is not compared, or None when it is tried."""
+        if not self.patterns:
+            return DETAIL_NO_PATTERNS
+        if self.source == _DIRECTORY and file.directory == "":
+            return DETAIL_EMPTY_DIRECTORY
+        return None
+
+    def pattern_text(self, pattern: re.Pattern[str] | str) -> str:
+        """The pattern as the user wrote it."""
+        raise NotImplementedError
+
+    def match_one(
+        self,
+        pattern: re.Pattern[str] | str,
+        candidate: str,
+    ) -> dict[str, str] | None:
+        """Groups when this one pattern matches the whole candidate."""
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class _RegexField(_CompiledField):
     patterns: tuple[re.Pattern[str], ...]
 
+    def pattern_text(self, pattern: re.Pattern[str] | str) -> str:
+        if isinstance(pattern, re.Pattern):
+            return pattern.pattern
+        return pattern
+
+    def match_one(
+        self,
+        pattern: re.Pattern[str] | str,
+        candidate: str,
+    ) -> dict[str, str] | None:
+        if not isinstance(pattern, re.Pattern):
+            return None
+        matched = pattern.fullmatch(candidate)
+        if matched is None:
+            return None
+        return {
+            name: value
+            for name, value in matched.groupdict().items()
+            if value is not None
+        }
+
 
 @dataclass(frozen=True)
-class _GlobField:
-    source: str
+class _GlobField(_CompiledField):
     patterns: tuple[str, ...]
 
+    def pattern_text(self, pattern: re.Pattern[str] | str) -> str:
+        if isinstance(pattern, str):
+            return pattern
+        return pattern.pattern
 
-_CompiledField = _RegexField | _GlobField
+    def match_one(
+        self,
+        pattern: re.Pattern[str] | str,
+        candidate: str,
+    ) -> dict[str, str] | None:
+        if not isinstance(pattern, str):
+            return None
+        if PurePosixPath(candidate).full_match(pattern):
+            return {}
+        return None
 
 
 @dataclass(frozen=True)
@@ -98,6 +197,124 @@ class _Rule:
     name: str
     kind: str
     fields: tuple[_CompiledField, ...]
+
+    def claim(self, file: InputFile) -> tuple[str, dict[str, str]] | None:
+        """Kind and groups when one field matches. Later fields are not tried."""
+        for field in self.fields:
+            if field.skip_reason(file) is not None:
+                continue
+            candidate = field.candidate(file)
+            for pattern in field.patterns:
+                groups = field.match_one(pattern, candidate)
+                if groups is None:
+                    continue
+                return self.kind, groups
+        return None
+
+    def explain_reached(
+        self,
+        file: InputFile,
+    ) -> tuple[list[PatternTrial], dict[str, str] | None]:
+        """Trials for this rule, in field order. Groups when the rule wins."""
+        trials: list[PatternTrial] = []
+        won: dict[str, str] | None = None
+        for field in self.fields:
+            reason = field.skip_reason(file)
+            if reason is not None:
+                trials.extend(self._trials_for_skip(field, file, reason))
+                continue
+            if won is not None:
+                trials.extend(self._trials_not_reached(field, file))
+                continue
+            candidate = field.candidate(file)
+            for index, pattern in enumerate(field.patterns):
+                text = field.pattern_text(pattern)
+                groups = field.match_one(pattern, candidate)
+                if groups is None:
+                    trials.append(self._trial(field, text, candidate, STATUS_MISS))
+                    continue
+                trials.append(
+                    self._trial(field, text, candidate, STATUS_HIT, groups=groups)
+                )
+                won = groups
+                for later in field.patterns[index + 1 :]:
+                    trials.append(
+                        self._trial(
+                            field,
+                            field.pattern_text(later),
+                            candidate,
+                            STATUS_NOT_TRIED,
+                        )
+                    )
+                break
+        return trials, won
+
+    def explain_unreached(self, file: InputFile) -> list[PatternTrial]:
+        """Trials for a rule that matching never runs, because an earlier rule won."""
+        trials: list[PatternTrial] = []
+        for field in self.fields:
+            trials.extend(self._trials_not_reached(field, file))
+        return trials
+
+    def _trial(
+        self,
+        field: _CompiledField,
+        pattern: str,
+        candidate: str,
+        status: str,
+        detail: str = "",
+        groups: dict[str, str] | None = None,
+    ) -> PatternTrial:
+        return PatternTrial(
+            rule=self.name,
+            kind=self.kind,
+            field=field.name,
+            pattern=pattern,
+            candidate=candidate,
+            status=status,
+            detail=detail,
+            groups={} if groups is None else dict(groups),
+        )
+
+    def _trials_for_skip(
+        self,
+        field: _CompiledField,
+        file: InputFile,
+        reason: str,
+    ) -> list[PatternTrial]:
+        candidate = field.candidate(file)
+        if reason == DETAIL_NO_PATTERNS:
+            return [self._trial(field, "", candidate, STATUS_SKIPPED, reason)]
+        return [
+            self._trial(
+                field,
+                field.pattern_text(pattern),
+                candidate,
+                STATUS_SKIPPED,
+                reason,
+            )
+            for pattern in field.patterns
+        ]
+
+    def _trials_not_reached(
+        self,
+        field: _CompiledField,
+        file: InputFile,
+    ) -> list[PatternTrial]:
+        """A later field. Skips stay skips. Real patterns were not tried."""
+        reason = field.skip_reason(file)
+        if reason is not None:
+            return self._trials_for_skip(field, file, reason)
+        candidate = field.candidate(file)
+        return [
+            self._trial(
+                field,
+                field.pattern_text(pattern),
+                candidate,
+                STATUS_NOT_TRIED,
+            )
+            for pattern in field.patterns
+        ]
 
 
 @dataclass(frozen=True)
@@ -110,6 +327,28 @@ class FileMatch:
     kind: str
     rule: str
     groups: dict[str, str]
+
+
+@dataclass(frozen=True)
+class PatternTrial:
+    """One pattern comparison, or a field matching did not run."""
+
+    rule: str
+    kind: str
+    field: str
+    pattern: str
+    candidate: str
+    status: str
+    detail: str
+    groups: dict[str, str]
+
+
+@dataclass(frozen=True)
+class FileInspection:
+    """Every trial for one file, plus the rule that claimed it."""
+
+    match: FileMatch | None
+    trials: tuple[PatternTrial, ...]
 
 
 class Matcher:
@@ -132,20 +371,58 @@ class Matcher:
         rules: list[_Rule] = []
         seen: set[str] = set()
         for index, item in enumerate(raw, start=1):
-            spec = _parse_rule(profile_name, index, item)
-            rule_name = _rule_labels(spec)[0]
+            spec = MatchRuleSpec.from_item(profile_name, index, item)
+            rule_name = spec.labels()[0]
             if rule_name in seen:
                 raise SupershelfError(
                     f"Profile {profile_name} has duplicate match rule {rule_name!r}"
                 )
             seen.add(rule_name)
-            rules.append(_compile_rule(profile_name, spec))
+            rules.append(cls._compile_rule(profile_name, spec))
         return cls(profile_name, tuple(rules))
+
+    @classmethod
+    def _compile_rule(cls, profile_name: str, spec: MatchRuleSpec) -> _Rule:
+        rule_name, rule_kind = spec.labels()
+        fields: list[_CompiledField] = []
+        for field_name, attr, source, is_regex in _FIELDS:
+            raw_patterns = getattr(spec, attr)
+            if is_regex:
+                fields.append(
+                    _RegexField(
+                        field_name,
+                        source,
+                        tuple(
+                            cls._compile_regex(
+                                profile_name, rule_name, field_name, pattern
+                            )
+                            for pattern in raw_patterns
+                        ),
+                    )
+                )
+            else:
+                fields.append(_GlobField(field_name, source, tuple(raw_patterns)))
+        return _Rule(rule_name, rule_kind, tuple(fields))
+
+    @staticmethod
+    def _compile_regex(
+        profile_name: str,
+        rule_name: str,
+        field_name: str,
+        pattern: str,
+    ) -> re.Pattern[str]:
+        try:
+            return re.compile(pattern)
+        except re.error as exc:
+            raise SupershelfError(
+                f"Invalid regex in profile {profile_name} rule {rule_name!r} "
+                f"{field_name}: {pattern}: {exc}"
+            ) from exc
 
     def claim(self, file: InputFile) -> FileMatch | None:
         """Return the first matching rule, or None."""
         for rule in self._rules:
-            hit = _claim_rule(rule, file)
+            hit = rule.claim(file)
             if hit is None:
                 continue
             kind, groups = hit
@@ -175,95 +452,24 @@ class Matcher:
             found.append(replace(hit, profile=scan.profile, index=scan.index))
         return found
 
-
-def _parse_rule(profile_name: str, index: int, item: object) -> MatchRuleSpec:
-    if not isinstance(item, dict):
-        raise SupershelfError(
-            f"Profile {profile_name} match rule {index} must be a mapping"
-        )
-    try:
-        spec = MatchRuleSpec.model_validate(item)
-    except ValidationError as exc:
-        raise SupershelfError(
-            f"Invalid match rule {index} in profile {profile_name}: {exc}"
-        ) from exc
-    if not any(getattr(spec, name) for name in _PATTERN_FIELDS):
-        raise SupershelfError(
-            f"Profile {profile_name} match rule {_rule_labels(spec)[0]!r} has no patterns"
-        )
-    return spec
-
-
-def _rule_labels(spec: MatchRuleSpec) -> tuple[str, str]:
-    """Return the rule name and the kind. An explicit kind wins."""
-    name = spec.name if spec.name is not None else spec.kind
-    kind = spec.kind if spec.kind is not None else spec.name
-    if name is None or kind is None:
-        raise SupershelfError("match rule needs a name or a kind")
-    return name, kind
-
-
-def _compile_rule(profile_name: str, spec: MatchRuleSpec) -> _Rule:
-    rule_name, rule_kind = _rule_labels(spec)
-    fields: list[_CompiledField] = []
-    for field_name, attr, source, is_regex in _FIELDS:
-        raw_patterns = getattr(spec, attr)
-        if is_regex:
-            fields.append(
-                _RegexField(
-                    source,
-                    tuple(
-                        _compile_regex(profile_name, rule_name, field_name, pattern)
-                        for pattern in raw_patterns
-                    ),
-                )
-            )
-        else:
-            fields.append(_GlobField(source, tuple(raw_patterns)))
-    return _Rule(rule_name, rule_kind, tuple(fields))
-
-
-def _compile_regex(
-    profile_name: str,
-    rule_name: str,
-    field_name: str,
-    pattern: str,
-) -> re.Pattern[str]:
-    try:
-        return re.compile(pattern)
-    except re.error as exc:
-        raise SupershelfError(
-            f"Invalid regex in profile {profile_name} rule {rule_name!r} "
-            f"{field_name}: {pattern}: {exc}"
-        ) from exc
-
-
-def _claim_rule(rule: _Rule, file: InputFile) -> tuple[str, dict[str, str]] | None:
-    for field in rule.fields:
-        if not field.patterns:
-            continue
-        if field.source == _DIRECTORY and file.directory == "":
-            continue
-        groups = _match_field(field, getattr(file, field.source))
-        if groups is None:
-            continue
-        return rule.kind, groups
-    return None
-
-
-def _match_field(field: _CompiledField, candidate: str) -> dict[str, str] | None:
-    if isinstance(field, _RegexField):
-        for pattern in field.patterns:
-            matched = pattern.fullmatch(candidate)
-            if matched is None:
+    def explain(self, file: InputFile) -> FileInspection:
+        """Return every trial for one file. The first hit still wins."""
+        trials: list[PatternTrial] = []
+        found: FileMatch | None = None
+        for rule in self._rules:
+            if found is not None:
+                trials.extend(rule.explain_unreached(file))
                 continue
-            return {
-                name: value
-                for name, value in matched.groupdict().items()
-                if value is not None
-            }
-        return None
-    for pattern in field.patterns:
-        if PurePosixPath(candidate).full_match(pattern):
-            return {}
-    return None
+            rule_trials, won = rule.explain_reached(file)
+            trials.extend(rule_trials)
+            if won is None:
+                continue
+            found = FileMatch(
+                profile=self.profile_name,
+                index=0,
+                path=file.path,
+                kind=rule.kind,
+                rule=rule.name,
+                groups=dict(won),
+            )
+        return FileInspection(match=found, trials=tuple(trials))

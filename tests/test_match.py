@@ -7,7 +7,14 @@ import pytest
 
 from supershelf.constants import LOGGER_NAME
 from supershelf.errors import SupershelfError
-from supershelf.match import Matcher
+from supershelf.match import (
+    DETAIL_EMPTY_DIRECTORY,
+    STATUS_HIT,
+    STATUS_MISS,
+    STATUS_NOT_TRIED,
+    STATUS_SKIPPED,
+    Matcher,
+)
 from supershelf.scan import InputFile, InputScanResult, ResolvedInput
 
 FACTURE = {
@@ -119,6 +126,74 @@ def test_globs_fullmatch_the_field_candidate() -> None:
 def test_empty_directory_skips_directory_patterns() -> None:
     matcher = _matcher([{"name": "r", "kind": "k", "directory_regex": ".*"}])
     assert matcher.claim(_file("top.pdf")) is None
+
+
+def test_explain_directory_glob_compares_the_directory() -> None:
+    matcher = _matcher(
+        [
+            {
+                "name": "bnc_mastercard",
+                "kind": "facture",
+                "directory_glob": ["company/bnc_mastercard/*"],
+            }
+        ]
+    )
+    inspection = matcher.explain(
+        _file("company/bnc_mastercard/CARTCRED_CREDCARD_5258818501521549.pdf")
+    )
+    misses = [trial for trial in inspection.trials if trial.status == STATUS_MISS]
+    assert inspection.match is None
+    assert len(misses) == 1
+    assert misses[0].field == "directory_glob"
+    assert misses[0].pattern == "company/bnc_mastercard/*"
+    assert misses[0].candidate == "company/bnc_mastercard"
+
+
+def test_explain_stops_after_the_first_hit() -> None:
+    matcher = _matcher(
+        [
+            {
+                "name": "first",
+                "kind": "k",
+                "filename_regex": [r"(?P<stem>a)\.txt", "nope"],
+            },
+            {"name": "second", "kind": "other", "filename_glob": "a.txt"},
+        ]
+    )
+    inspection = matcher.explain(_file("a.txt"))
+    assert inspection.match is not None
+    assert inspection.match.rule == "first"
+    assert inspection.match.groups == {"stem": "a"}
+    tried = [
+        trial
+        for trial in inspection.trials
+        if trial.status in (STATUS_HIT, STATUS_MISS)
+    ]
+    assert [(trial.rule, trial.pattern, trial.status) for trial in tried] == [
+        ("first", r"(?P<stem>a)\.txt", STATUS_HIT)
+    ]
+    assert ("first", "filename_regex", "nope", STATUS_NOT_TRIED) in [
+        (trial.rule, trial.field, trial.pattern, trial.status)
+        for trial in inspection.trials
+    ]
+    assert ("second", "filename_glob", "a.txt", STATUS_NOT_TRIED) in [
+        (trial.rule, trial.field, trial.pattern, trial.status)
+        for trial in inspection.trials
+    ]
+
+
+def test_explain_empty_directory_is_skipped() -> None:
+    matcher = _matcher([{"name": "r", "kind": "k", "directory_regex": ".*"}])
+    inspection = matcher.explain(_file("top.pdf"))
+    directory = [
+        trial for trial in inspection.trials if trial.field == "directory_regex"
+    ]
+    assert inspection.match is None
+    assert len(directory) == 1
+    assert directory[0].status == STATUS_SKIPPED
+    assert directory[0].detail == DETAIL_EMPTY_DIRECTORY
+    assert directory[0].pattern == ".*"
+    assert directory[0].candidate == ""
 
 
 def test_unmatched_file_warns_and_stays_on_the_scan(
