@@ -222,8 +222,8 @@ def test_scan_vars_lists_resolved_values_and_skips_unmatched(
     app.dispatch(["scan", "vars"])
     captured = capsys.readouterr()
 
-    assert "vendor" in captured.out
-    assert "Bank2000" in captured.out
+    assert captured.out.count("work") == 1
+    assert "vendor: Bank2000" in captured.out
     assert "note" in captured.out
     assert "a.txt" in captured.out
     assert "b.txt" not in captured.out

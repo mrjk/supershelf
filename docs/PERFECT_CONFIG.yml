@@ -205,12 +205,13 @@
     - supershelf scan vars:
         - Use the files kept by the scan files walk, then the matched set from step 2.2.
         - The walk is the full walk. mtime, ctime, and sha256 are required. There is no --quick.
-        - Print matched files only. One row per resolved variable.
-          Columns: profile, input, path, kind, rule, var, value.
+        - Print matched files only. One row per file.
+          Columns: profile, input, path, kind, rule, vars.
         - input is the 1-based index in that profile's inputs list, same as scan kinds.
         - path is relative to the input directory.
         - kind is the final __kind__ after overrides. rule stays the match rule name.
-        - File order follows the walk. Inside a file, each final key is one row:
+        - vars is one cell. Each final key is one line: the name, ": ", then the value.
+          File order follows the walk. Inside the cell, the lines are
           internals in the order listed below, then file_ctime and file_mtime,
           then regex groups in pattern order, then assignment keys in first-seen order.
           A fact replaced by an assignment is printed once, with the final value, in its fact position.

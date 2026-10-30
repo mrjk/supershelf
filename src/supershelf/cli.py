@@ -141,18 +141,18 @@ class ScanVarsCommand(ListViewMixin, Parser):
                         matched,
                         result.config.path,
                     )
-                    for name, value in resolved.items:
-                        rows.append(
-                            {
-                                "profile": matched.profile,
-                                "input": matched.index,
-                                "path": matched.path,
-                                "kind": resolved.kind,
-                                "rule": matched.rule,
-                                "var": name,
-                                "value": value,
-                            }
-                        )
+                    rows.append(
+                        {
+                            "profile": matched.profile,
+                            "input": matched.index,
+                            "path": matched.path,
+                            "kind": resolved.kind,
+                            "rule": matched.rule,
+                            "vars": "\n".join(
+                                f"{name}: {value}" for name, value in resolved.items
+                            ),
+                        }
+                    )
         return rows
 
 
