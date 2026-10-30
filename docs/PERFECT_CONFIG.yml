@@ -200,6 +200,131 @@
     - Files the walk skipped never reach matching.
 
 
+2.3 Vars:
+  command:
+    - supershelf scan vars:
+        - Use the files kept by the scan files walk, then the matched set from step 2.2.
+        - The walk is the full walk. mtime, ctime, and sha256 are required. There is no --quick.
+        - Print matched files only. One row per resolved variable.
+          Columns: profile, input, path, kind, rule, var, value.
+        - input is the 1-based index in that profile's inputs list, same as scan kinds.
+        - path is relative to the input directory.
+        - kind is the final __kind__ after overrides. rule stays the match rule name.
+        - File order follows the walk. Inside a file, each final key is one row:
+          internals in the order listed below, then file_ctime and file_mtime,
+          then regex groups in pattern order, then assignment keys in first-seen order.
+          A fact replaced by an assignment is printed once, with the final value, in its fact position.
+        - Log the same unmatched-file warning as scan kinds, once per file. Do not log it again.
+        - Do not create the database file, the cache file, or any output tree.
+        - outputs and extension_remap are not part of this step.
+        - Step 2.2 still ignores vars. This step reads them from the raw rule mapping.
+
+  algorithm:
+    - Facts and assignments are different sets.
+    - Facts are the base scope. An assignment of the same name shadows that fact for later templates and replaces the printed value.
+      While a key is being rendered, a reference to itself still sees the previous layer, so the fact stays visible when no earlier assignment set that name.
+    - Profile scope from step 2 is a fact. It is available to templates. It is not printed.
+      Kind path templates below add __kind__ and __input__.path for that render only.
+    - Internals are facts. They are always printed, in this order:
+        - __kind__: the kind from step 2.2, until an override replaces it
+        - __rule_name__: the match rule name
+        - __ctime__ and __mtime__: the stored UTC ISO-8601 timestamps from the walk, not default_date_format
+        - __file_hash__: lowercase sha256
+        - __file_name__ and __file_stem__: InputFile.name and InputFile.stem
+        - __file_ext__: InputFile.suffix without the leading dot. No suffix stores an empty string. archive.tar.gz stores gz.
+        - __file_path__: path relative to the input, with / separators
+        - __file_dir__: directory relative to the input. Empty when the file sits in the input directory
+    - file_ctime is __ctime__. file_mtime is __mtime__. Both are printed after the internals.
+    - Named groups from the winning regex are facts. Unnamed groups stay ignored.
+      A group name that starts with __ is a config error before the walk.
+      A group cannot replace an internal or a profile key.
+    - Assignments are the user layers. Later wins on the same key. Each layer is rendered before the next one starts.
+        1. default_vars
+        2. Kind-wide vars from the first matching kind_overrides_config file. One mapping for every file of that kind.
+        3. match_rules[].vars
+        4. Reserved for a later step: a per-file row from those same kind files.
+           That row will replace a value the rule already computed. It will not change what the rule template already read.
+           This step does not read per-file rows.
+        5. The first matching overrides[] entry. This is the highest layer, and the only layer that may set __kind__.
+    - default_vars, kind-wide vars, and rule vars must not set an internal name, file_ctime, or file_mtime.
+      __date__ is not an internal.
+    - Only overrides may set __kind__. That changes the printed kind and the __kind__ fact seen by later override templates.
+      It does not load another kind file and does not change rule.
+      Overrides must not set the other internal names, file_ctime, or file_mtime.
+    - A resolved var is always one string. A template can read facts and any assignment already rendered.
+      It cannot read a key later in the same mapping. That name is not defined yet.
+      The key being rendered sees the previous layer's string, not the candidate list being tried.
+      account: ['{{account}}'] reads the group when no earlier layer defined account.
+      A kind-wide account hides the group from the rule template of the same name.
+      A rule's {{__date__}} reads the __date__ string the earlier layer already kept. It does not run that layer's other candidates again.
+    - Omitted default_vars, omitted rule vars, or an omitted kind file means that layer is empty.
+    - A var table is a mapping. Each key matches [A-Za-z_][A-Za-z0-9_]*.
+      Each value is a string, or a list of strings. A string is one candidate. A list is an ordered fallback.
+      An empty list is a config error.
+      Numbers, booleans, nulls, dates, and nested mappings are config errors. Quote scalars such as 2026-04-25.
+    - Each layer is rendered in mapping order before the next layer.
+      A new key is appended. A key that already exists is rendered again and keeps its first position.
+      The printed row uses the final string.
+    - A string is one candidate. A list means try each candidate in order. The first one that does not fail is kept.
+      The stored value is that string. The list is not kept.
+    - A candidate with no {{, {%, or {# is a literal string. It is not compiled.
+      Any other candidate is a Jinja2 template. Profile path templates stay the step 2 language and are not Jinja.
+    - Each distinct var template source is compiled once per process. Rendered results are not cached.
+      PDF info for one file hash is read once per process.
+    - Jinja uses StrictUndefined. An unknown name fails that candidate. autoescape is off.
+      The rendered result is stored as a string.
+    - A string candidate is rendered once. Failure aborts that candidate.
+    - Inserted strings are not rendered again.
+    - An empty string is a success, except for __date__.
+    - If every candidate fails, the command stops. The error names profile, input, path, and the variable.
+      __date__ is the exception: if no candidate yields a valid date, omit __date__ and do not stop the command.
+    - __date__, when set, is a calendar date YYYY-MM-DD. A candidate that renders to anything else fails, and the next candidate is tried.
+      Supershelf uses this date as the document date, including for output paths.
+      This step does not write outputs. A later output that uses __date__ fails when __date__ was omitted.
+    - Shape errors and template syntax errors fail the command before the walk.
+      The kind file is checked when it is first loaded.
+    - A broken Jinja template is a config error when that template is loaded.
+      A function that has nothing to return fails that candidate only, so a later option can run.
+      Built-in commands and user commands do that by raising supershelf.errors.VarCandidateError.
+      Any other exception stops the command.
+    - config.var_modules is an optional list of importable module paths. Omitted or empty means no user modules.
+      Built-in commands are always registered. Then each module is imported in list order, before the walk.
+      A module provides two optional dicts: GLOBALS for {{ name(...) }}, and FILTERS for {{ value | name(...) }}.
+      Values are callables. They receive strings and return a string.
+      A name that repeats a built-in, or an earlier module, is a config error. An import failure is a config error.
+    - regex_time_var(name, "fmt", ...) reads the named string and tries each strptime format.
+      The first hit wins. The result is YYYY-MM-DD. At least one format is required.
+      Formats are separate quoted arguments. A format such as %H:%M:%S contains colons, so arguments are not split on colons.
+      regex_time_var(date, "%Y%m%d") reads the group date. It does not read __date__.
+    - regex_replace(name, "pattern", "replacement") runs a substitution on that string.
+      Backreferences are allowed. No match fails the candidate. Three arguments are required.
+    - pdf_cdate() and pdf_mdate() read the PDF info dates. The result is YYYY-MM-DD.
+      The call needs parentheses. Bare pdf_cdate is the command, not the date.
+      Not a PDF, no such date, or an unreadable file fails the candidate.
+      The file is read only when a candidate calls one of these.
+    - file("ctime") and file("mtime") return the same ISO timestamps as the aliases above.
+      Any other argument fails the candidate.
+    - kind_overrides_config is an optional list of path templates. Omitted or empty means no kind files.
+      Render each path with the step 2 language, the profile scope, __kind__ set to the rule kind, and __input__.path set to the absolute input directory.
+      A relative result is resolved from __root_dir__.
+      The first path that exists and is a file wins. A missing path tries the next. None found means no kind vars.
+      A path that exists and is not a file is an error.
+      The parsed file is cached for the process by its absolute path. Nothing is written to cache_file.
+    - Kind file shape follows the suffix. Files are UTF-8. Invalid UTF-8 is an error.
+        - .toml, .yaml, and .yml: one mapping, same value rules as default_vars.
+        - .csv: header name,value, and two columns. A row that does not have two columns is an error.
+          A repeated name appends a candidate in row order. One row for a name is one candidate.
+          Blank lines are skipped. A header with no data rows adds no vars.
+    - This step reads the winning kind file as kind-wide vars: the same mapping for every file of that kind.
+      A kind-wide file must not set __kind__ or any other internal name, nor file_ctime or file_mtime.
+      Other __ names, including __date__, are allowed.
+    - overrides is an optional list. Each item has path and vars. Unknown keys are ignored.
+      path is a glob, full-matched against the path relative to the input, with the same * and ** rules as include.
+      A path with no glob characters is an exact match.
+      The first matching item wins. Later items are not merged. An item that matches nothing is fine.
+      Paths are not templated.
+    - Files the walk skipped never reach this step.
+
 
 # YAML example File
 ###################################################
@@ -215,7 +340,9 @@ config:
   # Default paths
   database_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
   cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
-  kind_overrides_config: # On resolution, first one matches. Cache lookup result.
+  # var_modules: # Optional importable modules. GLOBALS and FILTERS. See step 2.3.
+  #   - my_package.supershelf_vars
+  kind_overrides_config: # Step 2.3. First existing file wins. Kind-wide vars. Cached by path. Per-file rows are later.
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv"
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml"
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml"
@@ -224,7 +351,7 @@ config:
   # Possible overrides per input
   # root_dir: /srv/data_processing/
   # database_file: "{{ __root_dir__ }}/state.sqlite"
-  # kind_overrides_config: # On resolution, first one matches. Cache lookup result for each input.
+  # kind_overrides_config: # Same resolution. __input__.path is the absolute input directory.
   #   - "{{ __input__.path }}/data/{{ __kind__ }}.csv"
   #   - "{{ __input__.path }}/data/{{ __kind__ }}.toml"
   #   - "{{ __input__.path }}/data/{{ __kind__ }}.yaml"
@@ -256,17 +383,18 @@ inputs:
 #  tif: tiff
 #  yml: yaml
 
-# Default vars, support templating
+# Lowest assignment layer. Specified in step 2.3.
 default_vars:
   fournisseur: UNKNOWN
   date: UNKNOWN
-  doc_type: '{{ __kind__ }}' 
+  doc_type: '{{ __kind__ }}'
 
-  # Default the
+  # Fallback list. The first candidate that renders wins.
+  # regex_time_var reads the group date, not this list.
   __date__:
-    - '{{regex_time_var(__date__:fmt1:fmt2:fmt3:...)}}'
-    - '{{pdf_cdate}}'
-    - '{{pdf_mdate}}'
+    - '{{regex_time_var(date, "%Y%m%d")}}'
+    - '{{pdf_cdate()}}'
+    - '{{pdf_mdate()}}'
     - '{{file("ctime")}}'
     - '{{file("mtime")}}'
     - '{{file_ctime}}'
@@ -299,17 +427,9 @@ match_rules:
       - REL*
 
 
-    # vars is not part of step 2.2. Sketch only, completed later.
-    # When matched, then creates variables. 
-    # - Build var scope:
-    #   - add any default variables
-    #   - add any custom KIND variables (from csv)
-    #   - add internal variables: __kind__, __ctime__, __mtime__, __file_ext__, __file_stem__, __file_name__, __file_path__, __file_dir__, __file_hash__, __rule_name__
-    #   - add any regex variables that matched above
-    # - Processing:
-    #   - for each var:
-    #     - if a string: template the string. If templating fails, abort
-    #     - if a list of string, try to template each strings. If all fails, abort
+    # Specified in step 2.3. A string is one template. A list is tried in order.
+    # {{account}} reads the regex group when no earlier layer set account.
+    # {{__date__}} reads the __date__ string kept by the earlier layer.
     vars:
       # Simple static vars
       key1: 'val1'
@@ -317,16 +437,15 @@ match_rules:
       fournisseur: 'BNC'
       owner: 'barbu'
 
-      # Undefined vars are fetch from *_regex directives above
       account:
         - '{{account}}'
       account2:
-        - '{{regex_replace(account, "REGEX")}}'
+        - '{{regex_replace(account, "[0-9]{4}$", "")}}'
       account3:
         - '{{account}}-{{owner}}'
-      __date__: # This example show how to append a __date__ detection method, but fallback on defaults.
-        - '{{regex_time_var(__date__:fmt1:fmt2:fmt3:...)}}'
-        - '{{__date__}}'  # Fallback on default value, if variable is a list, try all of it's combination
+      __date__: # Try this pattern's date first, else keep the earlier __date__ string.
+        - '{{regex_time_var(date, "%Y%m%d")}}'
+        - '{{__date__}}'
 
   # A file that no rule claims is a warning and is omitted from the matched set.
   # This catch-all claims the rest. It must stay last.
@@ -340,8 +459,8 @@ match_rules:
 overrides:
   - path: bnc/mastercard/MASTERCARD_1234_20211231.pdf
     vars:
-      __kind__: custom_kind # Not allowed in CSV/TOML file, only in this file.
-      __date__: 2026-04-25   # Override the date
+      __kind__: custom_kind # Only this layer may set __kind__. Kind files cannot.
+      __date__: '2026-04-25' # Quote it. An unquoted date is a config error.
       key6: val6
 
 
