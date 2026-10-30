@@ -1,9 +1,11 @@
 """Variable layers for one matched file."""
 
+import logging
 from pathlib import Path
 
 import pytest
 
+from supershelf.constants import LOGGER_NAME
 from supershelf.errors import VarConfigError, VarResolveError
 from supershelf.match import FileMatch, Matcher
 from supershelf.scan import InputFile
@@ -174,6 +176,32 @@ def test_kind_csv_and_extension(tmp_path: Path) -> None:
     assert values["owner"] == "ada"
     assert values["__file_ext__"] == "gz"
     assert "__root_dir__" not in values
+
+
+def test_kind_file_load_is_logged_once(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    kinds = tmp_path / "kinds"
+    kinds.mkdir()
+    kind_file = kinds / "note.csv"
+    kind_file.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    plan = _plan(
+        {
+            "config": {
+                "kind_overrides_config": ["{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv"]
+            },
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+        {"__root_dir__": str(tmp_path)},
+    )
+    _values(plan)
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    loads = [record for record in caplog.records if record.levelno == logging.DEBUG]
+    assert len(loads) == 1
+    assert loads[0].message == f"Loaded kind file {kind_file.resolve()} for kind note"
 
 
 def test_override_replaces_kind(tmp_path: Path) -> None:

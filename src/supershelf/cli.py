@@ -1,5 +1,7 @@
 """Supershelf command line."""
 
+from dataclasses import replace
+
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
@@ -16,7 +18,7 @@ from supershelf.match import (
     PatternTrial,
 )
 from supershelf.profile import ShelfProfile
-from supershelf.scan import InputFile
+from supershelf.scan import InputFile, InputScanResult
 from supershelf.vars import VarPlan
 
 
@@ -112,7 +114,14 @@ class ScanKindsCommand(ListViewMixin, Parser):
 class ScanVarsCommand(ListViewMixin, Parser):
     """List variables for each matched file."""
 
-    def cli_run(self, config=None, profile=None, **_):
+    path = Argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Relative path of one kept file. Omit to list every matched file.",
+    )
+
+    def cli_run(self, config=None, profile=None, path=None, **_):
         loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
         prepared = []
         for item in loaded.config_list:
@@ -132,10 +141,18 @@ class ScanVarsCommand(ListViewMixin, Parser):
                 )
             )
         rows = []
+        seen = 0
         for shelf, matcher, plan in prepared:
             for result in shelf.scan(quick=False):
-                files = {found.path: found for found in result.results}
-                for matched in matcher.collect(result):
+                selected = self._selected(result, path)
+                seen += len(selected)
+                if not selected:
+                    continue
+                narrowed = result
+                if path is not None:
+                    narrowed = replace(result, results=selected)
+                files = {found.path: found for found in selected}
+                for matched in matcher.collect(narrowed):
                     resolved = plan.resolve(
                         files[matched.path],
                         matched,
@@ -153,7 +170,15 @@ class ScanVarsCommand(ListViewMixin, Parser):
                             ),
                         }
                     )
+        if path is not None and seen == 0:
+            raise SupershelfError(f"No kept file {path!r}")
         return rows
+
+    @staticmethod
+    def _selected(result: InputScanResult, path: str | None) -> list[InputFile]:
+        if path is None:
+            return result.results
+        return [found for found in result.results if found.path == path]
 
 
 class ScanInspectCommand(Parser):

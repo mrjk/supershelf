@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import importlib
 import io
+import logging
 import re
 from collections.abc import Mapping
 from datetime import datetime
@@ -19,6 +20,7 @@ from supershelf.constants import (
     INTERNAL_NAMES,
     KEY_DEFAULT_VARS,
     KEY_KIND_OVERRIDES,
+    LOGGER_NAME,
     KEY_MATCH_RULES,
     KEY_OVERRIDE_PATH,
     KEY_OVERRIDES,
@@ -159,6 +161,7 @@ class KindFiles:
         self._root = root_dir
         self._profile_scope = profile_scope
         self._cache: dict[Path, VarTable] = {}
+        self._logger = logging.getLogger(LOGGER_NAME)
 
     @classmethod
     def from_section(
@@ -198,6 +201,7 @@ class KindFiles:
             if cached is None:
                 cached = self._load(cached_path)
                 self._cache[cached_path] = cached
+                self._logger.debug("Loaded kind file %s for kind %s", cached_path, kind)
             return cached
         return VarTable.empty()
 

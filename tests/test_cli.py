@@ -1,5 +1,6 @@
 """`supershelf profiles` command."""
 
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -229,6 +230,136 @@ def test_scan_vars_lists_resolved_values_and_skips_unmatched(
     assert "b.txt" not in captured.out
     assert "No match_rule for b.txt in profile work input 1" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_vars_named_file_lists_only_that_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = '*.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["-v", "scan", "vars", "a.txt"])
+    captured = capsys.readouterr()
+
+    assert "a.txt" in captured.out
+    assert "vendor: Bank2000" in captured.out
+    assert "b.txt" not in captured.out
+    assert "No match_rule" not in captured.err
+
+
+def test_scan_vars_named_file_lists_each_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    for name in ("inbox", "other"):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[inputs]]\npath = 'other'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "--format", "json", "a.txt"])
+    captured = capsys.readouterr()
+    rows = json.loads(captured.out)
+
+    assert [row["input"] for row in rows] == [1, 2]
+    assert [row["path"] for row in rows] == ["a.txt", "a.txt"]
+
+
+def test_scan_vars_named_unmatched_file_warns_only_for_that_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "b.txt"])
+    captured = capsys.readouterr()
+
+    assert "a.txt" not in captured.out
+    assert "No match_rule for b.txt in profile work input 1" in captured.err
+    assert "No match_rule for a.txt" not in captured.err
+
+
+def test_scan_vars_unknown_path_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "vars", "missing.pdf"])
+
+    assert caught.value.code == 1
+    assert "No kept file 'missing.pdf'" in capsys.readouterr().err
+
+
+def test_scan_vars_logs_a_kind_file_at_vv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    kind_file = tmp_path / "note.csv"
+    kind_file.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n"
+        "kind_overrides_config = ['{{ __root_dir__ }}/note.csv']\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["-v", "scan", "vars"])
+    quiet = capsys.readouterr()
+    assert "owner: ada" in quiet.out
+    assert "Loaded kind file" not in quiet.err
+
+    app.dispatch(["-vv", "scan", "vars"])
+    verbose = capsys.readouterr()
+    assert f"Loaded kind file {kind_file.resolve()} for kind note" in verbose.err
 
 
 def test_scan_kinds_rejects_a_bad_regex_before_walking(
