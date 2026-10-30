@@ -161,6 +161,7 @@ class KindFiles:
         self._root = root_dir
         self._profile_scope = profile_scope
         self._cache: dict[Path, VarTable] = {}
+        self._searches: set[tuple[str, str]] = set()
         self._logger = logging.getLogger(LOGGER_NAME)
 
     @classmethod
@@ -187,9 +188,18 @@ class KindFiles:
         scope = dict(self._profile_scope)
         scope[VAR_KIND] = kind
         scope[VAR_INPUT] = {"path": str(input_dir)}
+        search = (kind, str(input_dir))
+        first = search not in self._searches
+        self._searches.add(search)
         for template in self._templates:
             path = self._render_path(template, scope)
             if not path.exists():
+                if first:
+                    self._logger.debug(
+                        "Kind file %s is missing for kind %s",
+                        path.resolve(),
+                        kind,
+                    )
                 continue
             if not path.is_file():
                 raise VarConfigError(
@@ -202,6 +212,13 @@ class KindFiles:
                 cached = self._load(cached_path)
                 self._cache[cached_path] = cached
                 self._logger.debug("Loaded kind file %s for kind %s", cached_path, kind)
+                return cached
+            if first:
+                self._logger.debug(
+                    "Kind file %s already loaded for kind %s",
+                    cached_path,
+                    kind,
+                )
             return cached
         return VarTable.empty()
 

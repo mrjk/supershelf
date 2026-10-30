@@ -204,6 +204,62 @@ def test_kind_file_load_is_logged_once(
     assert loads[0].message == f"Loaded kind file {kind_file.resolve()} for kind note"
 
 
+def test_kind_file_search_logs_each_candidate_once(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    kinds = tmp_path / "kinds"
+    kinds.mkdir()
+    kind_file = kinds / "note.csv"
+    kind_file.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    missing = kinds / "note.toml"
+    plan = _plan(
+        {
+            "config": {
+                "kind_overrides_config": [
+                    "{{ __root_dir__ }}/kinds/{{ __kind__ }}.toml",
+                    "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                ]
+            },
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+        {"__root_dir__": str(tmp_path)},
+    )
+    _values(plan)
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    messages = [record.message for record in caplog.records if record.levelno == logging.DEBUG]
+    assert messages == [
+        f"Kind file {missing.resolve()} is missing for kind note",
+        f"Loaded kind file {kind_file.resolve()} for kind note",
+    ]
+
+
+def test_kind_file_search_logs_a_cached_file_for_the_next_kind(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    shared = tmp_path / "shared.csv"
+    shared.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    plan = _plan(
+        {
+            "config": {"kind_overrides_config": ["{{ __root_dir__ }}/shared.csv"]},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+        {"__root_dir__": str(tmp_path)},
+    )
+    _values(plan)
+    _values(plan, match=_match(kind="invoice", rule="notes"))
+    messages = [record.message for record in caplog.records if record.levelno == logging.DEBUG]
+    assert messages == [
+        f"Loaded kind file {shared.resolve()} for kind note",
+        f"Kind file {shared.resolve()} already loaded for kind invoice",
+    ]
+
+
 def test_override_replaces_kind(tmp_path: Path) -> None:
     plan = _plan(
         {

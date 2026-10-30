@@ -219,8 +219,10 @@
           then regex groups in pattern order, then assignment keys in first-seen order.
           A fact replaced by an assignment is printed once, with the final value, in its fact position.
         - Log the same unmatched-file warning as scan kinds, once per file. Do not log it again.
-        - -vv logs each kind file the first time it is loaded. The line includes the absolute path and the kind.
-          A later file that reuses that path does not log it again. -v does not add this line.
+        - -vv logs each kind_overrides_config candidate the first time a kind and input try it.
+          A missing path logs that path and the kind. The winning file logs when it is first loaded.
+          A path already loaded for another search logs that it was found.
+          A repeated search for that kind and input stays quiet. -v does not add these lines.
         - Do not create the database file, the cache file, or any output tree.
           scan vars may create or append a kind file. Step 2.3.2.
         - outputs and extension_remap are not part of this step.
