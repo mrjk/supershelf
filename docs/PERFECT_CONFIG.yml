@@ -222,6 +222,7 @@
         - -vv logs each kind_overrides_config candidate the first time a kind and input try it.
           A missing path logs that path and the kind. The winning file logs when it is first loaded.
           A path already loaded for another search logs that it was found.
+          An empty kind_overrides_config logs that there is no candidate list.
           A repeated search for that kind and input stays quiet. -v does not add these lines.
         - Do not create the database file, the cache file, or any output tree.
           scan vars may create or append a kind file. Step 2.3.2.
@@ -315,7 +316,13 @@
       The file is read only when a candidate calls one of these.
     - file("ctime") and file("mtime") return the same ISO timestamps as the aliases above.
       Any other argument fails the candidate.
-    - kind_overrides_config is an optional list of path templates. Omitted or empty means no kind files.
+    - kind_overrides_config is an optional list of path templates.
+      Omitted uses this list, in order:
+        - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv
+        - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml
+        - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml
+        - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml
+      An empty list means no kind files. -vv logs that once for each kind and input.
       Render each path with the step 2 language, the profile scope, __kind__ set to the rule kind, and __input__.path set to the absolute input directory.
       A relative result is resolved from __root_dir__.
       The first path that exists and is a file wins. A missing path tries the next.
@@ -420,7 +427,8 @@
       New cells are empty, so a row created on this run does not change this run's values.
     - A new CSV file is a path header and one row per matched file. Auto mode does not invent var columns.
       A new TOML or YAML file is the same rows, with path set and vars omitted.
-    - An omitted or empty kind_overrides_config creates nothing in either mode.
+    - An empty kind_overrides_config creates nothing in either mode.
+      Omitted uses the default list from step 2.3.
 
 
 # YAML example File
@@ -442,7 +450,7 @@ config:
   cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See step 2.3.
   #   - my_package.supershelf_vars
-  kind_overrides_config: # Step 2.3.2. First existing file wins. Per-file rows. Cached by input and kind, and by path.
+  kind_overrides_config: # Omitted uses this list. First existing file wins. Per-file rows. Cached by input and kind, and by path.
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv"
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml"
     - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml"

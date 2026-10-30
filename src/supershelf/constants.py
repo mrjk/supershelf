@@ -15,6 +15,12 @@ DEFAULT_DATABASE_FILE_TEMPLATE = (
     "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
 )
 DEFAULT_CACHE_FILE_TEMPLATE = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+DEFAULT_KIND_OVERRIDES_TEMPLATES = (
+    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv",
+    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml",
+    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml",
+    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml",
+)
 
 KEY_DEFAULT_DATE_FORMAT = "default_date_format"
 KEY_ROOT_DIR = "root_dir"

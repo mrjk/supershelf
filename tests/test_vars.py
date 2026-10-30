@@ -35,7 +35,10 @@ def _plan(
     scope: dict[str, object] | None = None,
 ) -> VarPlan:
     matcher = Matcher.from_document(document, "work")
-    return VarPlan.from_document(document, "work", matcher, root, scope or {})
+    full: dict[str, object] = {"__root_dir__": str(root), "__profile__": "work"}
+    if scope:
+        full.update(scope)
+    return VarPlan.from_document(document, "work", matcher, root, full)
 
 
 def _values(plan: VarPlan, **kwargs: object) -> dict[str, str]:
@@ -176,6 +179,46 @@ def test_kind_csv_and_extension(tmp_path: Path) -> None:
     assert values["owner"] == "ada"
     assert values["__file_ext__"] == "gz"
     assert "__root_dir__" not in values
+
+
+def test_omitted_kind_overrides_config_logs_the_default_paths(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    plan = _plan(
+        {"match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}]},
+        tmp_path,
+    )
+    _values(plan)
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    messages = [record.message for record in caplog.records if record.levelno == logging.DEBUG]
+    assert messages == [
+        f"Kind file {(tmp_path / name).resolve()} is missing for kind note"
+        for name in (
+            "profile.work.note.csv",
+            "profile.work.note.toml",
+            "profile.work.note.yaml",
+            "profile.work.note.yml",
+        )
+    ]
+
+
+def test_empty_kind_overrides_config_logs_that_there_are_no_candidates(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    plan = _plan(
+        {
+            "config": {"kind_overrides_config": []},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+    _values(plan)
+    messages = [record.message for record in caplog.records if record.levelno == logging.DEBUG]
+    assert messages == ["No kind_overrides_config for kind note"]
 
 
 def test_kind_file_load_is_logged_once(

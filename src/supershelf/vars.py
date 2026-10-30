@@ -17,6 +17,7 @@ from supershelf.constants import (
     ALIAS_NAMES,
     CONFIG_SECTION,
     DATE_TEXT,
+    DEFAULT_KIND_OVERRIDES_TEMPLATES,
     INTERNAL_NAMES,
     KEY_DEFAULT_VARS,
     KEY_KIND_OVERRIDES,
@@ -174,12 +175,14 @@ class KindFiles:
     ) -> KindFiles:
         """Check the path list. Files are read later, when a kind is used."""
         raw = section.get(KEY_KIND_OVERRIDES)
-        if raw is None or raw == []:
+        if raw is None:
+            return cls(DEFAULT_KIND_OVERRIDES_TEMPLATES, environment, root_dir, profile_scope)
+        if raw == []:
             return cls((), environment, root_dir, profile_scope)
         if not isinstance(raw, list) or not all(isinstance(item, str) and item.strip() for item in raw):
             raise VarConfigError(
                 "config.kind_overrides_config must be a list of path templates",
-                advice="Omit it, or list strings such as {{ __root_dir__ }}/{{ __kind__ }}.csv.",
+                advice="Omit it to use the default profile paths, use [], or list path templates.",
             )
         return cls(tuple(raw), environment, root_dir, profile_scope)
 
@@ -191,6 +194,10 @@ class KindFiles:
         search = (kind, str(input_dir))
         first = search not in self._searches
         self._searches.add(search)
+        if not self._templates:
+            if first:
+                self._logger.debug("No kind_overrides_config for kind %s", kind)
+            return VarTable.empty()
         for template in self._templates:
             path = self._render_path(template, scope)
             if not path.exists():
