@@ -9,4 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
+# Zensical build output
+docs/site/
+docs/.cache/
+
 examples/**
