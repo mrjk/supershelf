@@ -116,7 +116,6 @@ def test_file_fields_and_metadata(tmp_path: Path) -> None:
 
     assert found.path == "sub/b.jpg"
     assert found.directory == "sub"
-    assert found.parent == "sub"
     assert found.stem == "b"
     assert found.suffix == ".jpg"
     assert found.absolute == inbox.resolve() / "sub" / "b.jpg"

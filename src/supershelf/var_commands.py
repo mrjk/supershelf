@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from pypdf import PdfReader
+from pypdf.errors import PyPdfError
 
 from supershelf.constants import DATE_TEXT
 from supershelf.errors import VarCandidateError
@@ -114,7 +115,7 @@ class BuiltinCommands:
     def _read_pdf(self, path: Path) -> _PdfDates:
         try:
             meta = PdfReader(str(path)).metadata
-        except Exception:
+        except (OSError, PyPdfError):
             return (None, None)
         if meta is None:
             return (None, None)

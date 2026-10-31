@@ -17,7 +17,7 @@ from pydantic import (
     model_validator,
 )
 
-from supershelf.constants import KEY_MATCH_RULES, LOGGER_NAME
+from supershelf.constants import KEY_MATCH_RULES, KEY_RULE_VARS, LOGGER_NAME
 from supershelf.errors import SupershelfError
 from supershelf.scan import InputFile, InputScanResult
 
@@ -134,7 +134,9 @@ class _CompiledField:
 
     def pattern_text(self, pattern: re.Pattern[str] | str) -> str:
         """The pattern as the user wrote it."""
-        raise NotImplementedError
+        if isinstance(pattern, re.Pattern):
+            return pattern.pattern
+        return pattern
 
     def match_one(
         self,
@@ -148,11 +150,6 @@ class _CompiledField:
 @dataclass(frozen=True)
 class _RegexField(_CompiledField):
     patterns: tuple[re.Pattern[str], ...]
-
-    def pattern_text(self, pattern: re.Pattern[str] | str) -> str:
-        if isinstance(pattern, re.Pattern):
-            return pattern.pattern
-        return pattern
 
     def match_one(
         self,
@@ -175,11 +172,6 @@ class _RegexField(_CompiledField):
 class _GlobField(_CompiledField):
     patterns: tuple[str, ...]
 
-    def pattern_text(self, pattern: re.Pattern[str] | str) -> str:
-        if isinstance(pattern, str):
-            return pattern
-        return pattern.pattern
-
     def match_one(
         self,
         pattern: re.Pattern[str] | str,
@@ -197,6 +189,7 @@ class _Rule:
     name: str
     kind: str
     fields: tuple[_CompiledField, ...]
+    variables: object
 
     def claim(self, file: InputFile) -> tuple[str, dict[str, str]] | None:
         """Kind and groups when one field matches. Later fields are not tried."""
@@ -378,11 +371,17 @@ class Matcher:
                     f"Profile {profile_name} has duplicate match rule {rule_name!r}"
                 )
             seen.add(rule_name)
-            rules.append(cls._compile_rule(profile_name, spec))
+            variables = item.get(KEY_RULE_VARS) if isinstance(item, dict) else None
+            rules.append(cls._compile_rule(profile_name, spec, variables))
         return cls(profile_name, tuple(rules))
 
     @classmethod
-    def _compile_rule(cls, profile_name: str, spec: MatchRuleSpec) -> _Rule:
+    def _compile_rule(
+        cls,
+        profile_name: str,
+        spec: MatchRuleSpec,
+        variables: object,
+    ) -> _Rule:
         rule_name, rule_kind = spec.labels()
         fields: list[_CompiledField] = []
         for field_name, attr, source, is_regex in _FIELDS:
@@ -402,7 +401,7 @@ class Matcher:
                 )
             else:
                 fields.append(_GlobField(field_name, source, tuple(raw_patterns)))
-        return _Rule(rule_name, rule_kind, tuple(fields))
+        return _Rule(rule_name, rule_kind, tuple(fields), variables)
 
     @staticmethod
     def _compile_regex(
@@ -434,6 +433,10 @@ class Matcher:
                         seen.add(name)
                         names.append(name)
         return tuple(names)
+
+    def rule_vars(self) -> tuple[tuple[str, object], ...]:
+        """Raw vars for each compiled rule, in rule order."""
+        return tuple((rule.name, rule.variables) for rule in self._rules)
 
     def claim(self, file: InputFile) -> FileMatch | None:
         """Return the first matching rule, or None."""

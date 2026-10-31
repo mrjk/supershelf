@@ -156,8 +156,8 @@ def test_file_stem_in_the_date_format_is_the_document_date(tmp_path: Path) -> No
     )
     dated = _values(
         plan,
-        file=_file("beta/fizz/2025-07-18.pdf"),
-        match=_match("beta/fizz/2025-07-18.pdf"),
+        file=_file("bank2000/phone/2025-07-18.pdf"),
+        match=_match("bank2000/phone/2025-07-18.pdf"),
     )
     assert dated["__date__"] == "2025-07-18"
     names = list(dated)
@@ -679,7 +679,7 @@ def test_duplicate_kind_path_keeps_the_first_row(
 def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text(
-        "path;amount\nbeta/fizz/2025-07-18.pdf;427,59\n",
+        "path;amount\nbank2000/phone/2025-07-18.pdf;427,59\n",
         encoding="utf-8",
     )
     plan = _plan(
@@ -696,7 +696,7 @@ def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None
 def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text(
-        "PATH;amount\nbeta/fizz/2025-07-18.pdf;427,59\n",
+        "PATH;amount\nbank2000/phone/2025-07-18.pdf;427,59\n",
         encoding="utf-8",
     )
     plan = _plan(
@@ -705,8 +705,8 @@ def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:
     )
     values = _values(
         plan,
-        file=_file("beta/fizz/2025-07-18.pdf"),
-        match=_match("beta/fizz/2025-07-18.pdf"),
+        file=_file("bank2000/phone/2025-07-18.pdf"),
+        match=_match("bank2000/phone/2025-07-18.pdf"),
     )
     assert values["amount"] == "427,59"
 

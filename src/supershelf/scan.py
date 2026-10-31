@@ -85,10 +85,6 @@ class InputFile:
     ctime: str | None = None
     sha256: str | None = None
 
-    @property
-    def parent(self) -> str:
-        return self.directory
-
     @classmethod
     def from_relative(cls, relative: str, absolute: Path) -> InputFile:
         pure = PurePosixPath(relative)

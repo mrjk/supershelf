@@ -506,6 +506,22 @@ def test_scan_vars_manual_flag_does_not_append(
     assert "a.txt" in kind_file.read_text(encoding="utf-8")
 
 
+def test_scan_vars_rejects_a_bad_kind_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    app = App(parse=False)
+
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "vars", "--kind-overrides-mode", "nope"])
+
+    assert caught.value.code == 2
+    error = capsys.readouterr().err
+    assert "--kind-overrides-mode must be auto, manual, always, or disabled" in error
+
+
 def test_scan_vars_dry_run_does_not_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

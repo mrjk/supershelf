@@ -38,7 +38,6 @@ from supershelf.constants import (
     KIND_MODE_DISABLED,
     KIND_OVERRIDE_MODES,
     LOGGER_NAME,
-    KEY_MATCH_RULES,
     KEY_OVERRIDE_PATH,
     KEY_OVERRIDES,
     KEY_RULE_VARS,
@@ -62,7 +61,7 @@ from supershelf.constants import (
     VAR_RULE_NAME,
 )
 from supershelf.errors import SupershelfError, VarCandidateError, VarConfigError, VarResolveError
-from supershelf.match import FileMatch, MatchRuleSpec, Matcher
+from supershelf.match import FileMatch, Matcher
 from supershelf.scan import InputFile
 from supershelf.template import Template
 from supershelf.var_commands import FileBinding
@@ -186,6 +185,11 @@ class KindOverrideMode:
                 "config.kind_overrides_mode",
             )
         return KIND_MODE_AUTO
+
+    @staticmethod
+    def check(value: object, label: str) -> str:
+        """Validate one mode word. `resolve` uses the same check."""
+        return KindOverrideMode._one(value, label)
 
     @staticmethod
     def _one(value: object, label: str) -> str:
@@ -383,10 +387,16 @@ class KindTable:
 
     def _write_new(self) -> None:
         self._require_parent()
-        self.path.write_text(self._fresh_text(), encoding="utf-8")
+        self.path.write_text(
+            self._rendered(self._FRESH_COLUMNS, header=True),
+            encoding="utf-8",
+        )
 
     def _append(self) -> None:
-        block = self._append_block().encode("utf-8")
+        block = self._rendered(
+            self.columns or self._FRESH_COLUMNS,
+            header=False,
+        ).encode("utf-8")
         raw = self.path.read_bytes()
         prefix = b"\n" if raw and not raw.endswith(b"\n") else b""
         with self.path.open("ab") as handle:
@@ -404,16 +414,9 @@ class KindTable:
                 break
         parent.mkdir(parents=True, exist_ok=True)
 
-    def _fresh_text(self) -> str:
+    def _rendered(self, columns: tuple[str, ...], *, header: bool) -> str:
         if self.suffix == ".csv":
-            return self._csv_text(self._FRESH_COLUMNS)
-        if self.suffix == ".toml":
-            return self._toml_text()
-        return self._yaml_text()
-
-    def _append_block(self) -> str:
-        if self.suffix == ".csv":
-            return self._csv_text(self.columns or self._FRESH_COLUMNS, header=False)
+            return self._csv_text(columns, header=header)
         if self.suffix == ".toml":
             return self._toml_text()
         return self._yaml_text()
@@ -908,7 +911,7 @@ class VarPlan:
             allows_kind=False,
             environment=environment,
         )
-        rules = cls._rule_tables(document, profile_name, environment)
+        rules = cls._rule_tables(matcher, environment)
         overrides = cls._override_tables(document, environment)
         kinds = KindFiles.from_section(
             section,
@@ -1123,30 +1126,18 @@ class VarPlan:
     @classmethod
     def _rule_tables(
         cls,
-        document: Mapping[str, Any],
-        profile_name: str,
+        matcher: Matcher,
         environment: VarEnvironment,
     ) -> dict[str, VarTable]:
-        raw = document.get(KEY_MATCH_RULES)
-        if raw is None:
-            return {}
-        if not isinstance(raw, list):
-            raise VarConfigError(
-                f"Profile {profile_name} match_rules must be a list",
-                advice="Write match_rules as a list of rules.",
-            )
-        tables: dict[str, VarTable] = {}
-        for index, item in enumerate(raw, start=1):
-            spec = MatchRuleSpec.from_item(profile_name, index, item)
-            name = spec.labels()[0]
-            raw_vars = item.get(KEY_RULE_VARS) if isinstance(item, dict) else None
-            tables[name] = VarTable.parse(
-                raw_vars,
+        return {
+            name: VarTable.parse(
+                raw,
                 label=f"match rule {name} vars",
                 allows_kind=False,
                 environment=environment,
             )
-        return tables
+            for name, raw in matcher.rule_vars()
+        }
 
     @classmethod
     def _override_tables(

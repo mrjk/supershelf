@@ -1,10 +1,11 @@
 """Supershelf command line."""
 
+from __future__ import annotations
+
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
-from supershelf.constants import KIND_OVERRIDE_MODES, LOGGER_NAME
-from supershelf.errors import SupershelfError
+from supershelf.constants import LOGGER_NAME
 from supershelf.match import (
     DETAIL_NO_PATTERNS,
     STATUS_HIT,
@@ -17,7 +18,7 @@ from supershelf.match import (
 )
 from supershelf.profile import ShelfProfile
 from supershelf.scan import InputFile, filter_kept
-from supershelf.vars import VarPlan
+from supershelf.vars import KindOverrideMode, VarPlan
 
 
 def kept_path() -> Argument:
@@ -52,6 +53,27 @@ class GlobalFlags:
     )
 
 
+class ShelfRuns:
+    """Profiles loaded for one scan command."""
+
+    def __init__(self, shelves: list[ShelfProfile]) -> None:
+        self.shelves = shelves
+
+    @classmethod
+    def load(cls, config: str | None, profile: str | None) -> ShelfRuns:
+        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        return cls([ShelfProfile.from_config(item) for item in loaded.config_list])
+
+    def scans(self, *, quick: bool, path: str | None):
+        return filter_kept([shelf.scan(quick=quick) for shelf in self.shelves], path)
+
+    def matched(self) -> list[tuple[ShelfProfile, Matcher]]:
+        return [
+            (shelf, Matcher.from_document(shelf.document, shelf.name))
+            for shelf in self.shelves
+        ]
+
+
 class ProfilesCommand(ListViewMixin, Parser):
     """List profile names and config paths."""
 
@@ -78,15 +100,10 @@ class ScanFilesCommand(ListViewMixin, Parser):
     )
 
     def cli_run(self, config=None, profile=None, path=None, quick=False, **_):
-        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
-        shelves = []
-        groups = []
-        for item in loaded.config_list:
-            shelf = ShelfProfile.from_config(item)
-            shelves.append(shelf)
-            groups.append(shelf.scan(quick=bool(quick)))
+        runs = ShelfRuns.load(config, profile)
         rows = []
-        for shelf, scans in zip(shelves, filter_kept(groups, path), strict=True):
+        groups = runs.scans(quick=bool(quick), path=path)
+        for shelf, scans in zip(runs.shelves, groups, strict=True):
             for result in scans:
                 for found in result.results:
                     row = {
@@ -108,17 +125,9 @@ class ScanKindsCommand(ListViewMixin, Parser):
     path = kept_path()
 
     def cli_run(self, config=None, profile=None, path=None, **_):
-        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
-        prepared = []
-        for item in loaded.config_list:
-            shelf = ShelfProfile.from_config(item)
-            prepared.append(
-                (shelf, Matcher.from_document(shelf.document, shelf.name))
-            )
-        groups = filter_kept(
-            [shelf.scan(quick=True) for shelf, _matcher in prepared],
-            path,
-        )
+        runs = ShelfRuns.load(config, profile)
+        prepared = runs.matched()
+        groups = runs.scans(quick=True, path=path)
         rows = []
         for (_shelf, matcher), scans in zip(prepared, groups, strict=True):
             for result in scans:
@@ -153,16 +162,11 @@ class ScanVarsCommand(ListViewMixin, Parser):
         kind_overrides_mode=None,
         **_,
     ):
-        if kind_overrides_mode is not None and kind_overrides_mode not in KIND_OVERRIDE_MODES:
-            raise SupershelfError(
-                "--kind-overrides-mode must be auto, manual, always, or disabled",
-                advice="Use one of those four words, in lower case.",
-            )
-        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        if kind_overrides_mode is not None:
+            KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
+        runs = ShelfRuns.load(config, profile)
         prepared = []
-        for item in loaded.config_list:
-            shelf = ShelfProfile.from_config(item)
-            matcher = Matcher.from_document(shelf.document, shelf.name)
+        for shelf, matcher in runs.matched():
             prepared.append(
                 (
                     shelf,
@@ -178,10 +182,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
                     ),
                 )
             )
-        groups = filter_kept(
-            [shelf.scan(quick=False) for shelf, _matcher, _plan in prepared],
-            path,
-        )
+        groups = runs.scans(quick=False, path=path)
         rows = []
         for (_shelf, matcher, plan), scans in zip(prepared, groups, strict=True):
             for result in scans:
@@ -215,15 +216,9 @@ class ScanInspectCommand(Parser):
     path = kept_path()
 
     def cli_run(self, config=None, profile=None, path=None, verbosity=0, **_):
-        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
-        prepared = []
-        for item in loaded.config_list:
-            shelf = ShelfProfile.from_config(item)
-            prepared.append((shelf, Matcher.from_document(shelf.document, shelf.name)))
-        groups = filter_kept(
-            [shelf.scan(quick=True) for shelf, _matcher in prepared],
-            path,
-        )
+        runs = ShelfRuns.load(config, profile)
+        prepared = runs.matched()
+        groups = runs.scans(quick=True, path=path)
         level = int(verbosity or 0)
         named = path is not None
         for (_shelf, matcher), scans in zip(prepared, groups, strict=True):
@@ -295,29 +290,23 @@ class ScanInspectCommand(Parser):
 
     def _show_trial(self, verbosity: int, prefix: str, trial: PatternTrial) -> None:
         if trial.status in (STATUS_HIT, STATUS_MISS):
-            self._print(
-                f"{prefix} rule {trial.rule} {trial.field} {trial.pattern!r} "
-                f"against {trial.candidate!r}: {trial.status}"
-            )
+            self._print(self._trial_line(prefix, trial))
             return
         if trial.status == STATUS_SKIPPED and verbosity >= 1:
-            self._show_skipped(prefix, trial)
+            self._print(self._trial_line(prefix, trial))
             return
         if trial.status == STATUS_NOT_TRIED and verbosity >= 2:
-            self._print(
-                f"{prefix} rule {trial.rule} {trial.field} {trial.pattern!r} "
-                f"against {trial.candidate!r}: not tried"
-            )
+            self._print(self._trial_line(prefix, trial))
 
-    def _show_skipped(self, prefix: str, trial: PatternTrial) -> None:
+    def _trial_line(self, prefix: str, trial: PatternTrial) -> str:
         if trial.detail == DETAIL_NO_PATTERNS:
-            self._print(
-                f"{prefix} rule {trial.rule} {trial.field}: skipped, {trial.detail}"
-            )
-            return
-        self._print(
+            return f"{prefix} rule {trial.rule} {trial.field}: skipped, {trial.detail}"
+        tail = trial.status
+        if trial.status == STATUS_SKIPPED:
+            tail = f"skipped, {trial.detail}"
+        return (
             f"{prefix} rule {trial.rule} {trial.field} {trial.pattern!r} "
-            f"against {trial.candidate!r}: skipped, {trial.detail}"
+            f"against {trial.candidate!r}: {tail}"
         )
 
     @staticmethod
