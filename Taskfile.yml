@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+dotenv: [".env"]
+
+includes:
+  docs:
+    taskfile: ./docs/Taskfile.yml
+    dir: ./docs
+    internal: true
+
+tasks:
+  list:
+    desc: List available tasks
+    aliases: [default]
+    silent: true
+    cmds:
+      - task --list
+
+  docs:
+    desc: Serve the documentation site
+    cmds:
+      - task: docs:serve

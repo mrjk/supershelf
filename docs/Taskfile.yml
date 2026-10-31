@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+# Included taskfiles cannot declare dotenv. ROOT_DIR is the repo root when
+# this file is included, and docs/ when it is the entrypoint.
+vars:
+  PY: '{{.PY | default "uv run --group docs"}}'
+  DOCS_DEV_ADDR:
+    sh: |
+      envfile="{{.ROOT_DIR}}/.env"
+      if [ ! -f "$envfile" ]; then envfile="{{.ROOT_DIR}}/../.env"; fi
+      . "$envfile"
+      printf "%s" "${DOCS_DEV_ADDR:-127.0.0.1:8089}"
+  GITHUB_OWNER:
+    sh: |
+      envfile="{{.ROOT_DIR}}/.env"
+      if [ ! -f "$envfile" ]; then envfile="{{.ROOT_DIR}}/../.env"; fi
+      . "$envfile"
+      printf "%s" "${GITHUB_OWNER:-}"
+
+tasks:
+  list:
+    desc: List documentation tasks
+    aliases: [default]
+    silent: true
+    cmds:
+      - task --list
+
+  serve:
+    desc: Preview the documentation site
+    cmds:
+      - "{{.PY}} zensical serve -f mkdocs.yml --dev-addr {{.DOCS_DEV_ADDR}}"
+
+  build:
+    desc: Build the static site into site/
+    cmds:
+      - "{{.PY}} zensical build -f mkdocs.yml"
+
+  release:
+    desc: Build the site and publish it to gh-pages
+    cmds:
+      - |
+        if [ -z "{{.GITHUB_OWNER}}" ]; then
+          echo "Set GITHUB_OWNER in .env before release." >&2
+          exit 1
+        fi
+      - task: build
+      - "{{.PY}} ghp-import -n -p -f site"
