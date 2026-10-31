@@ -1,53 +1,45 @@
-# Share variables for a kind
+# Set a value in the kind file
 
-A kind file is one variable table for a kind. Every matched file of that kind receives the same table. It is applied after `default_vars` and before the winning rule's `vars`. The lookup rules are in [Kind files](../concepts/kind-files.md). The file shape is in [Kind file](../reference/kind-file.md).
+A kind file stores one row for a path. `scan vars` applies that row after the winning rule's `vars` and before `overrides`. The cell replaces the value the rule stored. The lookup and the modes are in [Kind files](../concepts/kind-files.md). The file shape is in [Kind file](../reference/kind-file.md).
 
-The default path list looks for these files, in order, and uses the first one that exists:
+For profile `books` and kind `invoice`, the first default path is `profile.books.invoice.csv` under the profile root.
 
-```text
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml
-```
-
-For profile `books` and kind `invoice`, the first candidate is `profile.books.invoice.csv` under the profile root. Supershelf does not create that file. If none of the candidates exist, the kind layer is empty.
-
-## CSV
-
-A CSV kind file has the header `name,value`. A repeated name is the next candidate.
-
-```csv title="profile.books.invoice.csv"
-name,value
-vendor,Bank2000
-owner,{{ missing }}
-owner,sample
-```
-
-`owner` tries `{{ missing }}` first. That name is not defined, so the candidate fails and `sample` is kept. `vendor` is the literal `Bank2000`.
-
-## TOML and YAML
-
-TOML and YAML use the same mapping shape as `default_vars`. `.yml` is the same text as YAML.
+Set the separator and the date format, then add a row for one statement:
 
 === "TOML"
 
-    ```toml title="profile.books.invoice.toml"
-    vendor = "Bank2000"
-    owner = ["{{ missing }}", "sample"]
+    ```toml title="profile.books.toml"
+    [config]
+    kind_overrides_sep = ";"
+    kind_overrides_date_format = "%d/%m/%Y"
     ```
 
 === "YAML"
 
-    ```yaml title="profile.books.invoice.yaml"
-    vendor: Bank2000
-    owner:
-      - "{{ missing }}"
-      - sample
+    ```yaml title="profile.books.yaml"
+    config:
+      kind_overrides_sep: ";"
+      kind_overrides_date_format: "%d/%m/%Y"
     ```
 
-The kind in the path is the kind from the match rule. An override that later changes `__kind__` does not switch files.
+```csv title="profile.books.invoice.csv"
+PATH;__date__;vendor;owner
+banking_1/REL_20260425.pdf;25/04/2026;Bank2000;
+Bank2000/card/CARD_1234_20211231.pdf;15/01/2026;;sample
+```
 
-`-vv` logs each candidate path the first time a kind and input are searched, and logs which file was loaded. `-v` does not add those lines.
+`vendor` on the first row replaces the rule's vendor for that path only. The empty `owner` cell leaves the earlier owner in place. The text is stored as written. `{{ owner }}` would be those characters, not a template.
+
+`25/04/2026` is parsed with `kind_overrides_date_format` and stored as `2026-04-25`. A cell that does not match that format stops the command. A blank `__date__` cell leaves the earlier date in place.
+
+```bash
+supershelf scan vars
+```
+
+The default mode is `auto`. When the CSV already exists, invoice paths that are not in the file are appended. The new cells are empty, so this run still prints the values from the rule. Fill a cell and run the command again to use it.
+
+`manual` reads the file and does not append. `always` creates `profile.books.invoice.csv` when no candidate exists. `disabled` ignores kind files. `--kind-overrides-mode` sets the mode for this command. `--dry-run` reads and does not write. `-v` shows the dry-run message when a file would change.
+
+The kind in the filename is the kind from the match rule. An override that changes `__kind__` does not switch files.
 
 The next page loads more than one profile: [Use several profiles](use-several-profiles.md).

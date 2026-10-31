@@ -8,7 +8,7 @@ The walk is the full walk. mtime, ctime, and sha256 are required. There is no `-
 
 Unmatched files log the same warning as `scan kinds`, once per file. They add no row.
 
-The command does not create the database file, the cache file, or an output tree. It reads a kind file when one exists. It does not create or append kind files.
+The command does not create the database file, the cache file, or an output tree. It may read, create, or append a kind file. See [Kind files](kind-files.md).
 
 ## Facts and assignments
 
@@ -37,23 +37,23 @@ Named groups from the winning regex are facts, printed after the aliases, in the
 Assignments are the user layers. Later wins on the same key. Each layer is applied before the next one starts.
 
 1. `default_vars`
-2. The kind file for the rule kind. See [Kind files](kind-files.md).
-3. `match_rules` `vars` for the winning rule.
+2. `match_rules` `vars` for the winning rule.
+3. The kind-file row for that path. See [Kind files](kind-files.md).
 4. The first matching `overrides` item. This is the highest layer, and the only layer that may set `__kind__`.
 
-`default_vars`, the kind file, and rule `vars` must not set an internal name, `file_ctime`, or `file_mtime`. Only overrides may set `__kind__`. That changes the printed kind and the `__kind__` fact seen by later override templates. It does not change `rule`, and it does not load another kind file. Overrides must not set the other internal names, `file_ctime`, or `file_mtime`.
+`default_vars` and rule `vars` must not set an internal name, `file_ctime`, or `file_mtime`. A kind-file row must not either. Only overrides may set `__kind__`. That changes the printed kind and the `__kind__` fact seen by later override templates. It does not change `rule`, and it does not load another kind file. Overrides must not set the other internal names, `file_ctime`, or `file_mtime`.
 
-`__date__` is not an internal. Any of these layers may set it.
+`__date__` is not an internal. Any of these layers may set it. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
 
-Omitted `default_vars`, omitted rule `vars`, or a missing kind file means that layer is empty.
+Omitted `default_vars`, omitted rule `vars`, or no kind-file cells for that path means that layer is empty.
 
-A new key is appended. A key that already exists is rendered again and keeps its first position. The printed row uses the final string. Inside the cell, the lines are internals, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in first-seen order.
+A new key is appended. A key that already exists keeps its first position. The printed row uses the final string. The kind-file row is applied after the rule template has stored its string, so the rule does not read the cell. A later override template does. Inside the cell, the lines are internals, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in first-seen order.
 
 ## Candidates
 
-A var table is a mapping. Each key matches `[A-Za-z_][A-Za-z0-9_]*`. Each value is a string, or a list of strings. A string is one candidate. A list is an ordered fallback. An empty list stops the command. Numbers, booleans, nulls, dates, and nested mappings stop the command. Quote scalars such as `2026-04-25`.
+A var table is a mapping. This section is `default_vars`, rule `vars`, and `overrides`. A kind-file cell is one string, stored as text. Each key matches `[A-Za-z_][A-Za-z0-9_]*`. Each value is a string, or a list of strings. A string is one candidate. A list is an ordered fallback. An empty list stops the command. Numbers, booleans, nulls, dates, and nested mappings stop the command. Quote scalars such as `2026-04-25`.
 
-A candidate with no `{{`, `{%`, or `{#` is a literal string. It is not compiled. Any other candidate is a Jinja template. Each distinct template source is compiled once per process. Rendered results are not cached. A syntax error stops the command when that template is loaded. Shape errors in `default_vars`, rule `vars`, and `overrides` are checked before the walk. A kind file is checked the first time that kind and input need it.
+A candidate with no `{{`, `{%`, or `{#` is a literal string. It is not compiled. Any other candidate is a Jinja template. Each distinct template source is compiled once per process. Rendered results are not cached. A syntax error stops the command when that template is loaded. Shape errors in `default_vars`, rule `vars`, and `overrides` are checked before the walk. A kind file is checked the first time that kind and input need it. `kind_overrides_sep` and `kind_overrides_date_format` are checked before the walk.
 
 Jinja uses strict undefined names. `autoescape` is off. An unknown name fails that candidate. The first candidate that does not fail is kept. The stored value is that string. The list is not kept. Inserted strings are not rendered again.
 

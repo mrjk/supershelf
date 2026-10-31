@@ -30,9 +30,9 @@ Named regex groups are printed after these, in pattern order. A group name that 
 
 | Name | Who may set it | Value |
 | --- | --- | --- |
-| `__date__` | `default_vars`, kind file, rule `vars`, `overrides` | `YYYY-MM-DD`, or omitted when every candidate fails. |
+| `__date__` | `default_vars`, rule `vars`, kind file, `overrides` | Stored as `YYYY-MM-DD`. |
 
-`__date__` is not an internal. An empty string does not count as success for this name.
+`__date__` is not an internal. In `default_vars`, rule `vars`, and `overrides`, an empty string does not count as success, and a failed candidate list omits the name. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
 
 ## Profile scope
 
@@ -63,7 +63,7 @@ Kind-file path templates also see:
 
 ## Who may assign a name
 
-| Name | `default_vars` | Kind file | Rule `vars` | `overrides` |
+| Name | `default_vars` | Rule `vars` | Kind file | `overrides` |
 | --- | --- | --- | --- | --- |
 | `__kind__` | no | no | no | yes |
 | other internals, `file_ctime`, `file_mtime` | no | no | no | no |

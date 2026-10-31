@@ -33,4 +33,4 @@ This is the only layer that may set `__kind__`. The printed kind becomes `card_s
 
 An item that matches nothing is fine. An item needs both `path` and `vars`. An empty `vars` mapping changes nothing.
 
-The next page sets values for every file of one kind: [Share variables for a kind](share-variables-for-a-kind.md).
+The next page stores one path in a kind file: [Set a value in the kind file](share-variables-for-a-kind.md).

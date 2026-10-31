@@ -8,7 +8,7 @@ flowchart LR
   walk --> match[First matching rule]
   match --> facts[File facts]
   facts --> defaults[default_vars]
-  defaults --> kindFile[Kind file]
-  kindFile --> ruleVars[Rule vars]
-  ruleVars --> overrides[First override]
+  defaults --> ruleVars[Rule vars]
+  ruleVars --> kindFile[Kind file row]
+  kindFile --> overrides[First override]
 ```

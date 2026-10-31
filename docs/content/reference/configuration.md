@@ -23,7 +23,10 @@ These keys live under `config`.
 | `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. Rendered, not created. |
 | `cache_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` | Path template. Rendered, not created. |
 | `var_modules` | list of strings | none | Importable modules. See [Modules](../concepts/modules.md). |
-| `kind_overrides_config` | list of strings | the four default kind paths | Path templates. First existing file wins. `[]` disables kind files. See [Kind files](../concepts/kind-files.md). |
+| `kind_overrides_mode` | string | `auto` | `auto`, `manual`, `always`, or `disabled`. See [Kind files](../concepts/kind-files.md). |
+| `kind_overrides_date_format` | string | `default_date_format` | `strptime` format for a kind-file `__date__` cell. |
+| `kind_overrides_sep` | one character | `,` | CSV separator. YAML and TOML ignore it. See [Kind file](kind-file.md). |
+| `kind_overrides_config` | list of strings | the four default kind paths | Path templates. First existing file wins. `[]` means no kind files. See [Kind files](../concepts/kind-files.md). |
 
 Other keys under `config` are stored. This version does not interpret them.
 
@@ -75,7 +78,7 @@ Unknown keys on an override item are ignored. `path` and `vars` are required.
 
 ### Variable values
 
-In `default_vars`, rule `vars`, override `vars`, and kind files, each value is a string or a list of strings. Quote scalars such as dates. An empty list stops the command. Details are in [Variables](../concepts/variables.md).
+In `default_vars`, rule `vars`, and override `vars`, each value is a string or a list of strings. Quote scalars such as dates. An empty list stops the command. A kind-file cell is one string, not a list. Details are in [Variables](../concepts/variables.md) and [Kind file](kind-file.md).
 
 ## Environment
 
@@ -83,5 +86,6 @@ In `default_vars`, rule `vars`, override `vars`, and kind files, each value is a
 | --- | --- | --- |
 | `SUPERSHELF_CONFIG` | `--config` wins | File or directory, same rules as `--config`. |
 | `SUPERSHELF_PROFILES` | `--profile` wins | Comma-separated profile names. |
+| `SUPERSHELF_KIND_OVERRIDES_MODE` | `--kind-overrides-mode` wins | `auto`, `manual`, `always`, or `disabled`. Wins over `config.kind_overrides_mode`. |
 
 <!-- placeholder: config schema -->

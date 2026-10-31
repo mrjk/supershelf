@@ -2,7 +2,7 @@
 
 Every command accepts `--config`, `--profile`, and `--dry-run`, plus the log flags from the CLI library. The listings below are the program's own help text.
 
-`--config` selects the config file or directory and overrides `SUPERSHELF_CONFIG`. `--profile` is a comma-separated list of profile names and overrides `SUPERSHELF_PROFILES`. `--dry-run` is accepted. Current scan commands only print, so it does not change their result. See [Limits](../concepts/limits.md).
+`--config` selects the config file or directory and overrides `SUPERSHELF_CONFIG`. `--profile` is a comma-separated list of profile names and overrides `SUPERSHELF_PROFILES`. `--dry-run` on `scan vars` reads kind files and does not create or append. The other scan commands only print. See [Limits](../concepts/limits.md).
 
 ## supershelf
 

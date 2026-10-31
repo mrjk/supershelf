@@ -20,7 +20,7 @@ Used by `config.root_dir`, `config.database_file`, `config.cache_file`, `inputs.
 
 ## Variable templates
 
-Used by `default_vars`, rule `vars`, override `vars`, and kind-file values.
+Used by `default_vars`, rule `vars`, and override `vars`. A kind-file cell is one literal string. It is not compiled, even when it contains `{{`.
 
 A string with no `{{`, `{%`, or `{#` is a literal. It is stored as written.
 

@@ -18,6 +18,11 @@ tasks:
     cmds:
       - task --list
 
+  test:
+    desc: Run the tests
+    cmds:
+      - uv run pytest
+
   docs:
     desc: Serve the documentation site
     cmds:
