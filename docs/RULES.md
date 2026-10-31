@@ -67,6 +67,8 @@
                     - how to build, release, debug (with tasks)
                     - license, code of conduct
                     - informations, project history
+    * docs/PERFECT_CONFIG.yml is the use-case catalog. It plays the role of a USECASES document: config a user would write. Keep the file name.
+    * docs/ARCHITECTURE.md is behind the scenes: models, pipelines, cast rules, and edge cases. It is a different file from docs/content/reference/architecture.md.
     
 
 * Container/OCI:
