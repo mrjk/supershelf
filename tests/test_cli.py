@@ -19,6 +19,7 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SUPERSHELF_CONFIG", raising=False)
     monkeypatch.delenv("SUPERSHELF_PROFILES", raising=False)
+    monkeypatch.delenv("SUPERSHELF_KIND_OVERRIDES_MODE", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
 
@@ -342,7 +343,7 @@ def test_scan_vars_logs_a_kind_file_at_vv(
     inbox.mkdir()
     (inbox / "a.txt").write_bytes(b"hello")
     kind_file = tmp_path / "note.csv"
-    kind_file.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    kind_file.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
     _write(
         tmp_path / "profile.work.toml",
         "[config]\nprofile = 'work'\n"
@@ -360,6 +361,60 @@ def test_scan_vars_logs_a_kind_file_at_vv(
     app.dispatch(["-vv", "scan", "vars"])
     verbose = capsys.readouterr()
     assert f"Loaded kind file {kind_file.resolve()} for kind note" in verbose.err
+
+
+def test_scan_vars_manual_flag_does_not_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    kind_file = tmp_path / "note.csv"
+    kind_file.write_text("PATH\n", encoding="utf-8")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n"
+        "kind_overrides_config = ['{{ __root_dir__ }}/note.csv']\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "--kind-overrides-mode", "manual"])
+    capsys.readouterr()
+    assert kind_file.read_text(encoding="utf-8") == "PATH\n"
+
+    app.dispatch(["scan", "vars"])
+    assert "a.txt" in kind_file.read_text(encoding="utf-8")
+
+
+def test_scan_vars_dry_run_does_not_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    kind_file = tmp_path / "note.csv"
+    kind_file.write_text("PATH\n", encoding="utf-8")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n"
+        "kind_overrides_config = ['{{ __root_dir__ }}/note.csv']\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["-v", "--dry-run", "scan", "vars"])
+    captured = capsys.readouterr()
+    assert kind_file.read_text(encoding="utf-8") == "PATH\n"
+    assert f"Would append 1 rows to kind file {kind_file.resolve()}" in captured.err
 
 
 def test_scan_kinds_rejects_a_bad_regex_before_walking(

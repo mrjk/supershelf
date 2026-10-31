@@ -33,12 +33,25 @@ def _plan(
     document: dict[str, object],
     root: Path,
     scope: dict[str, object] | None = None,
+    *,
+    mode: str | None = None,
+    dry_run: bool = False,
+    environ: dict[str, str] | None = None,
 ) -> VarPlan:
     matcher = Matcher.from_document(document, "work")
     full: dict[str, object] = {"__root_dir__": str(root), "__profile__": "work"}
     if scope:
         full.update(scope)
-    return VarPlan.from_document(document, "work", matcher, root, full)
+    return VarPlan.from_document(
+        document,
+        "work",
+        matcher,
+        root,
+        full,
+        mode=mode,
+        dry_run=dry_run,
+        environ={} if environ is None else environ,
+    )
 
 
 def _values(plan: VarPlan, **kwargs: object) -> dict[str, str]:
@@ -135,6 +148,66 @@ def test_reserved_group_name_is_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_file_stem_in_the_date_format_is_the_document_date(tmp_path: Path) -> None:
+    plan = _plan(
+        {"match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}]},
+        tmp_path,
+        {"__default_date_format__": "%Y-%m-%d"},
+    )
+    dated = _values(
+        plan,
+        file=_file("beta/fizz/2025-07-18.pdf"),
+        match=_match("beta/fizz/2025-07-18.pdf"),
+    )
+    assert dated["__date__"] == "2025-07-18"
+    names = list(dated)
+    assert names.index("file_mtime") < names.index("__date__")
+    assert "__date__" not in _values(plan)
+
+
+def test_assignment_replaces_the_stem_date(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "default_vars": {"__date__": "2020-01-01"},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "**",
+                    "vars": {"__date__": ["{{ missing }}", "{{ __date__ }}"]},
+                }
+            ],
+        },
+        tmp_path,
+        {"__default_date_format__": "%Y%m%d"},
+    )
+    replaced = _values(
+        plan,
+        file=_file("20250718.pdf"),
+        match=_match("20250718.pdf"),
+    )
+    assert replaced["__date__"] == "2020-01-01"
+    kept = _plan(
+        {
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "**",
+                    "vars": {"__date__": ["{{ missing }}", "{{ __date__ }}"]},
+                }
+            ],
+        },
+        tmp_path,
+        {"__default_date_format__": "%Y%m%d"},
+    )
+    assert _values(
+        kept,
+        file=_file("20250718.pdf"),
+        match=_match("20250718.pdf"),
+    )["__date__"] == "2025-07-18"
+
+
 def test_missing_date_is_omitted_and_other_failures_abort(tmp_path: Path) -> None:
     omitted = _plan(
         {
@@ -162,7 +235,7 @@ def test_kind_csv_and_extension(tmp_path: Path) -> None:
     kinds = tmp_path / "kinds"
     kinds.mkdir()
     (kinds / "note.csv").write_text(
-        "name,value\nowner,{{ missing }}\nowner,ada\n",
+        "PATH,owner\narchive.tar.gz,ada\n",
         encoding="utf-8",
     )
     plan = _plan(
@@ -229,7 +302,7 @@ def test_kind_file_load_is_logged_once(
     kinds = tmp_path / "kinds"
     kinds.mkdir()
     kind_file = kinds / "note.csv"
-    kind_file.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    kind_file.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
     plan = _plan(
         {
             "config": {
@@ -255,7 +328,7 @@ def test_kind_file_search_logs_each_candidate_once(
     kinds = tmp_path / "kinds"
     kinds.mkdir()
     kind_file = kinds / "note.csv"
-    kind_file.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    kind_file.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
     missing = kinds / "note.toml"
     plan = _plan(
         {
@@ -285,7 +358,7 @@ def test_kind_file_search_logs_a_cached_file_for_the_next_kind(
 ) -> None:
     caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     shared = tmp_path / "shared.csv"
-    shared.write_text("name,value\nowner,ada\n", encoding="utf-8")
+    shared.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
     plan = _plan(
         {
             "config": {"kind_overrides_config": ["{{ __root_dir__ }}/shared.csv"]},
@@ -362,3 +435,287 @@ def test_custom_module_and_a_name_clash(tmp_path: Path, monkeypatch: pytest.Monk
             },
             tmp_path,
         )
+
+
+def _kind_document(path: str, **config: object) -> dict[str, object]:
+    settings: dict[str, object] = {"kind_overrides_config": [path]}
+    settings.update(config)
+    return {
+        "config": settings,
+        "default_vars": {"owner": "DEFAULT"},
+        "match_rules": [
+            {
+                "name": "notes",
+                "kind": "note",
+                "filename_glob": "**",
+                "vars": {"owner": "{{ owner }}-rule"},
+            }
+        ],
+    }
+
+
+def test_kind_row_is_literal_and_follows_the_rule(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner,vendor\na.txt,{{ missing }},FromKind\n", encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            "overrides": [{"path": "a.txt", "vars": {"note": "{{ owner }}"}}],
+        },
+        tmp_path,
+    )
+    values = _values(plan)
+    assert values["owner"] == "{{ missing }}"
+    assert values["vendor"] == "FromKind"
+    assert values["note"] == "{{ missing }}"
+
+
+def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,__date__\na.txt,25/04/2026\nb.txt,\n", encoding="utf-8")
+    plan = _plan(
+        _kind_document(
+            "{{ __root_dir__ }}/note.csv",
+            kind_overrides_date_format="%d/%m/%Y",
+        ),
+        tmp_path,
+    )
+    dated = _values(plan)
+    assert dated["__date__"] == "2026-04-25"
+    blank = _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    assert "__date__" not in blank
+
+
+def test_kind_date_replaces_the_stem_date(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,__date__\n2025-07-18.pdf,2024-05-29\n", encoding="utf-8")
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv"),
+        tmp_path,
+        {"__default_date_format__": "%Y-%m-%d"},
+    )
+    values = _values(
+        plan,
+        file=_file("2025-07-18.pdf"),
+        match=_match("2025-07-18.pdf"),
+    )
+    assert values["__date__"] == "2024-05-29"
+
+
+def test_bad_kind_date_stops_and_writes_nothing(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,__date__\na.txt,yesterday\n", encoding="utf-8")
+    original = kind.read_bytes()
+    plan = _plan(
+        _kind_document(
+            "{{ __root_dir__ }}/note.csv",
+            kind_overrides_date_format="%d/%m/%Y",
+        ),
+        tmp_path,
+    )
+    with pytest.raises(VarResolveError, match="variable __date__ failed"):
+        _values(plan)
+    plan.commit()
+    assert kind.read_bytes() == original
+
+
+def test_auto_appends_only_when_the_file_exists(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_bytes(b"PATH,owner\na.txt,ada")
+    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path)
+    values = _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    assert values["owner"] == "DEFAULT-rule"
+    plan.commit()
+    text = kind.read_bytes()
+    assert text.startswith(b"PATH,owner\na.txt,ada\n")
+    assert text.endswith(b"\nb.txt,\n")
+
+    missing = tmp_path / "other.csv"
+    skipped = _plan(_kind_document("{{ __root_dir__ }}/other.csv"), tmp_path)
+    _values(skipped)
+    skipped.commit()
+    assert missing.exists() is False
+
+
+def test_empty_kind_file_is_filled_in_auto(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("\n\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path)
+    _values(plan)
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+
+
+def test_manual_reads_and_does_not_append(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner\n", encoding="utf-8")
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="manual"),
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == "PATH,owner\n"
+
+
+def test_always_creates_the_first_template(tmp_path: Path) -> None:
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv", kind_overrides_mode="always"),
+        tmp_path,
+    )
+    values = _values(plan)
+    assert values["owner"] == "DEFAULT-rule"
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+    again = _plan(
+        _kind_document("{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv", kind_overrides_mode="always"),
+        tmp_path,
+    )
+    _values(again)
+    again.commit()
+    assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+
+
+def test_disabled_ignores_an_existing_kind_file(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="disabled"),
+        tmp_path,
+    )
+    values = _values(plan)
+    plan.commit()
+    assert values["owner"] == "DEFAULT-rule"
+    assert kind.read_text(encoding="utf-8") == "PATH,owner\na.txt,ada\n"
+    assert caplog.records == []
+
+
+def test_flag_wins_over_env_and_config(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="always"),
+        tmp_path,
+        mode="manual",
+        environ={"SUPERSHELF_KIND_OVERRIDES_MODE": "always"},
+    )
+    _values(plan)
+    plan.commit()
+    assert kind.exists() is False
+
+
+def test_empty_kind_mode_env_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(VarConfigError, match="SUPERSHELF_KIND_OVERRIDES_MODE"):
+        _plan(
+            {"match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}]},
+            tmp_path,
+            environ={"SUPERSHELF_KIND_OVERRIDES_MODE": ""},
+        )
+
+
+def test_yaml_and_toml_rows_are_literal(tmp_path: Path) -> None:
+    (tmp_path / "note.yaml").write_text(
+        "- path: a.txt\n  vars:\n    owner: ada\n",
+        encoding="utf-8",
+    )
+    yaml_plan = _plan(_kind_document("{{ __root_dir__ }}/note.yaml"), tmp_path)
+    assert _values(yaml_plan)["owner"] == "ada"
+    (tmp_path / "note.toml").write_text(
+        '[[rows]]\npath = "b.txt"\n\n[rows.vars]\nowner = "bea"\n',
+        encoding="utf-8",
+    )
+    toml_plan = _plan(_kind_document("{{ __root_dir__ }}/note.toml"), tmp_path)
+    assert _values(toml_plan, file=_file("b.txt"), match=_match("b.txt"))["owner"] == "bea"
+
+
+def test_dry_run_logs_and_does_not_write(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path, dry_run=True)
+    _values(plan)
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == "PATH\n"
+    assert f"Would append 1 rows to kind file {kind}" in caplog.text
+
+
+def test_always_refuses_a_parent_that_is_a_file(tmp_path: Path) -> None:
+    blocker = tmp_path / "blocked"
+    blocker.write_text("x", encoding="utf-8")
+    plan = _plan(
+        _kind_document(
+            "{{ __root_dir__ }}/blocked/note.csv",
+            kind_overrides_mode="always",
+        ),
+        tmp_path,
+    )
+    _values(plan)
+    with pytest.raises(VarConfigError, match="parent is not a directory"):
+        plan.commit()
+
+
+def test_duplicate_kind_path_keeps_the_first_row(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner\na.txt,ada\na.txt,bea\n", encoding="utf-8")
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="manual"),
+        tmp_path,
+    )
+    assert _values(plan)["owner"] == "ada"
+    assert "duplicated" in caplog.text
+
+
+def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        "path;amount\nbeta/fizz/2025-07-18.pdf;427,59\n",
+        encoding="utf-8",
+    )
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep=";"),
+        tmp_path,
+    )
+    with pytest.raises(VarConfigError, match="first column is 'path'") as caught:
+        _values(plan)
+    assert caught.value.advice is not None
+    assert "kind_overrides_sep is ';'" in caught.value.advice
+    assert "For example: PATH;amount" in caught.value.advice
+
+
+def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        "PATH;amount\nbeta/fizz/2025-07-18.pdf;427,59\n",
+        encoding="utf-8",
+    )
+    plan = _plan(
+        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep=";"),
+        tmp_path,
+    )
+    values = _values(
+        plan,
+        file=_file("beta/fizz/2025-07-18.pdf"),
+        match=_match("beta/fizz/2025-07-18.pdf"),
+    )
+    assert values["amount"] == "427,59"
+
+
+def test_kind_overrides_sep_rejects_a_slash(tmp_path: Path) -> None:
+    with pytest.raises(VarConfigError, match="kind_overrides_sep '/'") as caught:
+        _plan(
+            _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep="/"),
+            tmp_path,
+        )
+    assert caught.value.advice is not None
+    assert "For example: ','" in caught.value.advice

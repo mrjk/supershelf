@@ -5,7 +5,7 @@ from dataclasses import replace
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
-from supershelf.constants import LOGGER_NAME
+from supershelf.constants import KIND_OVERRIDE_MODES, LOGGER_NAME
 from supershelf.errors import SupershelfError
 from supershelf.match import (
     DETAIL_NO_PATTERNS,
@@ -120,8 +120,25 @@ class ScanVarsCommand(ListViewMixin, Parser):
         default=None,
         help="Relative path of one kept file. Omit to list every matched file.",
     )
+    kind_overrides_mode = Argument(
+        "--kind-overrides-mode",
+        help="Kind file mode: auto, manual, always, or disabled.",
+    )
 
-    def cli_run(self, config=None, profile=None, path=None, **_):
+    def cli_run(
+        self,
+        config=None,
+        profile=None,
+        path=None,
+        dry_run=False,
+        kind_overrides_mode=None,
+        **_,
+    ):
+        if kind_overrides_mode is not None and kind_overrides_mode not in KIND_OVERRIDE_MODES:
+            raise SupershelfError(
+                "--kind-overrides-mode must be auto, manual, always, or disabled",
+                advice="Use one of those four words, in lower case.",
+            )
         loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
         prepared = []
         for item in loaded.config_list:
@@ -137,6 +154,8 @@ class ScanVarsCommand(ListViewMixin, Parser):
                         matcher,
                         shelf.root_dir,
                         shelf.scope,
+                        mode=kind_overrides_mode,
+                        dry_run=bool(dry_run),
                     ),
                 )
             )
@@ -172,6 +191,8 @@ class ScanVarsCommand(ListViewMixin, Parser):
                     )
         if path is not None and seen == 0:
             raise SupershelfError(f"No kept file {path!r}")
+        for _shelf, _matcher, plan in prepared:
+            plan.commit()
         return rows
 
     @staticmethod
