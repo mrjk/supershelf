@@ -1,39 +1,100 @@
 
-# General rules
+# General mrjk rules
 
 ## Application project
 * Ensure a GPL license is present in project, unless another license is mentionned
-* Documentation should be structured this way, keep only what is relevent:
-    * top README.md:
-        * Simple and professional README, that shows what the program do, some examples etc ..
-    * If there is a documentation site
-        * It lives in docs/ subdir
-        * Structure:
-            1. Quickstart
-                - Have roughly the same content as top README.md
-                - install the program, and test with --version
-                - show the very basic commands
-            2. Usage
-                - Explain how to handle step by step, it must be a progressive learning, it must
-            3. Guides
-                - Grab specific use cases, and document them
-            4. Reference (mostly generated)
-                - CLI --help output
-                - configuration schema/reference
-                - code generated documentation for API
-            5. Project
-                - how to setup developement environment
-                - how to build, release, debug
-                - license, code of conduct
-                - informations
 * Each new code changes should come with documentation and tests. Codes changes should be small and reviewable.
-* We use mise, aka mise-en-place. Ensure a config is present, and it must provide all the development toolkit to be able to run the whole project. Language domain dependency take the relay (pyproject.toml for python, etc ...)
 * Do not use personal or private data in examples, documentations and test. Always use agnostic or fake names (ie: intead of using a name of real bank instution use Bank2000 ). As well, always use english names, no french, spanish, german or whatsoever. English should be the main language of the project.
+* Assume any project may end up public, excepted personal projects.
+    * I dont want to do cleanup, i want this to be clean from day one.
 
 
+### Generic tooling
+* We use mise, aka mise-en-place. 
+    * Ensure a config is present
+    * it must provide all the development toolkit to be able to run the whole project. Language domain dependency take the relay (pyproject.toml for python, etc ...)
 
-## Python Coding rules
+* We use task and taskfile:
+    * GEneral:
+        * Ensure command naming pattern make sense
+        * CWD is where the taskfile is
+        * Ensure it uses a common .env file
+        * Do not hardcode versions or repo owner, use env vars.
+    * Simple project:
+        * Ensure there is one taskfile at the root that allow to easily work with project. Split commands
+    * More complex project:
+        * Include taskfiles in root taskfile
+        * Only show at the top level commands general commands, if the user want to run specific tests/docsumentation commands, it changes dir to it to have more focused command
+    * CI/CD commands:
+        * It should provide a single command that a CI/CD builder can run. We want the same behavior local and remote
 
+
+### Side topics
+
+* Documentation:
+    * Lives under docs/. Use a sub taskfile to allow to build, run, release, run pre scripts ... etc ..
+    * Usually we will want to use a static documentation generator, use one that fit to the same language, or use static binaries provided by mise
+    * Ensure also:
+        * There is always a license file
+        * Ensure a code of conduct is present for non personal projects
+    * Documentation should be structured this way, keep only what is relevent:
+        * top README.md:
+            * Simple and professional README, that shows what the program do, some examples etc ..
+        * If there is a documentation site
+            * It lives in docs/ subdir
+            * Structure:
+                0. Home
+                    - Quite similar to README.md, ideally inject the readme in it (instead of making a copy)
+                1. Quickstart
+                    - Have roughly the same content as top README.md
+                    - install the program, and test with --version
+                    - Show a very simple usecase
+                    - show the very basic commands, give user instruction where to look next
+                2. Usage and Guides
+                    - Explain how to handle step by step, it must be a progressive learning, it must represent suer cases
+                    - Grab specific use cases, and document them
+                3. Documentation
+                    - Explain and train user about all apps concepts. No learning curve needed
+                    - You can go deep technical
+                    - FAQ (if needed)
+                4. Reference (mostly generated)
+                    - CLI --help output
+                    - configuration schema/reference
+                    - code generated documentation for API
+                    - Architectural design record, architecture document/references
+                5. About
+                    - how to setup developement environment (with mise and tasks)
+                    - how to build, release, debug (with tasks)
+                    - license, code of conduct
+                    - informations, project history
+    
+
+* Container/OCI:
+    * Lives in docker (or container) folder
+    * Usually we will alway want a docker support, and eventually other support (LXC, or whatever)
+    * We always want to be able to run a production deployment with a docker-compose.yml file
+    * We will also want a docker-compose.dev.yml that provided a live development plateform (understand code source is exposed in a volume, and allow live changes when language allow it)
+    * Try to ruse dockerfile content, with staged build, dev/test build should be derivated and extended from production build.
+    * Dont make image that require root user/persmissions
+
+* Tests:
+    * If there are long tests or more complex tests scenarios, use a specific taskfile under tests/.
+
+* CI/CD:
+    * Task should provides a way to run the whole pipeline locally.
+    * Local CI == remote CI, it should be aligned.
+    * Use env vars
+    * CI/CD tasks should actually only call other tasks.
+
+* examples:
+    * This should provide code examples to try for the user
+    * Ensure there is no personal data examples in examples
+
+
+# Python Coding rules
+
+
+## Main rules
 * Use modular code:
     * Organise code in specific files and dir
         * It should somewhat always easy to copy a folder into another project and have the logic self contained (minus all common things, just keep the domain logic together, other dependencies are implementations dependenant)
@@ -65,6 +126,18 @@
     * EAch exceptions should have a specific error message, that allow customization via vars. It's also possible to override exception error message.
     * Each exception should return am exit code, with a way to add a custom message or parameters.
     * Each exception should provide a tips field, that give user instructions to solve the issue. This is optional.
+* Logging verbosity and output:
+    * For stdout, always try to use clak views
+        * If that does not fit, you can print
+    * For logging levels: It must be progressive, first level show few outputs, more levels show more output
+        * NOTICE (if exists) should always been shown, wihtout verbosity
+        * INFO app
+        * DEBUG app
+        * More intermediate app debugging levels ...
+        * 2 last ones
+            * show info from all libs
+            * show debug from all libs
+
 
 
 ## Development workflow
@@ -82,7 +155,7 @@
     - I;ll review the code, ask questions
     - I'll probably ask for changes. Be sure thoses changes are documented in the specs. Warn if it brings inconsistency.
 
-## Main App
+## Mrjk Python App standard
 
 * Structured like git-like commands, with subcommands
 * must support log levels and dry run options
@@ -95,4 +168,15 @@
 * For the configuration file format, i want to be able to generate a schema of it, and also raise errors when the user make configuration mistakes.
 
 
+## Documentation standard with zensical/mkdocs
 
+* all lives in docs/
+* Use a taskfile: to serve, build, release
+    * Add extract tasks when some custom document import/generation scripts
+* docs lives in docs/content
+* use yaml config
+* Make the documentation TOC automatic, i dont want to edit config to change order of pages, or even keep a link to all pages. I want auto discovery.
+* Documentation should be LOW maintenance, avoid recap, summaries, links to other pages that can change. Try to stay minimalist in way to facilitate maintenance.
+* When using code, ensure the language tag is set, and eventually the corresponding filename. Also, if the config support many syntax format, show all formats in a tab.
+* Do not use pages that are just links to other pages, wihtout content. There is the menu already for that.
+* If there are need to do diagrams to explain things or concepts, use some when it brings value to the reader. Use correct diagram type according what you want to illustrate
