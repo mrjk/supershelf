@@ -16,6 +16,10 @@ supershelf = "supershelf:main"
 
 [dependency-groups]
 dev = ["pytest"]
+docs = [
+    "zensical>=0.0.63",
+    "ghp-import>=2.1.0",
+]
 
 [build-system]
 requires = ["setuptools>=64", "wheel"]
