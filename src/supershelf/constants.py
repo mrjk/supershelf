@@ -49,6 +49,33 @@ KEY_VAR_MODULES = "var_modules"
 KEY_OVERRIDES = "overrides"
 KEY_RULE_VARS = "vars"
 KEY_OVERRIDE_PATH = "path"
+KEY_VARS_SCHEMA = "vars_schema"
+
+TYPE_TEXT = "text"
+TYPE_INT = "int"
+TYPE_FLOAT = "float"
+TYPE_BOOL = "bool"
+TYPE_DATE = "date"
+TYPE_TIME = "time"
+TYPE_DATETIME = "datetime"
+VAR_TYPES = (
+    TYPE_TEXT,
+    TYPE_INT,
+    TYPE_FLOAT,
+    TYPE_BOOL,
+    TYPE_DATE,
+    TYPE_TIME,
+    TYPE_DATETIME,
+)
+VAR_NAME_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*\Z"
+TEMPLATE_MARKERS = ("{{", "{%", "{#")
+
+SOURCE_FACT = "fact"
+SOURCE_FILENAME = "filename"
+SOURCE_DEFAULT = "default"
+SOURCE_RULE = "rule"
+SOURCE_KIND = "kind"
+SOURCE_OVERRIDE = "override"
 
 VAR_KIND = "__kind__"
 VAR_RULE_NAME = "__rule_name__"

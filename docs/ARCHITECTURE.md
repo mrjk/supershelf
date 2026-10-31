@@ -2,7 +2,7 @@
 
 Behind the scenes: models, pipelines, cast rules, and edge cases. Use cases live in [PERFECT_CONFIG.yml](PERFECT_CONFIG.yml). The short command pipeline on the doc site is `docs/content/reference/architecture.md`.
 
-Status: the variable types below are not implemented. The resolver still stores strings.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database and no schema command. `kind_schema` is not parsed.
 
 ## Variable types
 

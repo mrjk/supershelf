@@ -99,7 +99,7 @@ def test_list_keeps_the_first_success(tmp_path: Path) -> None:
 
 def test_self_reference_reads_the_previous_string(tmp_path: Path) -> None:
     document = {
-        "default_vars": {"__date__": ["not-a-date", "2020-01-01"]},
+        "default_vars": {"__date__": ["{{ missing }}", "2020-01-01"]},
         "match_rules": [
             {
                 "name": "notes",
@@ -211,7 +211,7 @@ def test_assignment_replaces_the_stem_date(tmp_path: Path) -> None:
 def test_missing_date_is_omitted_and_other_failures_abort(tmp_path: Path) -> None:
     omitted = _plan(
         {
-            "default_vars": {"__date__": "not-a-date", "owner": "ada"},
+            "default_vars": {"__date__": "{{ missing }}", "owner": "ada"},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
@@ -229,6 +229,15 @@ def test_missing_date_is_omitted_and_other_failures_abort(tmp_path: Path) -> Non
     )
     with pytest.raises(VarResolveError, match="variable owner failed"):
         _values(broken)
+
+    with pytest.raises(VarConfigError, match="cannot be cast"):
+        _plan(
+            {
+                "default_vars": {"__date__": ["not-a-date", "2020-01-01"]},
+                "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+            },
+            tmp_path,
+        )
 
 
 def test_kind_csv_and_extension(tmp_path: Path) -> None:
@@ -719,3 +728,178 @@ def test_kind_overrides_sep_rejects_a_slash(tmp_path: Path) -> None:
         )
     assert caught.value.advice is not None
     assert "For example: ','" in caught.value.advice
+
+
+def test_sources_keep_every_layer(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,vendor\na.txt,KindCo\n", encoding="utf-8")
+    plan = _plan(
+        {
+            "config": {"kind_overrides_config": ["{{ __root_dir__ }}/note.csv"]},
+            "default_vars": {"vendor": "UNKNOWN"},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "a.txt",
+                    "vars": {"vendor": "Bank2000"},
+                }
+            ],
+            "overrides": [{"path": "a.txt", "vars": {"vendor": "Final"}}],
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+
+    assert dict(resolved.items)["vendor"] == "Final"
+    assert resolved.sources["vendor"] == (
+        "default",
+        "rule:notes",
+        f"kind:{kind}",
+        "override:a.txt",
+    )
+    assert resolved.sources["__kind__"] == ("fact",)
+    text = resolved.present(None)
+    assert "vendor: Final\nsources: default, rule:notes, " in str(text)
+    assert resolved.present("json")["vendor"]["value"] == "Final"
+
+
+def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "float"}},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_regex": r"(?P<amount>[^.]+)\.txt",
+                }
+            ],
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(
+        _file("12.50.txt"),
+        _match("12.50.txt", groups={"amount": "12.50"}),
+        Path("/in"),
+    )
+
+    assert dict(resolved.items)["amount"] == "12.50"
+    assert resolved.dump_vars()["amount"]["value"] == 12.5
+    assert resolved.sources["amount"] == ("fact",)
+
+    broken = _plan(
+        {
+            "vars_schema": {"amount": {"type": "float"}},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_regex": r"(?P<amount>[^.]+)\.txt",
+                    "vars": {"amount": "1"},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    with pytest.raises(VarResolveError, match="variable amount failed"):
+        broken.resolve(
+            _file("EUR12.50.txt"),
+            _match("EUR12.50.txt", groups={"amount": "EUR12.50"}),
+            Path("/in"),
+        )
+
+
+def test_int_group_drops_leading_zeros(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "int"}},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_regex": r"(?P<amount>\d+)\.txt",
+                }
+            ],
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(
+        _file("0012.txt"),
+        _match("0012.txt", groups={"amount": "0012"}),
+        Path("/in"),
+    )
+
+    assert dict(resolved.items)["amount"] == "12"
+    assert resolved.dump_vars()["amount"]["value"] == 12
+
+
+def test_bool_display_stays_text_in_templates(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"paid": {"type": "bool"}},
+            "default_vars": {"paid": "no"},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "a.txt",
+                    "vars": {"flag": "{% if paid %}yes{% else %}no{% endif %}"},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+    values = dict(resolved.items)
+
+    assert values["paid"] == "false"
+    assert values["flag"] == "yes"
+    assert resolved.dump_vars()["paid"]["value"] is False
+
+
+def test_mandatory_none_stops_and_omitted_time_does_not(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {
+                "amount": {"type": "int", "mandatory": True},
+                "opens": {"type": "time"},
+                "__date__": {"mandatory": True},
+            },
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+    with pytest.raises(VarResolveError, match="variable __date__ failed") as caught:
+        _values(plan)
+    assert caught.value.advice == "__date__ is mandatory and no layer set it."
+
+    dated = _plan(
+        {
+            "vars_schema": {
+                "amount": {"type": "int", "mandatory": True},
+                "opens": {"type": "time"},
+            },
+            "default_vars": {"amount": "12"},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+    values = _values(dated)
+    assert values["amount"] == "12"
+    assert "opens" not in values
+
+
+def test_kind_cell_cast_failure_stops_the_file(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,amount\na.txt,EUR12.50\n", encoding="utf-8")
+    plan = _plan(
+        {
+            "config": {"kind_overrides_config": ["{{ __root_dir__ }}/note.csv"]},
+            "vars_schema": {"amount": {"type": "float"}},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "a.txt"}],
+        },
+        tmp_path,
+    )
+    with pytest.raises(VarResolveError, match="variable amount failed"):
+        _values(plan)

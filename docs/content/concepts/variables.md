@@ -2,7 +2,7 @@
 
 `scan vars` takes the kept files, then the matched set, and prints one row per matched file. Columns: `profile`, `input`, `path`, `kind`, `rule`, `vars`.
 
-`kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each final key is one line: the name, `: `, then the value.
+`kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each set variable uses two lines. The first is the name, `: `, then the display string. The second is `sources: ` plus the labels that wrote it, joined by `, `. An unset variable is left out. `--format json` and `--format yaml` use the Python value instead of the display string, so a float can be `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling in both.
 
 The walk is the full walk. mtime, ctime, and sha256 are required. There is no `--quick`. The path argument is the same as `scan files`: omit it to list every matched file, pass an exact file path to list that file, or pass any other value to list paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice. When a path is set, only the selected files are matched, so other files are not warned.
 

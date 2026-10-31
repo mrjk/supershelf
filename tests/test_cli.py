@@ -346,6 +346,7 @@ def test_scan_vars_named_file_lists_only_that_path(
 
     assert "a.txt" in captured.out
     assert "vendor: Bank2000" in captured.out
+    assert "sources: default" in captured.out
     assert "b.txt" not in captured.out
     assert "No match_rule" not in captured.err
 
@@ -375,6 +376,36 @@ def test_scan_vars_named_file_lists_each_input(
 
     assert [row["input"] for row in rows] == [1, 2]
     assert [row["path"] for row in rows] == ["a.txt", "a.txt"]
+
+
+def test_scan_vars_json_uses_python_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[vars_schema.amount]\ntype = 'int'\ndefault = 12\n\n"
+        "[vars_schema.paid]\ntype = 'bool'\ndefault = false\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "--format", "json", "a.txt"])
+    rows = json.loads(capsys.readouterr().out)
+    amount = rows[0]["vars"]["amount"]
+    paid = rows[0]["vars"]["paid"]
+
+    assert amount["value"] == 12
+    assert amount["value_sources"] == ["default"]
+    assert paid["value"] is False
+    assert "display" not in amount
 
 
 def test_scan_vars_named_unmatched_file_warns_only_for_that_file(

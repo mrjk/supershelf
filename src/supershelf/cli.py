@@ -160,8 +160,10 @@ class ScanVarsCommand(ListViewMixin, Parser):
         path=None,
         dry_run=False,
         kind_overrides_mode=None,
+        ctx=None,
         **_,
     ):
+        fmt = ctx.view_settings.get("format") if ctx is not None else None
         if kind_overrides_mode is not None:
             KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
         runs = ShelfRuns.load(config, profile)
@@ -200,9 +202,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
                             "path": matched.path,
                             "kind": resolved.kind,
                             "rule": matched.rule,
-                            "vars": "\n".join(
-                                f"{name}: {value}" for name, value in resolved.items
-                            ),
+                            "vars": resolved.present(fmt),
                         }
                     )
         for _shelf, _matcher, plan in prepared:

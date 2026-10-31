@@ -7,8 +7,14 @@ from typing import Any
 
 import jinja2
 
+from supershelf.constants import TEMPLATE_MARKERS
 from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
 from supershelf.var_commands import BuiltinCommands, FileBinding
+
+
+def is_template(source: str) -> bool:
+    """True when the candidate contains a Jinja marker."""
+    return any(marker in source for marker in TEMPLATE_MARKERS)
 
 
 class _StringCommand:
@@ -30,8 +36,6 @@ class _StringCommand:
 
 class VarEnvironment:
     """Compile each var template once. Literals are not compiled."""
-
-    _MARKERS = ("{{", "{%", "{#")
 
     def __init__(self) -> None:
         self._env = jinja2.Environment(
@@ -117,4 +121,4 @@ class VarEnvironment:
         return compiled
 
     def _is_literal(self, source: str) -> bool:
-        return not any(marker in source for marker in self._MARKERS)
+        return not is_template(source)

@@ -12,7 +12,7 @@ import tomllib
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 
@@ -42,6 +42,12 @@ from supershelf.constants import (
     KEY_OVERRIDES,
     KEY_RULE_VARS,
     KEY_VAR_MODULES,
+    SOURCE_DEFAULT,
+    SOURCE_FACT,
+    SOURCE_FILENAME,
+    SOURCE_KIND,
+    SOURCE_OVERRIDE,
+    SOURCE_RULE,
     VAR_CTIME,
     VAR_DATE,
     VAR_DEFAULT_DATE_FORMAT,
@@ -65,16 +71,51 @@ from supershelf.match import FileMatch, Matcher
 from supershelf.scan import InputFile
 from supershelf.template import Template
 from supershelf.var_commands import FileBinding
-from supershelf.var_template import VarEnvironment
+from supershelf.var_schema import (
+    CastMiss,
+    CastValue,
+    VarCatalog,
+    VarState,
+    cast_value,
+    layer_source,
+)
+from supershelf.var_template import VarEnvironment, is_template
+
+
+_STRUCTURED_FORMATS = frozenset({"json", "yaml"})
 
 
 class FileVars:
     """Resolved variables for one matched file."""
 
-    def __init__(self, kind: str, rule: str, items: tuple[tuple[str, str], ...]) -> None:
+    def __init__(self, kind: str, rule: str, states: tuple[tuple[str, VarState], ...]) -> None:
         self.kind = kind
         self.rule = rule
-        self.items = items
+        self.states = states
+
+    @property
+    def items(self) -> tuple[tuple[str, str], ...]:
+        """Set variables in print order. The value is the display string."""
+        return tuple((name, state.display) for name, state in self.states)
+
+    @property
+    def sources(self) -> dict[str, tuple[str, ...]]:
+        """Source labels for each set variable, in the order layers wrote it."""
+        return {name: tuple(state.value_sources) for name, state in self.states}
+
+    def dump_vars(self) -> dict[str, Any]:
+        """JSON-ready values. Floats can differ from their display spelling."""
+        return {name: state.model_dump(mode="json") for name, state in self.states}
+
+    def present(self, fmt: str | None) -> object:
+        """Table text, or the typed mapping for json and yaml."""
+        if fmt in _STRUCTURED_FORMATS:
+            return self.dump_vars()
+        lines: list[str] = []
+        for name, value in self.items:
+            lines.append(f"{name}: {value}")
+            lines.append(f"sources: {', '.join(self.sources[name])}")
+        return "\n".join(lines)
 
 
 class VarTable:
@@ -704,6 +745,13 @@ class KindTable:
         return f"- path: {dumped}\n"
 
 
+class KindRow(NamedTuple):
+    """Cells from the winning kind file, plus that file's path."""
+
+    path: str | None
+    cells: dict[str, str]
+
+
 class KindFiles:
     """Per-file kind rows. The first existing path wins, then the parse is cached."""
 
@@ -760,20 +808,20 @@ class KindFiles:
         input_dir: Path,
         relative: str,
         match: FileMatch,
-    ) -> dict[str, str]:
+    ) -> KindRow:
         """Return the literal cells for one file. auto and always record a missing path."""
         if self._mode == KIND_MODE_DISABLED:
-            return {}
+            return KindRow(None, {})
         search = (kind, str(input_dir))
         if search not in self._winners:
             self._winners[search] = self._winner(kind, input_dir)
         table = self._winners[search]
         if table is None:
-            return {}
+            return KindRow(None, {})
         cells = self._literals(table.rows.get(relative, {}), match, relative)
         if self._mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
             table.ensure(relative)
-        return cells
+        return KindRow(str(table.path), cells)
 
     def commit(self) -> None:
         """Write queued rows once. A failed resolve never reaches this."""
@@ -870,14 +918,14 @@ class VarPlan:
     def __init__(
         self,
         environment: VarEnvironment,
-        defaults: VarTable,
+        catalog: VarCatalog,
         rules: dict[str, VarTable],
         overrides: tuple[OverrideRule, ...],
         kinds: KindFiles,
         profile_scope: Mapping[str, Any],
     ) -> None:
         self._environment = environment
-        self._defaults = defaults
+        self._catalog = catalog
         self._rules = rules
         self._overrides = overrides
         self._kinds = kinds
@@ -921,27 +969,70 @@ class VarPlan:
             dates,
             dry_run,
         )
-        return cls(environment, defaults, rules, overrides, kinds, profile_scope)
+        names: list[str] = list(defaults.keys)
+        for table in rules.values():
+            names.extend(table.keys)
+        for rule in overrides:
+            names.extend(rule.table.keys)
+        names.extend(matcher.named_groups())
+        catalog = VarCatalog.load(
+            document,
+            compile_source=environment.compile_source,
+            names=names,
+        )
+        for rule_name, table in rules.items():
+            cls._check_literals(catalog, table, f"match rule {rule_name} vars")
+        for index, rule in enumerate(overrides, start=1):
+            cls._check_literals(catalog, rule.table, f"overrides item {index} vars")
+        return cls(environment, catalog, rules, overrides, kinds, profile_scope)
 
     def resolve(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
         """Resolve one matched file. Kind files use the rule kind, not an override."""
         self._require_metadata(file, match)
         scope: dict[str, str] = {}
+        states: dict[str, VarState] = {}
         order: list[str] = []
-        for key, value in self._fact_rows(file, match):
-            scope[key] = value
-            order.append(key)
+        for key, value, label in self._fact_rows(file, match):
+            self._save_raw(key, value, label, scope, states, order, match, file.path)
         binding = FileBinding(file.absolute, file.sha256 or "", file.ctime or "", file.mtime or "")
-        self._apply(self._defaults, scope, order, binding, match, file.path)
-        self._apply(self._rules.get(match.rule, VarTable.empty()), scope, order, binding, match, file.path)
+        self._apply_defaults(scope, states, order, binding, match, file.path)
+        self._apply(
+            self._rules.get(match.rule, VarTable.empty()),
+            layer_source(SOURCE_RULE, match.rule),
+            scope,
+            states,
+            order,
+            binding,
+            match,
+            file.path,
+        )
         self._apply_cells(
             self._kinds.cells_for(match.kind, input_dir, file.path, match),
             scope,
+            states,
             order,
+            match,
+            file.path,
         )
-        self._apply(self._override_for(file.path), scope, order, binding, match, file.path)
-        items = tuple((key, scope[key]) for key in order if key in scope)
-        return FileVars(scope[VAR_KIND], match.rule, items)
+        override = self._override_for(file.path)
+        if override is not None:
+            self._apply(
+                override.table,
+                layer_source(SOURCE_OVERRIDE, override.pattern),
+                scope,
+                states,
+                order,
+                binding,
+                match,
+                file.path,
+            )
+        self._require_mandatory(states, match, file.path)
+        chosen = tuple(
+            (key, states[key])
+            for key in order
+            if key in states and states[key].value is not None
+        )
+        return FileVars(states[VAR_KIND].display, match.rule, chosen)
 
     def commit(self) -> None:
         """Create or append kind rows after every file in this plan has resolved."""
@@ -949,71 +1040,187 @@ class VarPlan:
 
     def _apply_cells(
         self,
-        cells: Mapping[str, str],
+        row: KindRow,
         scope: dict[str, str],
+        states: dict[str, VarState],
         order: list[str],
+        match: FileMatch,
+        path: str,
     ) -> None:
-        for key, value in cells.items():
-            scope[key] = value
-            if key not in order:
-                order.append(key)
+        if row.path is None:
+            return
+        label = layer_source(SOURCE_KIND, row.path)
+        for key, value in row.cells.items():
+            self._save_raw(key, value, label, scope, states, order, match, path)
+
+    def _apply_defaults(
+        self,
+        scope: dict[str, str],
+        states: dict[str, VarState],
+        order: list[str],
+        binding: FileBinding,
+        match: FileMatch,
+        path: str,
+    ) -> None:
+        for key in self._catalog.names():
+            spec = self._catalog.spec(key)
+            if not spec.has_default:
+                continue
+            cast = self._first(
+                key,
+                spec.candidates,
+                self._render_scope(scope),
+                binding,
+                match,
+                path,
+            )
+            if cast is None:
+                self._clear(key, scope, states, order)
+                continue
+            self._save(key, cast, SOURCE_DEFAULT, scope, states, order)
 
     def _apply(
         self,
         table: VarTable,
+        label: str,
         scope: dict[str, str],
+        states: dict[str, VarState],
         order: list[str],
         binding: FileBinding,
         match: FileMatch,
         path: str,
     ) -> None:
         for key in table.keys:
-            render_scope = dict(self._profile_scope)
-            render_scope.update(scope)
-            value = self._first(key, table.candidates[key], render_scope, binding, match, path)
-            if value is None:
-                scope.pop(key, None)
-                order[:] = [item for item in order if item != key]
+            cast = self._first(
+                key,
+                table.candidates[key],
+                self._render_scope(scope),
+                binding,
+                match,
+                path,
+            )
+            if cast is None:
+                self._clear(key, scope, states, order)
                 continue
-            scope[key] = value
-            if key not in order:
-                order.append(key)
+            self._save(key, cast, label, scope, states, order)
+
+    def _render_scope(self, scope: Mapping[str, str]) -> dict[str, Any]:
+        """Profile names, then the display strings written so far."""
+        render_scope = dict(self._profile_scope)
+        render_scope.update(scope)
+        return render_scope
 
     def _first(
         self,
         key: str,
-        candidates: tuple[str, ...],
+        candidates: tuple[object, ...],
         scope: Mapping[str, Any],
         binding: FileBinding,
         match: FileMatch,
         path: str,
-    ) -> str | None:
+    ) -> CastValue | None:
+        spec = self._catalog.spec(key)
         misses: list[str] = []
         for source in candidates:
             try:
-                rendered = self._environment.render(source, scope, binding, self._pdf)
+                if isinstance(source, str):
+                    rendered = self._environment.render(source, scope, binding, self._pdf)
+                    cast = cast_value(spec, rendered, allow_typed=False)
+                else:
+                    cast = cast_value(spec, source, allow_typed=True)
             except VarCandidateError as exc:
                 misses.append(str(exc))
                 continue
-            if key == VAR_DATE and not self._is_date(rendered):
-                misses.append(f"{rendered!r} is not a YYYY-MM-DD date")
+            except CastMiss as exc:
+                misses.append(str(exc))
                 continue
-            return rendered
+            return cast
         if key == VAR_DATE:
             return None
         advice = misses[-1] if misses else "Add a candidate that renders to a string."
-        raise VarResolveError(
+        raise self._failed(match, path, key, advice)
+
+    def _save(
+        self,
+        key: str,
+        cast: CastValue,
+        label: str,
+        scope: dict[str, str],
+        states: dict[str, VarState],
+        order: list[str],
+    ) -> None:
+        state = states.get(key)
+        if state is None:
+            state = VarState()
+            states[key] = state
+        state.write(cast, label)
+        scope[key] = cast.display
+        if key not in order:
+            order.append(key)
+
+    def _save_raw(
+        self,
+        key: str,
+        raw: str,
+        label: str,
+        scope: dict[str, str],
+        states: dict[str, VarState],
+        order: list[str],
+        match: FileMatch,
+        path: str,
+    ) -> None:
+        spec = self._catalog.spec(key)
+        try:
+            cast = cast_value(spec, raw, allow_typed=False)
+        except CastMiss as exc:
+            raise self._failed(match, path, key, str(exc)) from exc
+        self._save(key, cast, label, scope, states, order)
+
+    def _clear(
+        self,
+        key: str,
+        scope: dict[str, str],
+        states: dict[str, VarState],
+        order: list[str],
+    ) -> None:
+        scope.pop(key, None)
+        state = states.get(key)
+        if state is not None:
+            state.clear()
+        order[:] = [item for item in order if item != key]
+
+    def _require_mandatory(
+        self,
+        states: dict[str, VarState],
+        match: FileMatch,
+        path: str,
+    ) -> None:
+        for name in self._catalog.names():
+            spec = self._catalog.spec(name)
+            if not spec.mandatory:
+                continue
+            state = states.get(name)
+            if state is None or state.value is None:
+                raise self._failed(
+                    match,
+                    path,
+                    name,
+                    f"{name} is mandatory and no layer set it.",
+                )
+
+    def _failed(self, match: FileMatch, path: str, key: str, advice: str) -> VarResolveError:
+        return VarResolveError(
             f"Profile {match.profile} input {match.index} path {path} variable {key} failed",
             advice=advice,
         )
 
-    def _override_for(self, relative: str) -> VarTable:
+    def _override_for(self, relative: str) -> OverrideRule | None:
         for rule in self._overrides:
             if rule.matches(relative):
-                return rule.table
-        return VarTable.empty()
+                return rule
+        return None
 
-    def _fact_rows(self, file: InputFile, match: FileMatch) -> list[tuple[str, str]]:
+    def _fact_rows(self, file: InputFile, match: FileMatch) -> list[tuple[str, str, str]]:
         ext = file.suffix[1:] if file.suffix.startswith(".") else file.suffix
         values = {
             VAR_KIND: match.kind,
@@ -1027,17 +1234,17 @@ class VarPlan:
             VAR_FILE_PATH: file.path,
             VAR_FILE_DIR: file.directory,
         }
-        rows = [(name, values[name]) for name in INTERNAL_NAMES]
-        rows.append((VAR_FILE_CTIME, values[VAR_CTIME]))
-        rows.append((VAR_FILE_MTIME, values[VAR_MTIME]))
+        rows = [(name, values[name], SOURCE_FACT) for name in INTERNAL_NAMES]
+        rows.append((VAR_FILE_CTIME, values[VAR_CTIME], SOURCE_FACT))
+        rows.append((VAR_FILE_MTIME, values[VAR_MTIME], SOURCE_FACT))
         stem_date = self._date_from_stem(values[VAR_FILE_STEM])
         if stem_date is not None:
-            rows.append((VAR_DATE, stem_date))
-        seen = {name for name, _value in rows}
+            rows.append((VAR_DATE, stem_date, SOURCE_FILENAME))
+        seen = {name for name, _value, _label in rows}
         for name, value in match.groups.items():
             if name in seen:
                 continue
-            rows.append((name, value))
+            rows.append((name, value, SOURCE_FACT))
         return rows
 
     def _date_from_stem(self, stem: str) -> str | None:
@@ -1056,12 +1263,21 @@ class VarPlan:
                 advice="scan vars reads mtime, ctime, and sha256.",
             )
 
-    def _is_date(self, text: str) -> bool:
-        try:
-            parsed = datetime.strptime(text, DATE_TEXT)
-        except ValueError:
-            return False
-        return parsed.strftime(DATE_TEXT) == text
+    @classmethod
+    def _check_literals(cls, catalog: VarCatalog, table: VarTable, label: str) -> None:
+        """Cast non-template literals now. A miss is a config error, not a fallback."""
+        for key in table.keys:
+            spec = catalog.spec(key)
+            for item in table.candidates[key]:
+                if is_template(item):
+                    continue
+                try:
+                    cast_value(spec, item, allow_typed=False)
+                except CastMiss as exc:
+                    raise VarConfigError(
+                        f"{label} key {key} cannot be cast",
+                        advice=str(exc),
+                    ) from exc
 
     @classmethod
     def _section(cls, document: Mapping[str, Any]) -> Mapping[str, Any]:
