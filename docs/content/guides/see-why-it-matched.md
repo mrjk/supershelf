@@ -2,7 +2,7 @@
 
 `supershelf scan inspect` prints how the match rules test kept files. It uses the same walk as `scan files --quick`: no hash, no mtime, and no ctime. The pattern order is in [Matching](../concepts/matching.md).
 
-Pass the path relative to the input directory. Omit it to print one line per kept file and no patterns.
+The path argument is the same as [List files](list-files.md). Omit it to print one line per kept file and no patterns. An exact file path traces that file. Any other value traces each kept file whose path starts with it, with the same detail as a single file.
 
 ```bash
 supershelf scan inspect
@@ -28,7 +28,7 @@ profile books input 1 rule bank2000_statement filename_regex 'REL_(?P<date>\d{8}
 Matched rule bank2000_statement kind invoice for Bank2000/REL_20260425_ab12cd34.pdf in profile books input 1
 ```
 
-A path that no kept file has stops the command. The same relative path in two inputs is traced twice. Each line includes the profile and the input index.
+A value that no kept file has stops the command. The same relative path in two inputs is traced twice. Each line includes the profile and the input index.
 
 ## More detail
 

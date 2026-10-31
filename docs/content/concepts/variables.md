@@ -4,7 +4,7 @@
 
 `kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each final key is one line: the name, `: `, then the value.
 
-The walk is the full walk. mtime, ctime, and sha256 are required. There is no `--quick`. Omit the path to list every matched file. A path that no kept file has stops the command. The same path in two inputs is listed twice. When a path is set, only that file is matched, so other files are not warned.
+The walk is the full walk. mtime, ctime, and sha256 are required. There is no `--quick`. The path argument is the same as `scan files`: omit it to list every matched file, pass an exact file path to list that file, or pass any other value to list paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice. When a path is set, only the selected files are matched, so other files are not warned.
 
 Unmatched files log the same warning as `scan kinds`, once per file. They add no row.
 

@@ -1,7 +1,5 @@
 """Supershelf command line."""
 
-from dataclasses import replace
-
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
@@ -18,8 +16,22 @@ from supershelf.match import (
     PatternTrial,
 )
 from supershelf.profile import ShelfProfile
-from supershelf.scan import InputFile, InputScanResult
+from supershelf.scan import InputFile, filter_kept
 from supershelf.vars import VarPlan
+
+
+def kept_path() -> Argument:
+    """Optional path shared by every scan subcommand."""
+    return Argument(
+        "path",
+        nargs="?",
+        default=None,
+        help=(
+            "Path relative to the input, as shown in the path column. "
+            "Omit for every kept file. An exact file path selects that file. "
+            "Anything else selects paths that start with it."
+        ),
+    )
 
 
 class GlobalFlags:
@@ -58,18 +70,24 @@ class ProfilesCommand(ListViewMixin, Parser):
 class ScanFilesCommand(ListViewMixin, Parser):
     """List files kept by each input."""
 
+    path = kept_path()
     quick = Argument(
         "--quick",
         action="store_true",
         help="Skip mtime, ctime, and sha256.",
     )
 
-    def cli_run(self, config=None, profile=None, quick=False, **_):
+    def cli_run(self, config=None, profile=None, path=None, quick=False, **_):
         loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
-        rows = []
+        shelves = []
+        groups = []
         for item in loaded.config_list:
             shelf = ShelfProfile.from_config(item)
-            for result in shelf.scan(quick=bool(quick)):
+            shelves.append(shelf)
+            groups.append(shelf.scan(quick=bool(quick)))
+        rows = []
+        for shelf, scans in zip(shelves, filter_kept(groups, path), strict=True):
+            for result in scans:
                 for found in result.results:
                     row = {
                         "profile": result.profile,
@@ -87,7 +105,9 @@ class ScanFilesCommand(ListViewMixin, Parser):
 class ScanKindsCommand(ListViewMixin, Parser):
     """List the kind matched for each kept file."""
 
-    def cli_run(self, config=None, profile=None, **_):
+    path = kept_path()
+
+    def cli_run(self, config=None, profile=None, path=None, **_):
         loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
         prepared = []
         for item in loaded.config_list:
@@ -95,9 +115,13 @@ class ScanKindsCommand(ListViewMixin, Parser):
             prepared.append(
                 (shelf, Matcher.from_document(shelf.document, shelf.name))
             )
+        groups = filter_kept(
+            [shelf.scan(quick=True) for shelf, _matcher in prepared],
+            path,
+        )
         rows = []
-        for shelf, matcher in prepared:
-            for result in shelf.scan(quick=True):
+        for (_shelf, matcher), scans in zip(prepared, groups, strict=True):
+            for result in scans:
                 for found in matcher.collect(result):
                     rows.append(
                         {
@@ -114,12 +138,7 @@ class ScanKindsCommand(ListViewMixin, Parser):
 class ScanVarsCommand(ListViewMixin, Parser):
     """List variables for each matched file."""
 
-    path = Argument(
-        "path",
-        nargs="?",
-        default=None,
-        help="Relative path of one kept file. Omit to list every matched file.",
-    )
+    path = kept_path()
     kind_overrides_mode = Argument(
         "--kind-overrides-mode",
         help="Kind file mode: auto, manual, always, or disabled.",
@@ -159,19 +178,15 @@ class ScanVarsCommand(ListViewMixin, Parser):
                     ),
                 )
             )
+        groups = filter_kept(
+            [shelf.scan(quick=False) for shelf, _matcher, _plan in prepared],
+            path,
+        )
         rows = []
-        seen = 0
-        for shelf, matcher, plan in prepared:
-            for result in shelf.scan(quick=False):
-                selected = self._selected(result, path)
-                seen += len(selected)
-                if not selected:
-                    continue
-                narrowed = result
-                if path is not None:
-                    narrowed = replace(result, results=selected)
-                files = {found.path: found for found in selected}
-                for matched in matcher.collect(narrowed):
+        for (_shelf, matcher, plan), scans in zip(prepared, groups, strict=True):
+            for result in scans:
+                files = {found.path: found for found in result.results}
+                for matched in matcher.collect(result):
                     resolved = plan.resolve(
                         files[matched.path],
                         matched,
@@ -189,28 +204,15 @@ class ScanVarsCommand(ListViewMixin, Parser):
                             ),
                         }
                     )
-        if path is not None and seen == 0:
-            raise SupershelfError(f"No kept file {path!r}")
         for _shelf, _matcher, plan in prepared:
             plan.commit()
         return rows
-
-    @staticmethod
-    def _selected(result: InputScanResult, path: str | None) -> list[InputFile]:
-        if path is None:
-            return result.results
-        return [found for found in result.results if found.path == path]
 
 
 class ScanInspectCommand(Parser):
     """Show how match rules test kept files."""
 
-    path = Argument(
-        "path",
-        nargs="?",
-        default=None,
-        help="Relative path of one kept file. Omit to list match or miss only.",
-    )
+    path = kept_path()
 
     def cli_run(self, config=None, profile=None, path=None, verbosity=0, **_):
         loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
@@ -218,24 +220,23 @@ class ScanInspectCommand(Parser):
         for item in loaded.config_list:
             shelf = ShelfProfile.from_config(item)
             prepared.append((shelf, Matcher.from_document(shelf.document, shelf.name)))
+        groups = filter_kept(
+            [shelf.scan(quick=True) for shelf, _matcher in prepared],
+            path,
+        )
         level = int(verbosity or 0)
-        seen = 0
-        for shelf, matcher in prepared:
-            for result in shelf.scan(quick=True):
+        named = path is not None
+        for (_shelf, matcher), scans in zip(prepared, groups, strict=True):
+            for result in scans:
                 for found in result.results:
-                    if path is not None and found.path != path:
-                        continue
-                    seen += 1
                     self._show_inspection(
                         level,
                         result.profile,
                         result.index,
                         found,
                         matcher.explain(found),
-                        named=path is not None,
+                        named=named,
                     )
-        if path is not None and seen == 0:
-            raise SupershelfError(f"No kept file {path!r}")
         return None
 
     def _show_inspection(

@@ -2,7 +2,7 @@
 
 `match_rules` is a profile-level list, a sibling of `inputs`. Every input of that profile uses it. Patterns are literal. They are not templates.
 
-`scan kinds` uses the files `scan files` would keep, without hashing and without reading mtime or ctime. It prints matched files only. Columns: `profile`, `input`, `path`, `kind`, `rule`. `input` and `path` mean the same thing as in `scan files`.
+`scan kinds` uses the files `scan files` would keep, without hashing and without reading mtime or ctime. It prints matched files only. Columns: `profile`, `input`, `path`, `kind`, `rule`. `input` and `path` mean the same thing as in `scan files`. It takes the same optional path, and it matches and warns only for the selected files.
 
 ## First hit wins
 

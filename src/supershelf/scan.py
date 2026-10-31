@@ -6,7 +6,7 @@ import hashlib
 import logging
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -141,6 +141,43 @@ class InputScanResult:
     index: int
     config: ResolvedInput
     results: list[InputFile]
+
+
+def filter_kept(
+    groups: list[list[InputScanResult]],
+    path: str | None,
+) -> list[list[InputScanResult]]:
+    """Keep every file, one exact path, or paths that start with `path`.
+
+    None returns `groups` unchanged. An exact kept path keeps only that path
+    in every input. Anything else keeps paths that start with it. A selector
+    that matches nothing is an error. Empty inputs stay empty.
+    """
+    if path is None:
+        return groups
+    exact = any(
+        found.path == path
+        for scans in groups
+        for scan in scans
+        for found in scan.results
+    )
+    narrowed: list[list[InputScanResult]] = []
+    seen = 0
+    for scans in groups:
+        group: list[InputScanResult] = []
+        for scan in scans:
+            if exact:
+                chosen = [found for found in scan.results if found.path == path]
+            else:
+                chosen = [
+                    found for found in scan.results if found.path.startswith(path)
+                ]
+            seen += len(chosen)
+            group.append(replace(scan, results=chosen))
+        narrowed.append(group)
+    if seen == 0:
+        raise SupershelfError(f"No kept file {path!r}")
+    return narrowed
 
 
 class InputScanner:

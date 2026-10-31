@@ -51,6 +51,15 @@ books    1      Bank2000/REL_20260425_ab12cd34.pdf        2026-04-25  2026-04-25
 
 `input` is the 1-based position of that input in the profile, not the folder path. `path` is relative to the input directory. `mtime` and `ctime` are shown with `config.default_date_format`, which defaults to `%Y-%m-%d`. `sha256` is the lowercase hex digest of the file bytes.
 
+Omit the path to list every kept file. The argument is that path column: directory and filename, relative to the input.
+
+```bash
+supershelf scan files "Bank2000/REL_20260425_ab12cd34.pdf"
+supershelf scan files Bank2000
+```
+
+An exact file path lists that file only. The same path in two inputs is listed twice. Any other value lists paths that start with it, so `Bank2000` also lists `Bank2000/card/CARD_1234_20211231.pdf` and `Bank2000.txt`. A value that no kept file has stops the command.
+
 ```bash
 supershelf scan files --quick
 ```

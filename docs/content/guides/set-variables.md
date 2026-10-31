@@ -73,7 +73,7 @@ receipt: ab12cd34
 
 The printed order is the internal facts, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in the order they were first stored. `vendor` was set in `default_vars` and replaced by the rule, so it keeps the earlier position. `owner` stays `sample` because the rule does not set it.
 
-There is no `--quick` on this command. The walk always reads mtime, ctime, and sha256. Omit the path to list every matched file. A path that no kept file has stops the command. The same path in two inputs is listed twice.
+There is no `--quick` on this command. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. An exact file path lists that file in every input that has it. Any other value lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
 
 A key in one mapping cannot read a key that appears later in that same mapping. `{{ vendor }}` inside `default_vars`, next to `vendor`, still sees the previous layer, which is the fact scope. It does not see the candidate list being tried.
 

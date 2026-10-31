@@ -170,6 +170,68 @@ def test_scan_files_quick_omits_metadata(
     assert "mtime" not in output
 
 
+def test_scan_files_prefix_selects_paths_that_start_with(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    (inbox / "Bank2000").mkdir(parents=True)
+    (inbox / "notes").mkdir()
+    (inbox / "Bank2000" / "file.pdf").write_bytes(b"hello")
+    (inbox / "Bank.txt").write_bytes(b"hello")
+    (inbox / "notes" / "readme.txt").write_bytes(b"hello")
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+
+    app = App(parse=False)
+    app.dispatch(["scan", "files", "--quick", "Bank"])
+    output = capsys.readouterr().out
+
+    assert "Bank2000/file.pdf" in output
+    assert "Bank.txt" in output
+    assert "readme.txt" not in output
+
+
+def test_scan_files_exact_file_omits_a_longer_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "a.txt.bak").write_bytes(b"hello")
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+
+    app = App(parse=False)
+    app.dispatch(["scan", "files", "--quick", "a.txt"])
+    output = capsys.readouterr().out
+
+    assert "a.txt" in output
+    assert "a.txt.bak" not in output
+
+
+def test_scan_files_unknown_path_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "files", "missing.pdf"])
+
+    assert caught.value.code == 1
+    assert "No kept file 'missing.pdf'" in capsys.readouterr().err
+
+
 def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -200,6 +262,33 @@ def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     assert "sha256" not in captured.out
     assert "No match_rule for b.txt in profile work input 1" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_kinds_prefix_warns_only_for_selected_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    (inbox / "sub").mkdir(parents=True)
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    (inbox / "sub" / "c.txt").write_bytes(b"more")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "kinds", "sub"])
+    captured = capsys.readouterr()
+
+    assert "a.txt" not in captured.out
+    assert "b.txt" not in captured.err
+    assert "No match_rule for sub/c.txt in profile work input 1" in captured.err
 
 
 def test_scan_vars_lists_resolved_values_and_skips_unmatched(
@@ -307,6 +396,32 @@ def test_scan_vars_named_unmatched_file_warns_only_for_that_file(
 
     app = App(parse=False)
     app.dispatch(["scan", "vars", "b.txt"])
+    captured = capsys.readouterr()
+
+    assert "a.txt" not in captured.out
+    assert "No match_rule for b.txt in profile work input 1" in captured.err
+    assert "No match_rule for a.txt" not in captured.err
+
+
+def test_scan_vars_prefix_warns_only_for_selected_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "b"])
     captured = capsys.readouterr()
 
     assert "a.txt" not in captured.out
@@ -499,6 +614,34 @@ def test_scan_inspect_without_a_path_does_not_print_patterns(
     assert "against" not in captured.out
     assert "filename_glob" not in captured.out
     assert "match profile" not in captured.err
+
+
+def test_scan_inspect_prefix_traces_only_selected_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    folder = tmp_path / "inbox" / "company"
+    folder.mkdir(parents=True)
+    (folder / "a.txt").write_bytes(b"hello")
+    (folder / "b.txt").write_bytes(b"there")
+    (tmp_path / "inbox" / "other.txt").write_bytes(b"other")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "inspect", "company"])
+    captured = capsys.readouterr()
+
+    assert "against 'a.txt': hit" in captured.out
+    assert "against 'b.txt': miss" in captured.out
+    assert "other.txt" not in captured.out
+    assert "match profile" not in captured.out
 
 
 def test_scan_inspect_verbose_prints_skipped_fields(

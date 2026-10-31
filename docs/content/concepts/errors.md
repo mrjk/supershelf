@@ -22,4 +22,4 @@ These do not fail the command:
 - a later config format ignored because toml, yaml, or yml already won
 - a second file ignored because that profile name was already loaded
 
-`scan inspect` writes its trace to stdout. A path that no kept file has is still an error, including for `scan vars`.
+`scan inspect` writes its trace to stdout. A path that no kept file has is an error for every scan command.

@@ -43,6 +43,8 @@ Stored mtime and ctime are UTC ISO-8601 with a numeric offset, so they can be pa
 
 `path` in the table is relative to the input directory, with `/` separators. `input` is the 1-based index in that profile's `inputs` list.
 
+`scan files` takes an optional path, the same text as that column. Omit it to list every kept file. An exact file path lists that file. Any other value lists paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice.
+
 The columns are `profile`, `input`, `path`, `mtime`, `ctime`, and `sha256`. `--quick` omits the last three.
 
 `scan files` only prints. It does not create the database file or the cache file.
