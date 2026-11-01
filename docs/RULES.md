@@ -6,295 +6,339 @@ These numbers are rules, not product steps. Where a supershelf decision is writt
 
 ### 1.1 Naming and classifiers
 
-Ideally, a project should respect this name pattern:
-* If it's an app:
-    * NAME_OF_THE_APP or CODENAME
-    * For side repos, or project, either use component naming convention, or ecosystem:
-        * NAME_OF_THE_APP-COMPONENENT, where component can be -cli, -web, -server, -api, -doc etc ...
-* If it's a component:
-    * DOMAIN-NAME, where domain is language, or a product (python, ruby, go, rust ...) or (ansible, terraform, mise/asdf, etc ...)
-        
+
+**Classifiers.**
+
+A project has one of these classifiers:
+
+* `PROJECT_NAME`: name of the component or app.
+* `PROJECT_TYPE`: type of the component. See Project types classifiers.
+* `PROJECT_STATUS`: See project status classifiers. default is PROTOTYPE
+* `PROJECT_LANGUAGE`: type of the component. Examples: `python`, `rust`, `go`. (use github lang tags in https://github.com/github-linguist/linguist/blob/main/lib/linguist/languages.yml)
+* `PROJECT_TAGS`: custom tags, like in github tags
+* `PROJECT_VISIBILITY`: Choose one of: PUBLIC|PRIVATE(default)|SECRET
 
 
-Classifiers, a project can be:
-* MAINTAINED: Support is done, security is done. After 2 years of non commit, fallback to UNMAINTAINED
-* UNMAINTENED: mention since what date the project is not maintained
-* DEPRECATED, replaced by something else that need to be mentionned
-* ABANDONNED: when a project was abandonned before it does not make sense to work on it anymore, mention the reason, no replacements or give alternative project
+**Tags.**
 
-Tags:
-* GROUP: Name of the main app, or the parent application (project name, or component DOMAIN)
-* COMPONENT: Name of the component, or "app"
-* COMPONENT_TYPE: Type of the component, like ansible-collection or ansible-role
+Project types classifiers:
+* `app|codename`: Generic app, no informations, or public product
+* `docs`: Generic documentation, no informations
+* `python`: python library
+* `go`: go library
+* `shell`: shell library
+* `ansible-project`: Ansible domain repository 
+* `ansible-inventory`: Ansible inventory collection 
+* `ansible-collection`: Ansible galaxy collection 
+* `ansible-role`: Ansible galaxy role
+* `mise-app`: mise app
+* `asdf-app`: asdf app
+* `terraform-project`: Terraform domain repository 
+* `terraform-module`: Terraform module
 
+Project status classifiers:
+* `PROTOTYPE`: Default status of a project.
+* `MAINTAINED`: support is handled, and security work is handled. After 2 years with no commit, fall back to `UNMAINTAINED`.
+* `UNMAINTAINED`: state the date since which the project is not maintained.
+* `DEPRECATED`: the project is replaced by something else. Name the replacement.
+* `ABANDONED`: the project was abandoned before further work made sense. State the reason. Give no replacement, or name an alternative project.
 
-List of known app-products (to be filled by the time):
-* terraform:
-    * terraform-module-
-* ansible:
-    * ansible-role-
-    * ansible-collection-
-* mise/asdf/...:
-    * mise-
-* python|shell|go|rust|:
-    * python- (for python lib)
-    * CODENAME
+**Naming.**
+
+Use this naming pattern on the project, to help user find the perfect name.
+
+* An app is `PROJECT_NAME` name or a codename.
+* A side repo or side project uses one of these:
+    * `PROJECT_NAME-SUFFIX`, where SUFFIX can be `-cli`, `-web`, `-server`, `-api`, `-doc`, and so on.
+* A component is `PROJECT_TYPE-PROJECT_NAME`. The domain is a language (`python`, `ruby`, `go`, `rust`, and so on) or a product (`ansible`, `terraform`, `mise`/`asdf`, and so on).
+
 
 
 
 ### 1.2 License, language, and examples
 
-* Ensure a GPL license is present in project, unless another license is mentionned
-* Each new code changes should come with documentation and tests. Codes changes should be small and reviewable.
-* Do not use personal or private data in examples, documentations and test. Always use agnostic or fake names (ie: intead of using a name of real bank instution use Bank2000 ). As well, always use english names, no french, spanish, german or whatsoever. English should be the main language of the project.
-* Assume any project may end up public, excepted personal projects.
-    * I dont want to do cleanup, i want this to be clean from day one.
+* Include a GPL license, unless another license is stated.
+* Each code change comes with documentation and tests. Keep each change small enough to review.
+* Do not put personal or private data in examples, documentation, or tests. Use agnostic or fake names. For example, use `Bank2000` instead of the name of a real bank. Use English names. Do not use French, Spanish, German, or another language for those names. English is the main language of the project.
+* Assume any project may become public, except a personal project.
+* Write it clean from day one. Do not rely on a later cleanup.
+* `examples/` holds code a user can try. That code follows the same rule: no personal data.
 
-### 1.3 Standard project structure
+### 1.3 Repository layout
 
-Most of them  are optional, but if they exists, they should be here:
+Most of these paths are optional. If a path exists, put it here. What happens inside `docs/`, `scripts/`, `tests/`, and the image directory is defined in the sections below.
 
-Project_ROOT:
-  README.md: Says what the project does
-  LICENSE.md: Recommended license
-  CODE_OF_CONDUCT.md: OPtional code of conduct
-  CHANGELOG.md: Optional automanaged changelog
+```
+Project root:
+  README.md: what the project does
+  LICENSE.md: recommended license
+  CODE_OF_CONDUCT.md: optional code of conduct
+  CHANGELOG.md: optional changelog, managed automatically
 
-Code project:
-  scripts/: Any scripts need to manage the project lifecycle, not related to code.
-  docs/: Documentation directory
-  tests/: TEst directory
-  images: Default docker/lxc/oci direcotory
+Directories:
+  scripts/: scripts for the project lifecycle, not application code
+  docs/: documentation
+  tests/: tests
+  examples/: code a user can try
+  images/: default directory for Docker, LXC, and OCI images
 
-Depending the context, the language, the project size:
-  python:
-    src/PKG_NAME/
-    PKG_NAME: Old style, but still valid
-  shell:
-    bin/ ready to use bean, no compilation
-    lib/ bash lib
+Root files, kept minimal, and sometimes required:
+  .env: generic env file, read by Docker, Taskfile and mise
+  .dockerignore
+  TODO: feed with other known files
+```
 
-  TODO: Feed with other lang patterns
+`images/` is the default name. `docker/` and `container/` are accepted names for that same directory.
 
-Main project files should be minimalist, and sometimes required:
-. env: Generic env file, read by docker 
-. dockerignore
-TODO: feed with other known files
+Code layout depends on the context, the language, and the size of the project. The trees below are examples. They are not part of the repository tree above.
 
+* Python:
+    * `src/PKG_NAME/`
+    * `PKG_NAME/`: old style, still valid
+* Shell:
+    * `bin/`: ready-to-use binaries, no compilation
+    * `lib/`: bash library
+* TODO: feed with other language patterns
 
-### 1.3 mise and task
+### 1.4 mise and task
 
-* We use mise, aka mise-en-place.
-    * Ensure a config is present
-    * it must provide all the development toolkit to be able to run the whole project. Language domain dependency take the relay (pyproject.toml for python, etc ...)
+**mise.**
 
-* We use task and taskfile:
-    * GEneral:
-        * Good and consistent naming matters. A command has one name. The task, the workflow, and the job use that name, with the same case and separators.
-        * CWD is where the taskfile is
-        * Ensure it uses a common .env file
-        * Do not hardcode versions or repo owner, use env vars.
-    * Simple project:
-        * Ensure there is one taskfile at the root that allow to easily work with project. Split commands
-    * More complex project:
-        * Include taskfiles in root taskfile
-        * Only show at the top level commands general commands, if the user want to run specific tests/docsumentation commands, it changes dir to it to have more focused command
-    * CI/CD commands:
-        * Provide one task, `ci`, that runs the verification pipeline. A CI/CD builder runs that same task. Local and remote stay aligned. It can provide hidden shortcuts.
-        * `ci` only calls other tasks. Leaf tasks do the work.
-        * A workflow installs mise, then runs `mise x -- task <name>`. It does not inline pytest, uv, or the site generator.
-    * Taskfile workflow word topics, this is the general workflow, not all steps are mendatory:
-        * fix: auto fix format, linting, etc ....
-        * lint: Validate lint rules pass
-        * build: Validate the build works
-        * test: Test the build
-        * docs: Build docs
-        * security: Ensure the build pass security tests, test production result, before releasing
-        * release: Prepare a release
-        * publish: Publish release
-    * Taskfile stack word topics:
-        * images|docker|vm (build docker images vm applicances)
-        * terraform|ansible: run CD with ansible or terraform
-        * Add more later
-    * Taskfile ci/cd word topics:
-        * ci: run ci
-            * ci-short: run on all commit
-            * ci-full: the full ci pipeline
-        * cd: actually publish things
-    * Publicly exposed ci/cd jobs:
-        * ci-short
-        * ci-full
-        * release
-        * publish
-        * publish-docs
+Use mise (mise-en-place).
 
-    * Taskfiles must stay minimal and readable. Try to make it DRY, use vars and anchors if you want to.
-    * All external project logic should be in scripts/ directory, ideally in bash strict or in shell. 
-        * This directory is a placeholder for all project scripts, that can be reused at diffrent places
+* A mise config is present.
+    * We use it to determine required list of tools, with always a version (never latest)
+    * We use it to override environment vars 
+    * We only use mise on those basic tasks, configuring more stuff with mise is out of scope
+* It provides the whole development toolkit needed to run the project. Language dependencies take over from there. Example: `pyproject.toml` for Python.
+* use mise.local.toml file to store local override env vars. Mention it in .gitignore.
 
+**task.**
 
-### 1.4 Documentation, containers, tests, CI, and examples
+Use task and a taskfile.
 
+* Naming stays consistent. A command has one name. The task, the workflow, and the job use that name, with the same case and separators.
+* The working directory is the directory that holds the taskfile.
+* Use a common `.env` file.
+* Do not hardcode versions or the repository owner. Use environment variables.
 
-* Documentation:
-    * Lives under docs/. Use a sub taskfile to allow to build, run, release, run pre scripts ... etc ..
-    * Usually we will want to use a static documentation generator, use one that fit to the same language, or use static binaries provided by mise
-    * Ensure also:
-        * There is always a license file
-        * Ensure a code of conduct is present for non personal projects
-    * Documentation should be structured this way, keep only what is relevent:
-        * top README.md:
-            * Simple and professional README, that shows what the program do, some examples etc ..
-        * If there is a documentation site
-            * It lives in docs/ subdir
-            * Structure:
-                0. Home
-                    - Quite similar to README.md, ideally inject the readme in it (instead of making a copy)
-                1. Quickstart
-                    - Have roughly the same content as top README.md
-                    - install the program, and test with --version
-                    - Show a very simple usecase
-                    - show the very basic commands, give user instruction where to look next
-                2. Usage and Guides
-                    - Explain how to handle step by step, it must be a progressive learning, it must represent suer cases
-                    - Grab specific use cases, and document them
-                3. Documentation
-                    - Explain and train user about all apps concepts. No learning curve needed
-                    - You can go deep technical
-                    - FAQ (if needed)
-                4. Reference (mostly generated)
-                    - CLI --help output
-                    - configuration schema/reference
-                    - code generated documentation for API
-                    - Architectural design record, architecture document/references
-                5. About
-                    - how to setup developement environment (with mise and tasks)
-                    - how to build, release, debug (with tasks)
-                    - license, code of conduct
-                    - informations, project history
+Simple project:
 
-* Container/OCI:
-    * Lives in docker (or container) folder
-    * Usually we will alway want a docker support, and eventually other support (LXC, or whatever)
-    * We always want to be able to run a production deployment with a docker-compose.yml file
-    * We will also want a docker-compose.dev.yml that provided a live development plateform (understand code source is exposed in a volume, and allow live changes when language allow it)
-    * Try to ruse dockerfile content, with staged build, dev/test build should be derivated and extended from production build.
-    * Dont make image that require root user/persmissions
+* One taskfile at the root, enough to work on the project easily. Split commands.
 
-* Tests:
-    * If there are long tests or more complex tests scenarios, use a specific taskfile under tests/.
+More complex project:
 
-* CI/CD:
-    * Task provides a way to run the whole verification pipeline locally. `ci` only calls other tasks. Leaf tasks do the work.
-    * Local CI and remote CI stay aligned. Each workflow job installs mise, then runs `mise x -- task <name>`.
-    * Use env vars for deployment settings. Do not hardcode the repository owner.
-    * The job names below are examples, not a list every project must implement. Add a workflow only for a task the project already has. Do not add lint, a package build, a version bump, or a registry publish just to match an example.
-        * Verification examples: `ci`, and when the task exists: lint, build, test, docs lint, docs build.
-        * Deploy examples: a top release workflow only when several publish tasks exist; publish documentation; registry or GitHub release publishes when those tasks exist.
-    * Every workflow is runnable from the Actions tab (`workflow_dispatch`), so the user can choose the branch.
-    * The name in the Actions tab is that task name. `ci` is `ci`. `docs:build` is `docs:build`. Do not replace it with a title.
-    * Do not run both the pipeline workflow and the single-task workflows on the same automatic event. The single-task workflows are dispatch only.
+* Include other taskfiles from the root taskfile.
+* Show only general commands at the top level. To run a specific test or documentation command, change to that directory and use the focused commands there.
 
-* Git workflow:
-    * Branches:
-        * `main` is the stable line. `dev` is the unstable line. A branch named `dev-*` has the same behavior as `dev`.
-        * Verification runs on a pull request, and on a push to `main`, `dev`, or `dev-*`. A push to any other branch does not. The pull request covers that branch.
-    * Tags:
-        * A stable tag is cut only from `main`. An unstable tag (a pre-release such as alpha, beta, rc, or the same idea) is cut only from `dev` or `dev-*`. No other ref is tagged.
-    * Versions:
-        * Semantic versioning is preferred.
-        * `1.0.0` is the first version that means the product is stable and ready for production. A version below that is not a production declaration.
-        * A tag with no pre-release identifier is a stable tag. A tag with a pre-release identifier is an unstable tag.
-        * When semantic versioning does not fit, use a calendar version: `YY.MM`, then optional day, hour, minute, and a sequence. The shape is `YY.MM[.DD[.HH[.MM]]][.SEQ]`. Each extra field requires the fields before it, except `SEQ`, which may close any of those forms.
-        * The separator is a dot by default. A use case may instead use `-`, `_`, or no separator.
-    * If the project publishes a documentation site, publish it after verification succeeds on a push to `main`. Do not publish from a pull request, or from `dev` or `dev-*`. A manual dispatch publishes the branch selected in that dialog.
+CI/CD commands:
 
-* examples:
-    * This should provide code examples to try for the user
-    * Ensure there is no personal data examples in examples
+* Provide one task, `ci`, that runs the verification pipeline. A CI/CD builder runs that same task. Local and remote stay aligned. The taskfile may provide hidden shortcuts.
+* `ci` only calls other tasks. Leaf tasks do the work.
+* A workflow installs mise, then runs `mise x -- task <name>`. It does not inline pytest, uv, or the site generator.
+
+Workflow words. This is the general workflow. Not every step is required.
+
+* `fix`: auto-fix format, lint, and so on
+* `lint`: check that lint rules pass
+* `build`: check that the build works
+* `test`: test the build
+* `docs`: build the docs
+* `security`: the build passes security tests, and the production result is tested, before a release
+* `release`: prepare a release
+* `publish`: publish the release
+
+Stack words. These are examples. Add more later.
+
+* `images`, `docker`, `vm`: build Docker images and VM appliances
+* `terraform`, `ansible`: run CD with Ansible or Terraform
+
+CI/CD words:
+
+* `ci`: run CI
+    * `ci-short`: run on every commit
+    * `ci-full`: the full CI pipeline
+* `cd`: publish
+
+Publicly exposed CI/CD jobs. Use these names when the project has that job:
+
+* `ci-short`
+* `ci-full`
+* `release`
+* `publish`
+* `publish-docs`
+
+Taskfiles stay minimal and readable. Keep them DRY. Use vars and anchors when that helps.
+
+Project logic that is not the taskfile lives in `scripts/`, ideally in bash strict or in shell. That directory is the placeholder for all project scripts, so the same script can be reused from more than one place.
+
+### 1.5 Documentation
+
+* Documentation lives under `docs/`. Use a taskfile there to build, run, release, and run pre-scripts.
+* Prefer a static documentation generator that fits the project language, or a static binary provided by mise.
+* A license file is always present.
+* A code of conduct is present for a project that is not personal.
+* Keep only the parts that apply.
+
+Top `README.md`:
+
+* A simple, professional README. It says what the program does, with some examples.
+
+If the project has a documentation site, the site lives under `docs/`. Use this structure:
+
+* 0. Home
+    * Close to `README.md`. Inject the README into the page instead of copying it.
+* 1. Quickstart
+    * Roughly the same content as the top README.
+    * Install the program, and check it with `--version`.
+    * Show a very simple use case.
+    * Show the basic commands, and say where to look next.
+* 2. Usage and Guides
+    * Step by step. The path is progressive, and it represents user cases.
+    * Take specific use cases and document them.
+* 3. Documentation
+    * Explain the app concepts and train the user on them. No prior learning curve is required.
+    * Technical depth is allowed.
+    * FAQ, if needed.
+* 4. Reference (mostly generated)
+    * CLI `--help` output
+    * Configuration schema and reference
+    * Generated documentation for the API
+    * Architectural design record, and the architecture document or references
+* 5. About
+    * How to set up the development environment, with mise and tasks
+    * How to build, release, and debug, with tasks
+    * License and code of conduct
+    * Information and project history
+
+### 1.6 Containers
+
+* Container files live in `images/` by default. `docker/` and `container/` are accepted names for that directory. See 1.3.
+* Provide Docker support. Other support, such as LXC, may be added.
+* A production deployment can be run from a `docker-compose.yml` file.
+* Provide `docker-compose.dev.yml` as a live development platform: the source is mounted in a volume, so edits apply live when the language allows it.
+* Reuse one Dockerfile through build stages. Derive the dev and test builds from the production build, and extend them.
+* The image does not require a root user or root permissions.
+* Container should have standard OCI image tags.
+
+### 1.7 Tests, CI, and git
+
+**Tests.**
+
+* When tests are long, or the scenarios are more complex, use a taskfile under `tests/`.
+
+**CI/CD.**
+
+* Task runs the whole verification pipeline locally. `ci` only calls other tasks. Leaf tasks do the work.
+* Local CI and remote CI stay aligned. Each workflow job installs mise, then runs `mise x -- task <name>`.
+* Use environment variables for deployment settings. Do not hardcode the repository owner.
+* The job names below are examples, not a list every project must implement. Add a workflow only for a task the project already has. Do not add lint, a package build, a version bump, or a registry publish just to match an example.
+    * Verification examples: `ci`, and when the task exists: lint, build, test, docs lint, docs build.
+    * Deploy examples: a top release workflow only when several publish tasks exist; publish documentation; registry or GitHub release publishes when those tasks exist.
+* Every workflow is runnable from the Actions tab (`workflow_dispatch`), so the user can choose the branch.
+* The name in the Actions tab is that task name. `ci` is `ci`. `docs:build` is `docs:build`. Do not replace it with a title.
+* Do not run both the pipeline workflow and the single-task workflows on the same automatic event. The single-task workflows are dispatch only.
+
+**Git.**
+
+Branches:
+
+* `main` is the stable line. `dev` is the unstable line. A branch named `dev-*` has the same behavior as `dev`.
+* Verification runs on a pull request, and on a push to `main`, `dev`, or `dev-*`. A push to any other branch does not. The pull request covers that branch.
+
+Tags:
+
+* A stable tag is cut only from `main`. An unstable tag (a pre-release such as alpha, beta, rc, or the same idea) is cut only from `dev` or `dev-*`. No other ref is tagged.
+
+Versions:
+
+* Semantic versioning is preferred.
+* `1.0.0` is the first version that means the product is stable and ready for production. A version below that is not a production declaration.
+* A tag with no pre-release identifier is a stable tag. A tag with a pre-release identifier is an unstable tag.
+* When semantic versioning does not fit, use a calendar version: `YY.MM`, then optional day, hour, minute, and a sequence. The shape is `YY.MM[.DD[.HH[.MM]]][.SEQ]`. Each extra field requires the fields before it, except `SEQ`, which may close any of those forms.
+* The separator is a dot by default. A use case may instead use `-`, `_`, or no separator.
+
+If the project publishes a documentation site, publish it after verification succeeds on a push to `main`. Do not publish from a pull request, or from `dev` or `dev-*`. A manual dispatch publishes the branch selected in that dialog.
 
 ## 2 Python
 
 ### 2.1 Modules and classes
 
-* Use modular code:
-    * Organise code in specific files and dir
-        * It should somewhat always easy to copy a folder into another project and have the logic self contained (minus all common things, just keep the domain logic together, other dependencies are implementations dependenant)
-    * Sometimes the project will allow the user to extend application functionnalities by allowing custom code to be loaded
-        * On this case, ensure the API is defined and documented
-* Always use OOP and classes: inheritance, composition, and so on. THIS IS NOT OPTIONAL
-    * Use methods and private methods when logic belongs to a class or object. A clean file only has class definitions.
+* Use modular code.
+    * Organize code into specific files and directories.
+    * Keep a folder easy to copy into another project, with its logic self-contained. Leave shared pieces out. Keep the domain logic together. Other dependencies depend on the implementation.
+    * When the project lets the user extend application functionality by loading custom code, define the API and document it.
+* Always use OOP and classes: inheritance, composition, and so on. This is not optional.
+    * Use methods and private methods when the logic belongs to one class or object.
     * Use a parent class when several classes share the same behavior.
-    * In src/, module-level functions are forbidden except common.py and main().
-    * New behavior is a method on the class that owns the data.
+    * In `src/`, a module-level function is allowed as `main()`, in `common.py`, or in the module that owns the behavior when more than one caller shares it. Put it beside that type when there is one.
+    * `common.py` is for a helper that has no single owner.
+    * New behavior that one class owns is a method on that class.
     * Do not add a helper function because the file already has some.
-    * Matching the existing style, and keeping the diff small, do not override this.
+    * Matching the existing style, and keeping the diff small, does not override this.
     * "When it makes sense" is not an exception for private helpers.
-    * If you touch an existing helper, move it onto the class in the same change.
-    * Reusable behavior that belongs to no one class goes in common.py.
+    * If you touch a helper that belongs to one class, move it onto the class in the same change.
 
 ### 2.2 CLI, tests, DRY, and configuration vocabulary
 
-* Use github/mrjk/clak as main CLI library
-    * Use standard CLI output/format features (especially the table output)
-    * Always reuse common CLI flags in common to make code DRY
-* Always add tests when you add new features or update existing tests if needed
-* Always try to identify reusable code, and put it on a shared class or in common.py
-* Ensure the code is DRY
-* Ensure the app is 12foctor app
-    * Especially on the top level configuration settings.
-* If there is any configuration:
-    * Ensure the vocabulary is clear or not confusing
-* Avoid any confusing terms or vocabulary
+* Use `github/mrjk/clak` as the main CLI library.
+    * Use the standard CLI output and format features, especially the table output.
+    * Reuse common CLI flags from `common`, so the code stays DRY.
+* Add tests when you add a feature. Update existing tests when a change requires it.
+* Identify reusable code and put it on a shared class, in the module that owns the behavior, or in `common.py` when it has no single owner.
+* Keep the code DRY.
+* Make the app a 12-factor app, especially the top-level configuration settings.
+* When there is configuration, keep the vocabulary clear.
+* Avoid confusing terms.
 
 ### 2.3 Exceptions
 
-* The program must provides different kind of exceptions
-    * There is ONE parent exception, and many children exceptions, that can be class nested/inherited
-    * EAch exceptions should have a specific error message, that allow customization via vars. It's also possible to override exception error message.
-    * Each exception should return am exit code, with a way to add a custom message or parameters.
-    * Each exception should provide a tips field, that give user instructions to solve the issue. This is optional.
+* The program provides different kinds of exceptions.
+    * There is one parent exception, and many child exceptions. A child may be nested or inherited.
+    * Each exception has a specific error message. The message can be customized with variables, and it can be overridden.
+    * Each exception returns an exit code, with a way to add a custom message or parameters.
+    * Each exception provides a `tips` field that tells the user how to solve the issue. The field is optional.
 
 ### 2.4 Logging
 
 * Logging verbosity and output:
-    * For stdout, always try to use clak views
-        * If that does not fit, you can print
-    * For logging levels: It must be progressive, first level show few outputs, more levels show more output
-        * NOTICE (if exists) should always been shown, wihtout verbosity
-        * INFO app
-        * DEBUG app
-        * More intermediate app debugging levels ...
-        * 2 last ones
-            * show info from all libs
-            * show debug from all libs
+    * For stdout, use clak views. If that does not fit, print.
+    * Levels are progressive. The first level shows little output. Higher levels show more.
+        * `NOTICE`, when it exists, is always shown, with no verbosity flag.
+        * `INFO`: the app
+        * `DEBUG`: the app
+        * Further intermediate app debugging levels.
+        * The last two levels:
+            * show info from all libraries
+            * show debug from all libraries
 
 ## 3 App standard
 
-* Structured like git-like commands, with subcommands
-* must support log levels and dry run options
-* COmmon options flags must be setup at the top, specific are attached to subcommand only. Use CLI flags classes+inheritabnce if ncecessary to be able to reuse common flags.
-* Configuration order precedence (12 factors apps):
+* Structure commands like git, with subcommands.
+* Support log levels and a dry-run option.
+* Set common option flags at the top. Attach flags that are specific to one subcommand to that subcommand only. Use CLI flag classes and inheritance when that is needed to reuse the common flags.
+* Configuration precedence for a 12-factor app:
     * CLI
-    * Env vars
-    * YAML Config
+    * Environment variables
+    * YAML config
     * Defaults
-* For the configuration file format, i want to be able to generate a schema of it, and also raise errors when the user make configuration mistakes.
+* The configuration format has a generated schema. Raise an error when the user makes a configuration mistake.
 
 ## 4 Documentation site
 
-* all lives in docs/
-* Use a taskfile: to serve, build, release
-    * Add extract tasks when some custom document import/generation scripts
-* docs lives in docs/content
-* use yaml config
+* The site lives in `docs/`.
+* Use a taskfile to serve, build, and release.
+    * Add extract tasks when custom document import or generation scripts are needed.
+* Pages live in `docs/content`.
+* Use a YAML config.
 * Discover sections automatically. Do not list pages in `mkdocs.yml`.
 * The page menu follows the reading path. Write that order in the section `.nav.yml`. Filename order is not the reading path. Put a new page on the path where the reader needs it.
+* Example for this app:
     * Guides follow the next-page links, starting at list files.
     * Concepts follow the pipeline on the concepts page: profiles, paths, inputs, matching, variables, kind files. Then template commands, modules, errors, and limits.
     * Reference follows command line, configuration, templates, variable names, kind file, then architecture.
     * About follows development, then license.
-* Documentation should be LOW maintenance, avoid recap, summaries, links to other pages that can change. Try to stay minimalist in way to facilitate maintenance.
-* When using code, ensure the language tag is set, and eventually the corresponding filename. Also, if the config support many syntax format, show all formats in a tab.
-* Do not use pages that are just links to other pages, wihtout content. There is the menu already for that.
-* If there are need to do diagrams to explain things or concepts, use some when it brings value to the reader. Use correct diagram type according what you want to illustrate
+* Keep documentation low-maintenance. Avoid recaps, summaries, and links to other pages that can change. Stay minimal so the pages stay easy to maintain.
+* When showing code, set the language tag, and set the filename when there is one. If the config supports several syntax formats, show all of them, each in a tab.
+* Do not use a page that is only links to other pages, with no content of its own. The menu already does that.
+* Use a diagram when it helps the reader. Choose the diagram type that matches what you are illustrating.

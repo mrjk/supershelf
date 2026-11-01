@@ -8,7 +8,7 @@ Working notes for this repository. The public site is `docs/content/` and is not
 - Types, cast, models, source labels, `kind_schema`, or packaged defaults: [architecture.md](architecture.md). Cite it as architecture 1.7. Those numbers are not product steps.
 - A profile or kind file a user would paste: [examples.md](examples.md). No section numbers. A comment may cite a product step. The rule itself stays in behavior or architecture.
 - How any mrjk app is built: [../RULES.md](../RULES.md). Cite it as rules 2.1.
-- An idea that is not accepted: [drafts/](drafts/). It does not move into behavior until it is accepted. `2.3.3` file metadata is in [behavior.md](behavior.md). Later builtins stay in [drafts/file-metadata.md](drafts/file-metadata.md). The build order is [drafts/file-metadata-impl.md](drafts/file-metadata-impl.md).
+- An idea that is not accepted: [drafts/](drafts/). It does not move into behavior until it is accepted. `2.3.3` file metadata is in [behavior.md](behavior.md). The table is [architecture.md](architecture.md) section 3. Later builtins stay in [drafts/file-metadata.md](drafts/file-metadata.md).
 - A decision that is accepted and blocked on another step stays in drafts until that step exists. `record_key` is [drafts/record-key.md](drafts/record-key.md). File metadata shipped as schema 2, so `record_key` takes the next schema version.
 - `docs/v1/` is the old barbu accounting spec. Do not add to it.
 - `docs/DRAFT.md` is empty. Do not use it.

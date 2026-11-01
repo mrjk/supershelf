@@ -274,7 +274,7 @@ Missing and null are both `None` before the type check.
 
 - `profile.py`: `default_date_format`, `root_dir`, `database_file`, `cache_file`.
 - `record.py`: `RecordIdentity.resolve`. The flag wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then packaged `path`. A bare `path` expands to `path` then `hash`. A bare `hash` expands to `hash` then `path`. A list does not expand its items. An empty string, an empty list, a repeated step, or an unknown step is invalid and does not fall back. Rule lists are behavior 4.2.
-- `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. `KindOverrideMode` is a `WordChoice`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
+- `kind_file.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. `KindOverrideMode` is a `WordChoice`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
 - `scan.py`: a null `inputs` uses the same "no inputs" error as a missing key. An empty list stays "inputs is empty".
 
 These also use a missing key and null as `None`: `kind_overrides_config`, `var_modules`, `match_rules`, `default_vars`, and the profile name. A present `overrides` key is a config error, not `None`.
