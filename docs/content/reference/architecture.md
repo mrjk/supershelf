@@ -10,6 +10,6 @@ A command loads profiles, renders paths, walks inputs, matches rules, and resolv
 
 6. `record run` compares that result with the profile database and appends events. `record status` prints the comparison and writes nothing.
 
-`scan files` runs steps 1 to 3. `scan kinds` and `scan inspect` run steps 1 to 4. `scan vars` runs steps 1 to 5, and may create or append a kind file after the run succeeds. `record status` and `record run` run steps 1 to 6. `record run` does not create or append a kind file. `schema` loads the profile and prints JSON Schema. It does not walk inputs or write a kind file. Scan commands, `schema`, and `profiles` do not create the database file. Nothing writes `cache_file`. There is no output tree.
+`scan files` runs steps 1 to 3. `scan kinds` and `scan inspect` run steps 1 to 4. `scan vars` runs steps 1 to 5, and may create or append a kind file after the run succeeds. `record status` and `record run` run steps 1 to 6. `record run` does not create or append a kind file. `schema` loads the profile and prints JSON Schema. It does not walk inputs or write a kind file. `scan vars` and `record run` create the database file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `scan inspect`, `schema`, and `profiles` do not either. Nothing writes `cache_file`. There is no output tree.
 
 Var modules are the extension point. A module listed in `config.var_modules` may export `GLOBALS` and `FILTERS`. Those callables are available inside variable templates. See [Modules](../concepts/modules.md).

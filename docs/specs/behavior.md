@@ -1,6 +1,6 @@
 # Behavior
 
-What the commands do. Types, cast, and packaged defaults are in [architecture.md](architecture.md). A profile a user would paste is in [examples.md](examples.md). `2.3.3` is an accepted draft in [drafts/file-metadata.md](drafts/file-metadata.md). It is not implemented.
+What the commands do. Types, cast, and packaged defaults are in [architecture.md](architecture.md). A profile a user would paste is in [examples.md](examples.md). File metadata is 2.3.3. Later metadata builtins stay in [drafts/file-metadata.md](drafts/file-metadata.md).
 
 ## 1 App initialization
 
@@ -210,7 +210,7 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
 
 ## 2.3 Vars
 
-`scan vars` resolves variables in 2.3.1 and may read or append a kind file in 2.3.2.
+`scan vars` resolves variables in 2.3.1, may read or append a kind file in 2.3.2, and may read file metadata in 2.3.3.
 
 ### 2.3.1 Resolve
 
@@ -535,6 +535,94 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
   In every mode except disabled, -vv still logs that there is no candidate list.
   Omitted uses the default list from 2.3.1.
 
+### 2.3.3 File metadata
+
+`meta()` reads one field from a kept file. The result is an ordinary variable. There is no `metadata_fields` key and no `scan meta` command.
+
+`pdf_cdate()`, `pdf_mdate()`, and `file()` stay as they are. They keep their own in-process cache. They do not read `content_meta`.
+
+`scan files` and `scan kinds` do not call drivers and do not open the database. `schema` and `profiles` do not either.
+
+`scan vars`, `record run`, and `record status` call a driver only while a var candidate renders `meta()`. A profile that never calls `meta()` does nothing new. `record status` writes nothing.
+
+A candidate that already succeeded skips the rest of the list. A kind-file cell is a literal. It does not call `meta()`.
+
+#### meta()
+
+`meta(driver, field)` is one Jinja command. Use it in `default_vars`, rule `vars`, and overrides. `field` may be omitted only when that driver has a single text result (`text`). Omitting it on any other driver fails the candidate.
+
+- An unknown driver name stops the command. When the driver argument is a string literal, that check happens when the template is loaded. A non-literal driver is checked at render.
+- A disabled driver, a file the driver does not accept, a missing field, a blank value, a timeout, a non-zero exit, or undecodable stdout fails that candidate only. The next string runs.
+- `VarCandidateError` from a custom driver fails that candidate only.
+- Any other exception stops the command.
+- A blank value is empty after strip. A driver that returns blank fails the candidate. It does not store `""`.
+
+#### metadata_driver
+
+`metadata_driver` is a top-level profile key, next to `default_vars`. It is not under `config`. `default.toml` does not list drivers.
+
+Omitted, null, and `{}` build the builtin defaults only. A present mapping overlays those names. A `metadata_driver` table inside `config` stops the command. The message says to move the key to the top level.
+
+- Builtin overlay. The key is a builtin name and `driver` is omitted. An unknown option for that builtin is a config error.
+- Generic command. `driver` is `supershelf.meta_driver`. Several entries may use this module. Each has its own command.
+- Custom module. `driver` is `pkg.mod` or `pkg.mod:ClassName`. `pkg.mod` uses the exported `DRIVER`. `pkg.mod:ClassName` constructs that class with no arguments. An import failure, or a missing `DRIVER` or class, is a config error at load.
+
+A key that is not a builtin and has no `driver` is a config error. Setting `driver` on a builtin name replaces that builtin for this profile.
+
+Reserved keys are `driver`, `enable`, `timeout`, `ext`, and `mime`. They are not passed through. Extra keys on a custom entry are `options`.
+
+`enable` is `auto`, `true`, or `false`. Booleans `true` and `false` are those words. Anything else is a config error. Omitted uses the class default (`auto` for the shipped tools).
+
+- `auto`: check once, on the first call. A miss fails that candidate and is logged once.
+- `true`: the same check at profile load. A miss stops the command before the walk.
+- `false`: the driver is never called. A candidate that names it misses.
+
+`fs` and `pdf` ignore `enable`. A `timeout` key on either is a config error. Other drivers: omitted timeout is 30, and `0` or below is a config error.
+
+#### Which files a driver accepts
+
+The suffix is the last suffix, without the leading dot, compared case-insensitively. `ext` and `mime` on an entry replace the class lists. Omitted keeps the class list. A string is a one-item list. A leading dot is stripped. An empty list stays empty. Items must be strings.
+
+1. A matching extension accepts the file. Mime is not read.
+2. No extension, or no hit: if `mime` is non-empty, probe and compare. A hit accepts.
+3. Neither list: accept every file. `exiftool` is that case.
+4. `ext` only, and the extension missed: reject, and do not probe.
+
+The probe is `file --mime-type --brief`, once per hash, in memory. If `file` is not on `PATH`, the mime test misses and one warning is logged. The probe is not stored in `content_meta`. A driver that does not accept the file does not spawn and does not write a row.
+
+#### supershelf.meta_driver
+
+`command` is required. A path separator resolves from the profile directory and must be an existing file. The file is executed directly. A bare name is looked up on `PATH`.
+
+`arguments` omitted means argv is only the program. A string is split with `shlex` at load. A bad quote is a config error. Placeholders are replaced after the split. `%p` as its own token keeps a path that contains a space as one argv item. Tokens are `%p %r %n %s %e %h %c %m %d` and `%%`. Any other `%` token is a config error at load.
+
+`output_format` is required: `yaml`, `toml`, `ini`, or `shell`. Nested mappings flatten with `.`. List and null values are skipped. A non-mapping document, a bad TOML duplicate, or a bad shell key fails the candidate. stderr is logged at debug and is not parsed.
+
+`options_key` is the sha256 of canonical JSON: driver identity, `command`, the argument template, `output_format`, and `cache_epoch`. `ext`, `mime`, `enable`, and `timeout` stay out. The bag key is the content hash, the profile key, and `options_key`.
+
+#### Shipped drivers
+
+- `fs`: always on. No cache row. Fields are the walk strings: `ctime`, `mtime`, `hash`, `name`, `stem`, `ext`, `path`, `dir`.
+- `pdf`: always on. `pypdf`. `ext` is `pdf`. `mime` is `application/pdf`. Fields: `creation_date` and `modification_date` as `YYYY-MM-DD`, plus `author`, `title`, `subject`, `creator`, `producer`. A bad date is a missing field. The parsed map is JSON in the cache. This does not change `pdf_cdate()`.
+- `exiftool`: `auto`. Argv is `exiftool -json -G` and the path. Drop `SourceFile` and `File:` keys.
+- `pdftotext`: `auto`. `ext` is `pdf`. `mime` is `application/pdf`. Argv is `pdftotext -q -enc UTF-8`, the path, then `-`. The only field is `text`, and it may be omitted.
+
+`pdfinfo`, `mutool`, `ffprobe`, `mediainfo`, `zipinfo`, and `strings` are not shipped. They stay in [drafts/file-metadata.md](drafts/file-metadata.md).
+
+#### Cache
+
+The table is architecture 3. One row per content hash, driver name, and `options_key`. The payload is raw tool stdout, or the `pdf` JSON map. Field lookup is in process.
+
+The process bag is checked first. sqlite is read only after that misses.
+
+- A success stores `payload` and a null `error`. A non-zero exit, timeout, undecodable stdout, or parse error stores `error` and a null `payload`.
+- A missing field after a successful parse does not store an error. The payload stays, so a later field on that hash still uses it.
+- `fs` writes nothing. A driver that does not accept the file writes nothing.
+- `scan vars` and `record run` create `database_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not.
+- `--dry-run` reads a version 2 file. If the file is absent, or it is version 1, it does not create it and does not migrate. The tool still runs. Nothing is inserted.
+- A real run opens the file for write, which migrates version 1, then inserts the row. That write does not insert a document or an event.
+- The same hash on a second path reads the row and does not spawn. A cached error does not spawn again.
+
 ## 3 Data
 
 `supershelf data` reads and writes kind files. The doc site is unchanged until implementation.
@@ -732,7 +820,7 @@ Missing word. `--missing` drops a kind-file row for a path that is not matched a
 
 `supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` stays unused. This step does not write an output tree.
 
-`scan files`, `scan kinds`, `scan vars`, `scan inspect`, `schema`, and `profiles` do not create that file. `data` does not create it either.
+`scan vars` and `record run` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `scan inspect`, `schema`, `profiles`, and `data` do not either. `record run` also creates it when a row would change.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. `record` does not call the kind-file commit, so it does not create or append a kind file.
 

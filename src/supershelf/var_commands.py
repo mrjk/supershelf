@@ -14,6 +14,7 @@ from pypdf.errors import PyPdfError
 
 from supershelf.constants import DATE_TEXT
 from supershelf.errors import VarCandidateError
+from supershelf.metadata.session import MetadataSession
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,9 @@ class BuiltinCommands:
         default=None,
     )
 
+    def __init__(self) -> None:
+        self._session: MetadataSession | None = None
+
     def register(self, environment: Any) -> None:
         """Add these commands as Jinja globals."""
         environment.add_global("regex_time_var", self.regex_time_var)
@@ -43,6 +47,17 @@ class BuiltinCommands:
         environment.add_global("file", self.file)
         environment.add_global("pdf_cdate", self.pdf_cdate)
         environment.add_global("pdf_mdate", self.pdf_mdate)
+        environment.add_global("meta", self.meta)
+
+    def bind_session(self, session: MetadataSession) -> None:
+        """Use this session when a template calls meta()."""
+        self._session = session
+
+    def meta(self, driver: object, field: object | None = None) -> str:
+        """Return one metadata field. A miss raises VarCandidateError."""
+        if self._session is None:
+            raise VarCandidateError("No metadata session is bound")
+        return self._session.extract(driver, field)
 
     def bind(
         self,

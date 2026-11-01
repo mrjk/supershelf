@@ -12,7 +12,7 @@ The walk is the full walk. mtime, ctime, and sha256 are required. There is no `-
 
 Unmatched files log the same warning as `scan kinds`, once per file. They add no row.
 
-The command does not create the database file, the cache file, or an output tree. It may read, create, or append a kind file. See [Kind files](kind-files.md).
+`scan vars` and `record run` create the database file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. This command does not create the cache file or an output tree. It may read, create, or append a kind file. See [Kind files](kind-files.md).
 
 ## Facts and assignments
 

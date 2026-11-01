@@ -112,6 +112,25 @@ CREATE INDEX events_hash ON events(hash);
 CREATE INDEX events_destination ON events(destination);
 """
 
+_CONTENT_META = """
+CREATE TABLE content_meta (
+  hash TEXT NOT NULL REFERENCES contents(hash),
+  driver TEXT NOT NULL,
+  options_key TEXT NOT NULL,
+  payload TEXT,
+  error TEXT,
+  extracted_at TEXT NOT NULL,
+  PRIMARY KEY (hash, driver, options_key)
+)
+"""
+
+_SCHEMA += _CONTENT_META + ";\n"
+
+_READABLE_SCHEMA = frozenset({"1", "2"})
+_SCHEMA_ADVICE = (
+    "Point config.database_file at a new path. This supershelf reads schema 1 and schema 2."
+)
+
 _EVENT_FOR_STATUS = {
     EVENT_NEW: EVENT_NEW,
     EVENT_MOVE: EVENT_MOVE,
@@ -580,9 +599,21 @@ class ShelfDatabase:
             )
             connection.commit()
             return
-        self._require_version()
+        version = self._schema_version()
+        if version == SCHEMA_VERSION:
+            return
+        if version == "1":
+            self._migrate_content_meta()
+            return
+        self._reject_version(version)
 
     def _require_version(self) -> None:
+        version = self._schema_version()
+        if version in _READABLE_SCHEMA:
+            return
+        self._reject_version(version)
+
+    def _schema_version(self) -> str | None:
         connection = self._connection
         assert connection is not None
         try:
@@ -591,12 +622,94 @@ class ShelfDatabase:
             ).fetchone()
         except sqlite3.DatabaseError as exc:
             raise self._file_error(self.path) from exc
-        if row is None or str(row["value"]) != SCHEMA_VERSION:
-            found = "missing" if row is None else str(row["value"])
-            raise DatabaseError(
-                f"{self.path} has database schema {found}",
-                advice="Point config.database_file at a new path. This supershelf reads schema 1.",
+        if row is None:
+            return None
+        return str(row["value"])
+
+    def _reject_version(self, found: str | None) -> None:
+        label = "missing" if found is None else found
+        raise DatabaseError(
+            f"{self.path} has database schema {label}",
+            advice=_SCHEMA_ADVICE,
+        )
+
+    def _migrate_content_meta(self) -> None:
+        """Add content_meta to a version 1 file and set schema_version to 2."""
+        connection = self._connection
+        assert connection is not None
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(_CONTENT_META)
+            connection.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                (SCHEMA_VERSION,),
             )
+            connection.commit()
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise self._write_error(exc) from exc
+
+    def read_content_meta(
+        self,
+        digest: str,
+        driver: str,
+        options_key: str,
+    ) -> tuple[str | None, str | None] | None:
+        """One cache row, or None when the table or the row is absent."""
+        if self._connection is None or not self._has_table("content_meta"):
+            return None
+        row = self._connection.execute(
+            """
+            SELECT payload, error FROM content_meta
+            WHERE hash = ? AND driver = ? AND options_key = ?
+            """,
+            (digest, driver, options_key),
+        ).fetchone()
+        if row is None:
+            return None
+        payload = None if row["payload"] is None else str(row["payload"])
+        error = None if row["error"] is None else str(row["error"])
+        return payload, error
+
+    def store_content_meta(
+        self,
+        digest: str,
+        driver: str,
+        options_key: str,
+        payload: str | None,
+        error: str | None,
+        extracted_at: str,
+    ) -> None:
+        """Insert a cache row. An existing row is left as it is."""
+        self._require_writable()
+        connection = self._begin()
+        try:
+            self._ensure_hash(digest)
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO content_meta
+                  (hash, driver, options_key, payload, error, extracted_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (digest, driver, options_key, payload, error, extracted_at),
+            )
+            connection.commit()
+        except DatabaseError:
+            connection.rollback()
+            raise
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise self._write_error(exc) from exc
+
+    def _has_table(self, name: str) -> bool:
+        connection = self._connection
+        if connection is None:
+            return False
+        row = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (name,),
+        ).fetchone()
+        return row is not None
 
     def _apply_change(
         self,
@@ -854,5 +967,5 @@ class ShelfDatabase:
     def _file_error(path: Path) -> DatabaseError:
         return DatabaseError(
             f"{path} is not a supershelf database",
-            advice="Point config.database_file at a new path. This supershelf reads schema 1.",
+            advice=_SCHEMA_ADVICE,
         )

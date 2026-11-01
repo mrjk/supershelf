@@ -32,4 +32,16 @@ A miss raises `VarCandidateError`. That fails the current candidate only, so the
 
 The file is opened only when a candidate calls one of these. Both dates for one file hash are read once for that profile. Another profile in the same command reads the file again. A failed read is cached too, so a later candidate in that profile does not open the file again.
 
-These two dates are the only file-metadata fields in this version. See [Limits](limits.md).
+`meta()` reads other fields from the file. See [Limits](limits.md).
+
+## meta
+
+`meta(driver, field)` returns one metadata field. `field` may be omitted only for a driver whose only result is text, such as `pdftotext`.
+
+```jinja
+{{ meta("fs", "name") }}
+{{ meta("pdf", "author") }}
+{{ meta("pdftotext") }}
+```
+
+A disabled driver, a file the driver does not accept, a missing field, or a tool failure fails that candidate. The next string in the list can run. `pdf_cdate()` and `pdf_mdate()` do not use this cache.

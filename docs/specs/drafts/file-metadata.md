@@ -1,6 +1,6 @@
 # 2.3.3 File metadata
 
-Status: accepted draft. This is not part of [behavior.md](../behavior.md). Nothing here is implemented. Move the command rules into behavior 2.3.3 and the cache table into architecture 3 when implementation starts.
+Status: the shipped drivers live in [behavior.md](../behavior.md) 2.3.3, and `content_meta` lives in [architecture.md](../architecture.md) section 3. This draft keeps `pdfinfo`, `mutool`, `ffprobe`, `mediainfo`, `zipinfo`, and `strings`.
 
 The goal is to read metadata, and text, from a kept file by calling an external program or a small Python driver. The result is an ordinary variable. There is no `metadata_fields` key.
 
@@ -180,7 +180,7 @@ Class defaults. They are not rows in `default.toml`.
 - `ext`: `mp3`, `flac`, `ogg`, `oga`, `opus`, `m4a`, `aac`, `aiff`, `aif`, `wav`, `wv`, `mp4`, `m4v`, `mkv`, `webm`, `avi`, `mov`, `mpg`, `mpeg`
 - `mime`: `audio/mpeg`, `audio/flac`, `audio/ogg`, `audio/opus`, `audio/mp4`, `audio/aac`, `audio/aiff`, `audio/wav`, `audio/x-wav`, `video/mp4`, `video/x-matroska`, `video/webm`, `video/x-msvideo`, `video/quicktime`, `video/mpeg`
 
-The first implementation slice is the registry, the `driver` import, `supershelf.meta_driver`, `fs`, `pdf`, `exiftool`, `pdftotext`, and the cache. The other builtins use the same helper and can follow in a later review. Their argv above is the contract when they are added.
+`fs`, `pdf`, `exiftool`, `pdftotext`, and `supershelf.meta_driver` are shipped. Their rules are behavior 2.3.3. The other builtins use the same helper and can follow in a later review. Their argv above is the contract when they are added. `strings` stays default `false`.
 
 ## Cache
 
@@ -201,7 +201,7 @@ CREATE TABLE content_meta (
 ```
 
 - Schema version becomes `2` when this ships. A schema `1` file is upgraded in place: create `content_meta`, then set `schema_version` to `2`. Document rows and events are unchanged. Any other version is still rejected.
-- [record-key.md](record-key.md) also names schema version `2`. Whichever draft ships first takes version `2`. The other takes the next version and includes the tables that already shipped.
+- This draft shipped as schema `2`. [record-key.md](record-key.md) takes the next version and includes `content_meta`.
 - Insert `contents` with the existing `INSERT OR IGNORE` before the cache row, so the foreign key holds. A hash may exist before any document. `record run` still links documents at that hash.
 - A success stores `payload` and a null `error`. A failure stores `error` and a null `payload`.
 - `options_key` includes `cache_epoch` from the class. A parser change bumps that constant and misses old rows. There is no TTL. Deleting the sqlite file is the refresh. Old hashes are kept.

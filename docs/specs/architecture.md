@@ -281,7 +281,9 @@ These also use a missing key and null as `None`: `kind_overrides_config`, `var_m
 
 ## 3 Profile database
 
-Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `1`. Foreign keys are on. Rows are never deleted. `ShelfDatabase.append_output` can append an output event. No command calls it.
+Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `2`. Foreign keys are on. Rows are never deleted. `ShelfDatabase.append_output` can append an output event. No command calls it.
+
+A read accepts schema `1` and schema `2`. Schema `1` has no `content_meta`. A read does not migrate it, and a cache read is a miss. A write migrates schema `1` to schema `2`: create `content_meta`, then set `schema_version` to `2`. Documents and events stay. Any other version is rejected. The tip names `database_file`.
 
 ### 3.1 Tables
 
@@ -314,6 +316,8 @@ A partial unique index on `(input_path, path)` applies where `presence` is not `
 - nullable output columns: `output_name`, `operation`, `destination`, `source_hash`, `previous_json`
 
 Indexes: `events.hash`, `events.destination`.
+
+`content_meta` is one parsed payload per content hash, driver name, and `options_key`. Behavior 2.3.3. `hash` references `contents`. `payload` is raw tool stdout, or the `pdf` driver's JSON map. `error` is set when the tool or the parse failed, and `payload` is then null. `extracted_at` is UTC ISO-8601. A hash may exist here before any document. This table does not insert a document or an event. `fs` does not write a row.
 
 `refresh` updates `mtime`, `ctime`, and `input_index` on the document and does not insert an event.
 
@@ -360,7 +364,7 @@ When this profile wrote the previous destination, `ours` is true and the object 
 
 A missing file opened for reading is an empty previous state. The file is not created. A real read of an existing file uses SQLite read-only mode.
 
-`record run` opens for write only when a row would change, or when the stored identity rule differs and the file already exists. The identity key is updated in that transaction. A failure rolls the transaction back. The schema created for a new file stays.
+`record run` opens for write when a row would change, when the stored identity rule differs and the file already exists, or when `meta()` misses the cache on a real run. `record status` does not. `--dry-run` does not create the file and does not migrate schema `1`. The identity key is updated in the record transaction. A failure rolls that transaction back. The schema created for a new file stays.
 
 `RecordConfigError` is a bad `record_identity` word or list, on the flag, the environment variable, the profile, or a match rule. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
 

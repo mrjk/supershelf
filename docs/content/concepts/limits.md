@@ -3,10 +3,10 @@
 This version records matched files. It does not build an output tree.
 
 - There is no output tree. `outputs` is not read. `extension_remap` is not read.
-- `record run` creates `database_file` when a row would change. `--dry-run` does not create it. `scan files`, `scan kinds`, `scan vars`, `scan inspect`, `schema`, and `profiles` do not create it. `cache_file` is rendered and nothing writes it. See [Record](record.md).
+- `record run` creates `database_file` when a row would change. `scan vars` and `record run` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `scan inspect`, `schema`, and `profiles` do not create it either. `cache_file` is rendered and nothing writes it. See [Record](record.md).
 - `scan vars` may create or append a kind file, and may add missing schema columns to a CSV. It does not edit a cell that is already there. `scan files` and `scan kinds` do not read or write kind files. See [Kind files](kind-files.md).
 - `supershelf schema` prints JSON Schema for `vars_schema` and `kind_schema`. It does not walk inputs or write a kind file. Kind-file columns are chosen when `scan vars` writes a CSV. With no schema columns, a new CSV still starts as `PATH,__date__`.
 - `--dry-run` on `scan vars` still reads kind files and does not create or append. The other scan commands only print. `schema` only prints. `--dry-run` on `record run` prints the rows that would change and creates nothing.
-- PDF metadata is the creation date and the modification date, through `pdf_cdate()` and `pdf_mdate()`. Image tags, audio tags, and other metadata fields are not read. There is no `scan meta` command.
+- `pdf_cdate()` and `pdf_mdate()` read PDF creation and modification dates. `meta()` reads more fields from the file, including PDF info, exiftool tags, and pdftotext. There is no `scan meta` command.
 
 A `__date__` value is stored for later output paths. Nothing in this version writes a path from it.

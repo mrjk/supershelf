@@ -769,8 +769,8 @@ class _ProfileRun:
         self.rules = rules
         self._logger = logging.getLogger(LOGGER_NAME)
 
-    def plan(self, path: str | None) -> list[PlannedRow]:
-        """Resolve this profile and compare it with the database. Does not write."""
+    def plan(self, path: str | None, *, dry_run: bool = False) -> list[PlannedRow]:
+        """Resolve this profile and compare it with the database. Kind files are not committed."""
         scans = self.shelf.scan(quick=False)
         walked = {str(result.config.path) for result in scans}
         kept_paths: list[str] = []
@@ -796,7 +796,12 @@ class _ProfileRun:
 
         from supershelf.cli import ShelfRuns
 
-        walk = ShelfRuns([self.shelf]).resolved(None, groups=[scans], accept=accept)
+        walk = ShelfRuns([self.shelf]).resolved(
+            None,
+            groups=[scans],
+            accept=accept,
+            dry_run=dry_run,
+        )
         live: list[LiveFile] = []
         for _shelf, result, found, matched, resolved, variables in walk:
             live.append(
@@ -920,7 +925,7 @@ class RecordSession:
         """Every in-scope row. Writes nothing."""
         rows: list[dict[str, object]] = []
         for run in self.runs:
-            planned = run.plan(path)
+            planned = run.plan(path, dry_run=True)
             rows.extend(run.display(planned, changes_only=False))
         return rows
 
@@ -928,7 +933,7 @@ class RecordSession:
         """Rows that would change. `--dry-run` skips the write."""
         rows: list[dict[str, object]] = []
         for run in self.runs:
-            planned = run.plan(path)
+            planned = run.plan(path, dry_run=dry_run)
             rows.extend(run.display(planned, changes_only=True))
             run.write(planned, dry_run=dry_run)
         return rows

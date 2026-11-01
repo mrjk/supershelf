@@ -34,7 +34,7 @@ That creates `profile.<name>.sqlite` next to the config file, unless `config.dat
 
 Rename the file and keep the bytes, then run again. The history shows `move` for the same document. Replace the bytes at the same path and the history shows `generation`. Delete the file and the document becomes `missing`. The row stays. `record history` still prints it.
 
-`scan files`, `scan kinds`, `scan vars`, and `scan inspect` do not create the sqlite file. `record` reads kind files the same way `scan vars` does, and it does not create or append one.
+`scan vars` and `record run` create the sqlite file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `record` reads kind files the same way `scan vars` does, and it does not create or append one.
 
 To follow the hash instead of the path when both change in one run, set the link rule:
 

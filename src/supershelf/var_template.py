@@ -46,6 +46,12 @@ class VarEnvironment:
         self._names: set[str] = set()
         self._commands = BuiltinCommands()
         self._commands.register(self)
+        self._registry: Any = None
+
+    def bind_metadata(self, registry: Any, session: Any) -> None:
+        """Check meta() names against this registry, and call this session."""
+        self._registry = registry
+        self._commands.bind_session(session)
 
     def add_global(self, name: str, func: Any) -> None:
         """Register a Jinja global. A repeated name is a config error."""
@@ -110,6 +116,7 @@ class VarEnvironment:
         found = self._compiled.get(source)
         if found is not None:
             return found
+        self._reject_unknown_meta(source)
         try:
             compiled = self._env.from_string(source)
         except jinja2.TemplateSyntaxError as exc:
@@ -119,6 +126,40 @@ class VarEnvironment:
             ) from exc
         self._compiled[source] = compiled
         return compiled
+
+    def _reject_unknown_meta(self, source: str) -> None:
+        registry = self._registry
+        if registry is None or self._is_literal(source):
+            return
+        try:
+            parsed = self._env.parse(source)
+        except jinja2.TemplateSyntaxError:
+            return
+        for call in parsed.find_all(jinja2.nodes.Call):
+            driver_name = self._meta_driver_const(call)
+            if driver_name is None:
+                continue
+            if registry.entry(driver_name) is None:
+                raise VarConfigError(
+                    f"Unknown metadata driver {driver_name!r}",
+                    advice="Declare it under metadata_driver, or use a builtin name.",
+                )
+
+    def _meta_driver_const(self, call: jinja2.nodes.Call) -> str | None:
+        node = call.node
+        if not isinstance(node, jinja2.nodes.Name) or node.name != "meta":
+            return None
+        chosen: jinja2.nodes.Node | None = None
+        if call.args:
+            chosen = call.args[0]
+        else:
+            for keyword in call.kwargs:
+                if keyword.key == "driver":
+                    chosen = keyword.value
+                    break
+        if not isinstance(chosen, jinja2.nodes.Const) or not isinstance(chosen.value, str):
+            return None
+        return chosen.value
 
     def _is_literal(self, source: str) -> bool:
         return not is_template(source)

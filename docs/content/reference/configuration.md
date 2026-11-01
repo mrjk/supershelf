@@ -20,7 +20,7 @@ These keys live under `config`.
 | `profile` | string | from the filename, or `default` | Profile name when the filename is not `profile.NAME.*`. See [Profiles](../concepts/profiles.md). |
 | `default_date_format` | string | `%Y-%m-%d` | `strftime` pattern for mtime and ctime in `scan files`. Not a template. |
 | `root_dir` | string | `{{ __profile_dir__ }}` | Path template. Relative results resolve from the config directory. |
-| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. Scan commands do not. |
+| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. `scan vars` and `record run` also create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. |
 | `cache_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` | Path template. Rendered, not created. |
 | `record_identity` | string or list of strings | `path` | `path`, `hash`, or a list of those steps. A bare `path` means path then hash. A bare `hash` means hash then path. A list does not expand. `""` and `[]` are invalid and do not fall back. See [Record](../concepts/record.md). |
 | `var_modules` | list of strings | none | Importable modules. See [Modules](../concepts/modules.md). |

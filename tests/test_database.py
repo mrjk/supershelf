@@ -133,10 +133,10 @@ def test_wrong_schema_version_is_rejected(tmp_path: Path) -> None:
     with ShelfDatabase.open_write(path) as database:
         database.apply([_new()], "path", "2026-04-25T00:00:00+00:00")
     raw = sqlite3.connect(path)
-    raw.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
+    raw.execute("UPDATE meta SET value = '3' WHERE key = 'schema_version'")
     raw.commit()
     raw.close()
-    with pytest.raises(DatabaseError, match="schema 2") as caught:
+    with pytest.raises(DatabaseError, match="schema 3") as caught:
         ShelfDatabase.open_read(path)
     assert caught.value.advice is not None
     assert "database_file" in caught.value.advice

@@ -8,7 +8,7 @@ User errors stop the command and print a message without a traceback. When the e
 
 `RecordConfigError` is a bad `record_identity` word or list. It exits with status 2. The steps in this version are `path` and `hash`. A different case, an empty string, an empty list, an empty comma item, a repeated step, a template, or the word `key` is this error. The message names `--record-identity`, `SUPERSHELF_RECORD_IDENTITY`, `config.record_identity`, or the match rule (`Profile NAME match rule RULE`). `record status` and `record run` check every rule before the walk. Scan commands do not.
 
-`DatabaseError` is a profile sqlite file that cannot be used: the parent is not a directory, the path is not a supershelf database, the schema version is not 1, or the file is locked. It exits with status 1. The tip names a path change or a retry.
+`DatabaseError` is a profile sqlite file that cannot be used: the parent is not a directory, the path is not a supershelf database, or the file is locked. A read accepts schema 1 and schema 2. A write migrates schema 1 to schema 2. Any other schema version is rejected. It exits with status 1. The tip names a path change or a retry.
 
 `VarResolveError` is a fact or kind-file cell that cannot cast, or a `mandatory` name that is still unset after the last layer. A candidate list that misses does not raise it. The message names the profile, the input, the path, and the variable. The tip is the cast message for a failed fact or cell, `{name} is mandatory and no layer set it.` when a mandatory name is still unset, or the date-format message for a kind-file `__date__` cell. There is no next candidate.
 

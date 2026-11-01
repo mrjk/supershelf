@@ -29,6 +29,7 @@ from supershelf.constants import (
     KEY_KIND_OVERRIDES_DATE_FORMAT,
     KEY_KIND_OVERRIDES_MODE,
     KEY_KIND_OVERRIDES_SEP,
+    KEY_METADATA_DRIVER,
     KIND_CSV_PATH,
     KIND_MODE_ALWAYS,
     KIND_MODE_AUTO,
@@ -45,6 +46,7 @@ from supershelf.constants import (
     SOURCE_OVERRIDE,
     SOURCE_RULE,
     VAR_CTIME,
+    VAR_DATABASE_FILE,
     VAR_DATE,
     VAR_DEFAULT_DATE_FORMAT,
     VAR_FILE_DIR,
@@ -58,11 +60,16 @@ from supershelf.constants import (
     VAR_INPUT,
     VAR_KIND,
     VAR_MTIME,
+    VAR_PROFILE_DIR,
     VAR_RULE_NAME,
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError, VarCandidateError, VarConfigError, VarResolveError
 from supershelf.match import FileMatch, Matcher
+from supershelf.metadata.driver import MetadataFile
+from supershelf.metadata.process import ProcessRunner
+from supershelf.metadata.registry import MetadataRegistry
+from supershelf.metadata.session import MetadataSession
 from supershelf.scan import InputFile
 from supershelf.template import Template
 from supershelf.var_commands import FileBinding
@@ -1046,6 +1053,7 @@ class VarPlan:
         overrides: tuple[OverrideRule, ...],
         kinds: KindFiles,
         profile_scope: Mapping[str, Any],
+        session: MetadataSession,
     ) -> None:
         self._environment = environment
         self._catalog = catalog
@@ -1053,6 +1061,7 @@ class VarPlan:
         self._overrides = overrides
         self._kinds = kinds
         self._profile_scope = dict(profile_scope)
+        self._session = session
         self._pdf: dict[str, tuple[str | None, str | None]] = {}
 
     @classmethod
@@ -1067,10 +1076,19 @@ class VarPlan:
         mode: str | None = None,
         dry_run: bool = False,
         environ: Mapping[str, str] | None = None,
+        runner: ProcessRunner | None = None,
     ) -> VarPlan:
         """Load modules and var tables before any walk."""
         environment = VarEnvironment()
         section = cls._section(document)
+        cls._reject_metadata_in_config(section)
+        session = cls._metadata_session(
+            document,
+            profile_scope,
+            environment,
+            runner,
+            dry_run,
+        )
         chosen = KindOverrideMode.resolve(section, mode, os.environ if environ is None else environ)
         dates = KindDateFormat.from_section(section, profile_scope)
         cls._load_modules(environment, section)
@@ -1112,11 +1130,18 @@ class VarPlan:
             )
         for index, rule in enumerate(overrides, start=1):
             cls._check_literals(catalog, rule.table, f"overrides item {index} vars", "")
-        return cls(environment, catalog, rules, overrides, kinds, profile_scope)
+        return cls(environment, catalog, rules, overrides, kinds, profile_scope, session)
 
     def resolve(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
         """Resolve one matched file. Kind files use the rule kind, not an override."""
         self._require_metadata(file, match)
+        token = self._session.bind(MetadataFile.from_input(file))
+        try:
+            return self._resolve_bound(file, match, input_dir)
+        finally:
+            self._session.unbind(token)
+
+    def _resolve_bound(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
         scope: dict[str, str] = {}
         states: dict[str, VarState] = {}
         order: list[str] = []
@@ -1164,6 +1189,11 @@ class VarPlan:
     def catalog(self) -> VarCatalog:
         """The catalog used to resolve this plan."""
         return self._catalog
+
+    @property
+    def metadata(self) -> MetadataRegistry:
+        """Drivers loaded for this profile."""
+        return self._session.registry
 
     def snapshot(self, resolved: FileVars) -> str:
         """JSON object stored on a document. Identity columns are omitted."""
@@ -1390,6 +1420,54 @@ class VarPlan:
                         f"{label} key {key} cannot be cast",
                         advice=str(exc),
                     ) from exc
+
+    @classmethod
+    def _reject_metadata_in_config(cls, section: Mapping[str, Any]) -> None:
+        if KEY_METADATA_DRIVER not in section:
+            return
+        raise VarConfigError(
+            "config.metadata_driver is not a config key",
+            advice="Move metadata_driver to the top level, next to default_vars.",
+        )
+
+    @classmethod
+    def _metadata_session(
+        cls,
+        document: Mapping[str, Any],
+        profile_scope: Mapping[str, Any],
+        environment: VarEnvironment,
+        runner: ProcessRunner | None,
+        dry_run: bool,
+    ) -> MetadataSession:
+        tool = ProcessRunner() if runner is None else runner
+        registry = MetadataRegistry.from_document(
+            document.get(KEY_METADATA_DRIVER),
+            cls._profile_dir(profile_scope),
+            tool,
+        )
+        registry.require_available()
+        session = MetadataSession(
+            registry,
+            tool,
+            database=cls._database_file(profile_scope),
+            dry_run=dry_run,
+        )
+        environment.bind_metadata(registry, session)
+        return session
+
+    @staticmethod
+    def _profile_dir(profile_scope: Mapping[str, Any]) -> Path:
+        raw = profile_scope.get(VAR_PROFILE_DIR, "")
+        if not isinstance(raw, str) or not raw:
+            return Path(".")
+        return Path(raw)
+
+    @staticmethod
+    def _database_file(profile_scope: Mapping[str, Any]) -> Path | None:
+        raw = profile_scope.get(VAR_DATABASE_FILE, "")
+        if not isinstance(raw, str) or not raw:
+            return None
+        return Path(raw)
 
     @classmethod
     def _section(cls, document: Mapping[str, Any]) -> Mapping[str, Any]:

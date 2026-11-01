@@ -16,7 +16,7 @@ config:
   root_dir: "{{ __profile_dir__ }}" # Default. Full directory of the config file.
 
   # Default paths
-  database_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite" # 4. record run creates this file. Scan commands do not.
+  database_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite" # 4. record run creates this when a row would change. scan vars and record run also create it when meta() misses the cache. --dry-run does not. scan files and scan kinds do not.
   cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache" # Rendered. Nothing writes it.
   record_identity: path # 4.2. Bare path means path then hash. Bare hash means hash then path. A list does not expand. Omitted uses path.
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See 2.3.1.
