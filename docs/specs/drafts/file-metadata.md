@@ -1,6 +1,6 @@
-# Draft: file metadata providers
+# 2.3.3 File metadata
 
-Status: parked. This is not part of [PERFECT_CONFIG.yml](PERFECT_CONFIG.yml). Nothing here is implemented. Come back to this before writing step 2.3.3.
+Status: parked. This is not part of [behavior.md](../behavior.md). Nothing here is implemented. Move it into behavior.md only when it is accepted.
 
 The goal is to read more than the filename from a kept file: PDF info, picture tags, audio tags, plus whatever a later user module knows how to read. The config schema stays as it is. There is no `vars_metadata` key. Templates keep using Jinja candidate lists.
 
@@ -127,5 +127,5 @@ A name that repeats `pdf`, `image`, `audio`, or an earlier module is a config er
 
 - An `auto` type that guesses the format from the file
 - A generated Jinja function per provider (`pdf("author")`, `invoice("number")`)
-- Putting this text into `PERFECT_CONFIG.yml` until the draft is accepted
+- Putting this text into `behavior.md` until the draft is accepted
 - Code, tests, and adding Pillow and mutagen

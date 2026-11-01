@@ -1,14 +1,16 @@
 # Architecture
 
-Behind the scenes: models, pipelines, cast rules, and edge cases. Use cases live in [PERFECT_CONFIG.yml](PERFECT_CONFIG.yml). The short command pipeline on the doc site is `docs/content/reference/architecture.md`.
+Behind the scenes: models, cast rules, and edge cases. Command steps live in [behavior.md](behavior.md). Pasteable config lives in [examples.md](examples.md). The short command pipeline on the doc site is `docs/content/reference/architecture.md`.
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. `scan vars` uses those names as CSV columns. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, at the end of this file, are loaded from `src/supershelf/default.toml`.
+These numbers are not product steps. Cite them as architecture 1.7. Product steps are 1, 2, and 3 in behavior.md.
 
-## Variable types
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. `scan vars` uses those names as CSV columns. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
+
+## 1 Types and values
 
 A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `supershelf schema` builds one model per declared object and prints `model_json_schema()`. This version adds no database.
 
-### VarSpec
+### 1.1 VarSpec
 
 One catalog entry per name, for the whole profile.
 
@@ -26,7 +28,7 @@ One catalog entry per name, for the whole profile.
   - `date`, `time`, `datetime`: `ge`, `gt`, `le`, `lt`, compared on the calendar or clock value. A bound is a string of that same type, cast at load. `15:04` and `15:04:00` are the same clock. A `date` bound on a `datetime` var is a config error.
   - `bool`: `allowed` only.
 
-### VarState
+### 1.2 VarState
 
 One resolved binding per name per file. The spec is not copied onto it.
 
@@ -46,7 +48,7 @@ amount:
 
 `scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. Internal names are omitted unless `--all` is set. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
 
-## Catalog
+### 1.3 Catalog
 
 Built-in entries are prefilled. The user catalog is the top-level profile key `vars_schema`, a mapping of name to VarSpec. Names match `[A-Za-z_][A-Za-z0-9_]*`.
 
@@ -66,7 +68,9 @@ Profile-scope names (`__profile__`, `__root_dir__`, and the rest) stay template 
 
 Assignment rights do not change. Locked internals stay locked. Nothing may set `__kind__`. It stays the kind from the match rule. Layers may still set `__date__` and ordinary names. The schema does not grant new writes. A profile `overrides` key is a config error, including an empty list. Per-file values belong in the kind file. `kind_overrides_mode`, `kind_overrides_date_format`, `kind_overrides_sep`, and `kind_overrides_config` stay. Those keys are the kind file, not the removed list.
 
-## default_vars
+Implicit text. A name with no schema entry stores the rendered string. `vendor: Bank2000` with no schema entry is text, source `default` when `default_vars` set it.
+
+### 1.4 Defaults
 
 `default` on the spec and `default_vars` are one slot. `default_vars` stays valid config: each key writes that spec's `default`, and creates an implicit text spec when the name is absent. The shape there stays a string or a list of strings.
 
@@ -76,7 +80,9 @@ The same name set in both places is a config error. One of them has to be remove
 
 A non-template literal is coerced at load. A string that contains `{{`, `{%`, or `{#` is checked when that file renders. Load uses the config error. Render uses the resolve error.
 
-## Three lists
+Two defaults. `vars_schema.vendor.default: Bank2000` together with `default_vars.vendor` is a config error.
+
+### 1.5 Three lists
 
 These share YAML list syntax and mean different things.
 
@@ -84,7 +90,7 @@ These share YAML list syntax and mean different things.
 - Possible values. `validation.allowed`. Membership of the cast value. This does not choose among candidates. `account` can be a candidate list and also `allowed: [1000, 2000]`.
 - A list-typed value. `type: list` is a config error. A stored list would need an item type, a kind-file encoding, and a print rule, and it would collide with candidate-list syntax. The type stays reserved.
 
-## Jinja stays text
+### 1.6 Jinja stays text
 
 `VarEnvironment.render` returns a string. Built-in commands and user modules take strings and return strings. After a successful cast, the Jinja scope holds the display string. Later templates read that string. `regex_replace(account, ...)` and `regex_time_var(...)` keep working. `{{ amount ~ owner }}` keeps working.
 
@@ -94,7 +100,7 @@ The Python value lives on VarState. Jinja attribute and method access (`{{ issue
 
 `regex_time_var` still returns `YYYY-MM-DD`. That string satisfies type `date` and misses type `time` and type `datetime`.
 
-## Cast, then validate
+### 1.7 Cast, then validate
 
 One pipeline for every candidate and every fact. Load time uses it for non-template literals. Render time uses it after Jinja returns text. Each name is cast when it is written, before the next layer reads it. There is no cast pass after the last layer.
 
@@ -128,7 +134,23 @@ While a key is rendering, `{{ that_key }}` reads the previous layer's display st
 
 Leading zeros are data only for `text`. An int schema on a regex group `0012` stores `12`. Pad in the template if the width matters.
 
-## value_sources
+Candidate list. `amount` is `int`, and the candidates are `"nope"` then `"12"`. `"nope"` is a literal, so load fails before the walk. The same key as `"{{ missing }}"` then `"12"` misses the template and keeps `12`.
+
+`allowed`. `amount` is `int` with `allowed: [10, 20]`. The rendered `15` casts and then misses. The next candidate can still run.
+
+Bool. `YES` and `1` display as `true`. `no` displays as `false`.
+
+Load error ahead of a template. `default: ["12.0", "{{ other }}"]` on an int fails at load because `12.0` cannot cast.
+
+Mandatory. `amount` with `mandatory: true` and no successful write stops the file. An omitted `opens` of type `time` stays unset and the file continues.
+
+`__date__`. A filename that is a date does not set it. Every candidate in a layer missing leaves the earlier value, or leaves it unset when nothing wrote it. `mandatory: true` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
+
+Leading zeros. Regex group `0012` declared as `int` stores `12`. A group `007` displays as `7`.
+
+Datetime. `2026-04-25T15:04` and `2026-04-25T15:04:05` are valid. `2026-04-25` misses. Time `15:04` matches `allowed: ["15:04:00"]`. An omitted time var stays unset.
+
+### 1.8 value_sources
 
 Append a label only when that layer writes the name. A later write appends. It keeps the earlier labels. A layer that misses does not clear the value or the source list.
 
@@ -141,7 +163,9 @@ Labels:
 
 Resolver order in `VarPlan.resolve`: facts, then `default_vars`, then match-rule `vars`, then the kind file. The kind file is the last assignment layer.
 
-## kind_schema
+Sources. `default_vars` sets `vendor`, the rule replaces it, and the kind file replaces it. The labels are `default`, `rule:invoice`, and `kind:<path>`. The value is the kind-file cell.
+
+### 1.9 kind_schema
 
 `kind_schema` is an optional top-level mapping. A profile with no `kind_schema` resolves as before. A bad entry stops `scan vars` and `schema`.
 
@@ -172,91 +196,11 @@ When a kind lists a name the profile also has, files of that kind use the overla
 
 `supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names, excluding locked internals. `__date__` is included only when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.
 
-## Cases
-
-Implicit text. A name with no schema entry stores the rendered string. `vendor: Bank2000` with no schema entry is text, source `default` when `default_vars` set it.
-
-Candidate list. `amount` is `int`, and the candidates are `"nope"` then `"12"`. `"nope"` is a literal, so load fails before the walk. The same key as `"{{ missing }}"` then `"12"` misses the template and keeps `12`.
-
-`allowed`. `amount` is `int` with `allowed: [10, 20]`. The rendered `15` casts and then misses. The next candidate can still run.
-
-Bool. `YES` and `1` display as `true`. `no` displays as `false`.
-
-Load error ahead of a template. `default: ["12.0", "{{ other }}"]` on an int fails at load because `12.0` cannot cast.
-
-Two defaults. `vars_schema.vendor.default: Bank2000` together with `default_vars.vendor` is a config error.
-
-Mandatory. `amount` with `mandatory: true` and no successful write stops the file. An omitted `opens` of type `time` stays unset and the file continues.
-
-`__date__`. A filename that is a date does not set it. Every candidate in a layer missing leaves the earlier value, or leaves it unset when nothing wrote it. `mandatory: true` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
-
-Leading zeros. Regex group `0012` declared as `int` stores `12`. A group `007` displays as `7`.
-
-Sources. `default_vars` sets `vendor`, the rule replaces it, and the kind file replaces it. The labels are `default`, `rule:invoice`, and `kind:<path>`. The value is the kind-file cell.
-
-Datetime. `2026-04-25T15:04` and `2026-04-25T15:04:05` are valid. `2026-04-25` misses. Time `15:04` matches `allowed: ["15:04:00"]`. An omitted time var stays unset.
-
-## Data commands
-
-Part 3 of [PERFECT_CONFIG.yml](PERFECT_CONFIG.yml). `supershelf data` reads and writes the kind files from section 2.3.2. It uses the same full walk and the same display strings as `scan vars`. It does not create the database, the cache, or an output tree. The doc site is unchanged until implementation.
-
-`kind_overrides_mode` does not gate these commands. `manual` and `disabled` still allow `data feed` and `data prune` to write. An empty `kind_overrides_config` stops the command. The kind file is chosen as in 2.3.2. Feed creates a missing file from the first template. Prune does not.
-
-`scan vars` in `auto` and `always` must not rewrite existing cell text. Feed and prune rewrite the file. Unselected values stay. CSV quoting and a new column may change bytes. A new CSV column is appended on the right. TOML and YAML append a new key and keep key order. The stored cell is the display string, so `12.50` stays `12.50`.
-
-Two inputs that share one kind file and the same relative path stop the command when the selected values differ. A mandatory var that is still unset stops the command before any write. Duplicate path rows: update the first, leave the later row, and keep the existing warning.
-
-`data feed` and `data prune` ask once on stderr before any write. `y` or `yes` writes. Anything else writes nothing. Not a terminal, and no `--force`, stops the command. `--force` writes without asking. `--dry-run` prints that same summary, asks nothing, and writes nothing. A resolve error writes nothing. `data show` does not write and does not prompt.
-
-### data feed
-
-`supershelf data feed [NAMES]`. `NAMES` is one optional comma-separated argument. Each token is a rule kind or a var name, not both. A token that is both stops the command and names `--kind` and `--var`. `--kind` and `--var` are comma-separated and may be combined with the positional names. An unknown name or a locked internal stops the command.
-
-No selector writes every schema var of every kind that has a matched file. Schema vars are that kind's CSV header names: a `kind_schema` entry uses its local names, otherwise the declared `vars_schema` names. `__date__` is included only when that schema lists it. A kind with no schema columns uses the user-visible names `scan vars` would print. Selecting a kind enables that set. `--kind` and `--var` together keep only those vars on those kinds. A `--var` name that none of the selected kinds define stops the command.
-
-The written text is the resolved display string. A filled cell is already that string, so it stays. An empty cell receives the lower layer. An unset var does not blank a cell. `__date__` is written with `kind_overrides_date_format`. Other `date` vars stay `YYYY-MM-DD`. A missing selected name is added. A matched path with no row is added. A name that is not a legal CSV column is left out and reported. Feed does not also append the empty rows `scan vars` appends.
-
-The prompt names the selected kinds and vars, says empty cells are filled and filled cells stay, then lists each kind file and how many cells would change. `-v` lists those cells.
-
-### data prune
-
-`supershelf data prune`. Flags are independent. No flags drops a column or key that is not in that kind's schema and whose cells are all empty. An empty schema column stays. One filled cell keeps the column. That purge is also `--empty-fields`. `--missing` drops a row whose path is not a matched file of that kind in this scan. A file that moved to another kind is dropped from the old file. Two inputs that share one kind file keep the row when either input still matches that path for that kind. `--clear` rewrites each existing kind file with no rows and keeps the file. CSV keeps its header. `--all` runs every purge. With `--clear`, the file is left empty, so the other purges do not change that result. The prompt names the purges, the files, and the row and column counts.
-
-### data show
-
-`supershelf data show [KIND]`. One table per profile and kind. Columns differ, so the command does not return one merged row list. A title line names the profile, the kind, and the kind file path when there is one. Columns are `path`, then schema order, then any other user-visible name `scan vars` would print. Values are display strings. An unset var is blank. An unknown kind stops the command. A known kind with no matched files prints the title and no rows. No `KIND` prints every kind that has a matched file.
-
-### Cases
-
-Both names. `invoice` is a kind and a var. `data feed invoice` stops and names `--kind` and `--var`.
-
-No schema. A kind with no schema columns feeds the user-visible names `scan vars` prints, including a set `__date__`.
-
-Date round-trip. Stored `__date__` is `2026-04-25`. `kind_overrides_date_format` is `%d/%m/%Y`. Feed writes `25/04/2026`. A `date` var that is not `__date__` stays `YYYY-MM-DD`.
-
-Filled cell. The kind file already holds `Bank2000`. Feed writes `Bank2000` again. The text stays.
-
-Empty cell. The rule set `vendor` and the cell is empty. Feed writes the rule's display string.
-
-Unset. No layer set `owner`. Feed does not blank a hand-written `owner` cell, and it does not add an empty cell.
-
-Present overrides. A profile with an `overrides` key stops at load. The key is removed.
-
-Empty kind paths. `kind_overrides_config: []` stops `data feed`, `data prune`, and `data show`. There is no file to use.
-
-Disabled mode. `kind_overrides_mode` is `disabled`. `data feed` still creates or updates the kind file from the first template.
-
-Shared path. Two inputs resolve the same kind file and the same relative path, and the selected `vendor` values differ. The command stops and names both inputs.
-
-Prune default. A column `note` is not in the schema and every cell is empty. No flags drops it. A schema column that is empty stays. A non-schema column with one filled cell stays.
-
-Prune flags. `--missing` does not also drop empty columns. `--empty-fields` does not also drop missing rows. `--all` includes `--clear`, so the file ends with no rows.
-
-Not a terminal. `data feed` with no `--force` and no `--dry-run` stops and tells the user to pass `--force`.
-
-## Packaged defaults
+## 2 Packaged defaults
 
 Status: loaded from `src/supershelf/default.toml` at startup. A missing key and a YAML null are both unset before any fallback.
+
+### 2.1 File and the null rule
 
 `src/supershelf/default.toml` ships inside the package and is loaded once at startup. It is the source of every concrete default. The user document is not deep-merged onto it. For each known key, a missing key and an explicit null both become `None` before any fallback. `None` means not set up. It is not a usable value, so resolution falls back. A value the user wrote stays, including `""` and `[]`.
 
@@ -292,7 +236,7 @@ These stay in code. The parser needs them to read both files, or they are not a 
 - Key names, environment names, internal variable names, file suffixes, and the four kind-override mode words.
 - `DATE_TEXT` (`%Y-%m-%d`) as the stored date grammar. Editing `default_date_format` in `default.toml` changes display and kind-file parsing. It does not change how dates are stored.
 
-### Fallbacks
+### 2.2 Fallbacks
 
 Only `None` falls back.
 
@@ -306,18 +250,6 @@ Only `None` falls back.
 `""` for a date format, a path, or a separator is set, and it is invalid. The command stops. It does not fall back.
 
 `kind_overrides_config = []` means no kind files. It does not fall back to the four packaged paths. `var_modules = []` means no modules. It is a real empty list. An input item's `include` or `exclude` set to `None` means no filter. An empty list is a real filter. A match rule's `kind` set to `None` uses that rule's `name`, and a `None` name uses `kind`. That rule already holds. There is no static kind string in `default.toml`.
-
-### Readers
-
-Missing and null are both `None` before the type check.
-
-- `profile.py`: `default_date_format`, `root_dir`, `database_file`, `cache_file`.
-- `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
-- `scan.py`: a null `inputs` uses the same "no inputs" error as a missing key. An empty list stays "inputs is empty".
-
-These also use a missing key and null as `None`: `kind_overrides_config`, `var_modules`, `match_rules`, `default_vars`, and the profile name. A present `overrides` key is a config error, not `None`.
-
-### Cases
 
 Omitted kind date format. The user sets `default_date_format` to `%d/%m/%Y` and omits `kind_overrides_date_format`. Kind files parse with `%d/%m/%Y`.
 
@@ -334,3 +266,13 @@ Inputs. A missing or null `inputs` stops a scan with the "no inputs" error. `inp
 Input depth. An item that omits `depth` uses packaged `input_depth`, which is `0`. `depth: 0` is the user setting that same number.
 
 Modules. A missing or null `var_modules` loads no modules. `[]` loads no modules and stays an empty list.
+
+### 2.3 Readers
+
+Missing and null are both `None` before the type check.
+
+- `profile.py`: `default_date_format`, `root_dir`, `database_file`, `cache_file`.
+- `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
+- `scan.py`: a null `inputs` uses the same "no inputs" error as a missing key. An empty list stays "inputs is empty".
+
+These also use a missing key and null as `None`: `kind_overrides_config`, `var_modules`, `match_rules`, `default_vars`, and the profile name. A present `overrides` key is a config error, not `None`.
