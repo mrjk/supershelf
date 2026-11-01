@@ -259,21 +259,7 @@ class LiveFile:
 
     def stored(self) -> StoredFile:
         """Facts to write if this file is the document's new state."""
-        return StoredFile(
-            input_index=self.input_index,
-            input_path=self.input_path,
-            path=self.path,
-            hash=self.hash,
-            mtime=self.mtime,
-            ctime=self.ctime,
-            match_kind=self.match_kind,
-            rule=self.rule,
-            file_dir=self.file_dir,
-            file_name=self.file_name,
-            file_stem=self.file_stem,
-            file_ext=self.file_ext,
-            vars_json=self.vars_json,
-        )
+        return StoredFile.from_facts(self)
 
 
 @dataclass(frozen=True)

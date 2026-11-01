@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from supershelf.errors import VarCandidateError, VarConfigError
-from supershelf.metadata.driver import CommandRunner, DriverOptions, MetadataDriver, MetadataFile
+from supershelf.metadata.driver import (
+    DEFAULT_DRIVER_TIMEOUT,
+    CommandRunner,
+    DriverOptions,
+    MetadataDriver,
+    MetadataFile,
+)
 from supershelf.metadata.drivers import (
     CommandDriver,
     ExiftoolDriver,
@@ -244,7 +250,7 @@ class MetadataRegistry:
                 )
             return None
         if not present:
-            return 30.0
+            return DEFAULT_DRIVER_TIMEOUT
         return MetadataDriver.timeout_seconds(name, raw.get("timeout"))
 
     @classmethod

@@ -12,6 +12,7 @@ from supershelf.constants import LOGGER_NAME
 from supershelf.errors import VarCandidateError, VarResolveError
 from supershelf.metadata.cache import ContentMetaCache
 from supershelf.metadata.driver import (
+    DEFAULT_DRIVER_TIMEOUT,
     CachedMeta,
     CommandRunner,
     DriverOptions,
@@ -94,7 +95,7 @@ class MetadataSession(FieldCache):
         try:
             text = self._runner.run(
                 ["file", "--mime-type", "--brief", str(file.absolute)],
-                30,
+                DEFAULT_DRIVER_TIMEOUT,
             )
         except VarCandidateError:
             self._mime[file.sha256] = None

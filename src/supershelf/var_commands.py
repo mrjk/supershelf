@@ -9,11 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from pypdf import PdfReader
-from pypdf.errors import PyPdfError
-
 from supershelf.constants import DATE_TEXT
 from supershelf.errors import VarCandidateError
+from supershelf.metadata.pdf import pdf_date, read_pdf_metadata
 from supershelf.metadata.session import MetadataSession
 
 
@@ -128,18 +126,10 @@ class BuiltinCommands:
         return value
 
     def _read_pdf(self, path: Path) -> _PdfDates:
-        try:
-            meta = PdfReader(str(path)).metadata
-        except (OSError, PyPdfError):
-            return (None, None)
+        meta = read_pdf_metadata(path)
         if meta is None:
             return (None, None)
-        return (self._as_date(meta.creation_date), self._as_date(meta.modification_date))
-
-    def _as_date(self, value: object) -> str | None:
-        if not isinstance(value, datetime):
-            return None
-        return value.strftime(DATE_TEXT)
+        return (pdf_date(meta.creation_date), pdf_date(meta.modification_date))
 
     def _current(self) -> _Binding:
         found = self._current_file.get()

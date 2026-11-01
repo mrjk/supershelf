@@ -6,16 +6,12 @@ import hashlib
 import json
 import os
 import shlex
-from datetime import datetime
 from pathlib import Path
 
-from pypdf import PdfReader
-from pypdf.errors import PyPdfError
-
-from supershelf.constants import DATE_TEXT
 from supershelf.errors import VarCandidateError, VarConfigError
 from supershelf.metadata.driver import DriverOptions, MetadataDriver, MetadataFile
 from supershelf.metadata.parse import OutputParser
+from supershelf.metadata.pdf import pdf_date, read_pdf_metadata
 
 _TOKENS = {
     "p": "absolute",
@@ -98,15 +94,12 @@ class PdfDriver(MetadataDriver):
         return found
 
     def _info(self, path: Path) -> dict[str, str]:
-        try:
-            meta = PdfReader(str(path)).metadata
-        except (OSError, PyPdfError):
-            return {}
+        meta = read_pdf_metadata(path)
         if meta is None:
             return {}
         found: dict[str, str] = {}
-        created = self._date(meta.creation_date)
-        modified = self._date(meta.modification_date)
+        created = pdf_date(meta.creation_date)
+        modified = pdf_date(meta.modification_date)
         if created:
             found["creation_date"] = created
         if modified:
@@ -116,11 +109,6 @@ class PdfDriver(MetadataDriver):
             if text:
                 found[key] = text
         return found
-
-    def _date(self, value: object) -> str | None:
-        if not isinstance(value, datetime):
-            return None
-        return value.strftime(DATE_TEXT)
 
     def _text(self, value: object) -> str | None:
         if not isinstance(value, str):
@@ -140,7 +128,7 @@ class ExiftoolDriver(MetadataDriver):
         return self.one_field(file, field, options, lambda: self._read(file, options))
 
     def _read(self, file: MetadataFile, options: DriverOptions) -> tuple[str, dict[str, str]]:
-        timeout = 30.0 if options.timeout is None else options.timeout
+        timeout = options.run_timeout()
         stdout = options.runner.run(
             ["exiftool", "-json", "-G", str(file.absolute)],
             timeout,
@@ -190,7 +178,7 @@ class PdftotextDriver(MetadataDriver):
         return self.one_field(file, field, options, lambda: self._read(file, options))
 
     def _read(self, file: MetadataFile, options: DriverOptions) -> tuple[str, dict[str, str]]:
-        timeout = 30.0 if options.timeout is None else options.timeout
+        timeout = options.run_timeout()
         stdout = options.runner.run(
             ["pdftotext", "-q", "-enc", "UTF-8", str(file.absolute), "-"],
             timeout,
@@ -289,7 +277,7 @@ class CommandDriver(MetadataDriver):
         if isinstance(arguments, list):
             for template in arguments:
                 argv.append(self._replace(str(template), file))
-        timeout = 30.0 if options.timeout is None else options.timeout
+        timeout = options.run_timeout()
         stdout = options.runner.run(argv, timeout)
         return stdout, self.fields_from_payload(stdout, options)
 

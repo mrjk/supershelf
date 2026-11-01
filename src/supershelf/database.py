@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from supershelf.constants import (
     EVENT_GENERATION,
@@ -142,6 +145,24 @@ _EVENT_FOR_STATUS = {
 }
 
 
+class _StoredFacts(Protocol):
+    """Attributes copied onto a StoredFile."""
+
+    input_index: int
+    input_path: str
+    path: str
+    hash: str
+    mtime: str | None
+    ctime: str | None
+    match_kind: str
+    rule: str
+    file_dir: str
+    file_name: str
+    file_stem: str
+    file_ext: str
+    vars_json: str
+
+
 @dataclass(frozen=True)
 class StoredFile:
     """File facts stored on a document and on each event."""
@@ -159,6 +180,25 @@ class StoredFile:
     file_stem: str
     file_ext: str
     vars_json: str
+
+    @classmethod
+    def from_facts(cls, source: _StoredFacts) -> StoredFile:
+        """Copy the shared file columns from a live file or a document row."""
+        return cls(
+            input_index=source.input_index,
+            input_path=source.input_path,
+            path=source.path,
+            hash=source.hash,
+            mtime=source.mtime,
+            ctime=source.ctime,
+            match_kind=source.match_kind,
+            rule=source.rule,
+            file_dir=source.file_dir,
+            file_name=source.file_name,
+            file_stem=source.file_stem,
+            file_ext=source.file_ext,
+            vars_json=source.vars_json,
+        )
 
     def values(self) -> tuple[object, ...]:
         """Column values in `_FILE_COLUMNS` order."""
@@ -237,21 +277,7 @@ class DocumentRow:
 
     def file(self) -> StoredFile:
         """The facts this projection would write onto a later event."""
-        return StoredFile(
-            input_index=self.input_index,
-            input_path=self.input_path,
-            path=self.path,
-            hash=self.hash,
-            mtime=self.mtime,
-            ctime=self.ctime,
-            match_kind=self.match_kind,
-            rule=self.rule,
-            file_dir=self.file_dir,
-            file_name=self.file_name,
-            file_stem=self.file_stem,
-            file_ext=self.file_ext,
-            vars_json=self.vars_json,
-        )
+        return StoredFile.from_facts(self)
 
 
 @dataclass(frozen=True)
@@ -487,33 +513,18 @@ class ShelfDatabase:
         recorded_at: str,
     ) -> None:
         """Write one run. A failure rolls this transaction back."""
-        self._require_writable()
-        connection = self._begin()
-        try:
+        with self._transaction():
             for change in changes:
                 if change.status == EVENT_MOVE:
                     self._mark_missing(change)
             for change in changes:
                 self._apply_change(change, change.identity, recorded_at)
             self._set_meta("identity", identity)
-            connection.commit()
-        except DatabaseError:
-            connection.rollback()
-            raise
-        except sqlite3.Error as exc:
-            connection.rollback()
-            raise self._write_error(exc) from exc
 
     def note_identity(self, identity: str) -> None:
         """Store a new link rule when this run changes no document row."""
-        self._require_writable()
-        connection = self._begin()
-        try:
+        with self._transaction():
             self._set_meta("identity", identity)
-            connection.commit()
-        except sqlite3.Error as exc:
-            connection.rollback()
-            raise self._write_error(exc) from exc
 
     def append_output(
         self,
@@ -533,9 +544,7 @@ class ShelfDatabase:
         """
         self._check_output(output_name, operation, destination, source_hash)
         payload = previous.as_json()
-        self._require_writable()
-        connection = self._begin()
-        try:
+        with self._transaction():
             document = self._require_document(document_id)
             identity = self._event_identity_word()
             self._ensure_hash(source_hash)
@@ -555,6 +564,16 @@ class ShelfDatabase:
                 source_hash=source_hash,
                 previous_json=payload,
             )
+        found = self.events(document_id)[-1]
+        return found
+
+    @contextmanager
+    def _transaction(self) -> Iterator[sqlite3.Connection]:
+        """Begin a write. Commit on success. Roll back on a database error."""
+        self._require_writable()
+        connection = self._begin()
+        try:
+            yield connection
             connection.commit()
         except DatabaseError:
             connection.rollback()
@@ -562,8 +581,6 @@ class ShelfDatabase:
         except sqlite3.Error as exc:
             connection.rollback()
             raise self._write_error(exc) from exc
-        found = self.events(document_id)[-1]
-        return found
 
     def _require_writable(self) -> None:
         if self._connection is None or not self.writable:
@@ -681,9 +698,7 @@ class ShelfDatabase:
         extracted_at: str,
     ) -> None:
         """Insert a cache row. An existing row is left as it is."""
-        self._require_writable()
-        connection = self._begin()
-        try:
+        with self._transaction() as connection:
             self._ensure_hash(digest)
             connection.execute(
                 """
@@ -693,13 +708,6 @@ class ShelfDatabase:
                 """,
                 (digest, driver, options_key, payload, error, extracted_at),
             )
-            connection.commit()
-        except DatabaseError:
-            connection.rollback()
-            raise
-        except sqlite3.Error as exc:
-            connection.rollback()
-            raise self._write_error(exc) from exc
 
     def _has_table(self, name: str) -> bool:
         connection = self._connection

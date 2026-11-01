@@ -14,6 +14,7 @@ from supershelf.errors import VarCandidateError, VarConfigError
 from supershelf.scan import InputFile
 
 _ENABLE_WORDS = ("auto", "true", "false")
+DEFAULT_DRIVER_TIMEOUT = 30.0
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,12 @@ class DriverOptions:
     profile_dir: Path
     options_key: str
     runner: CommandRunner
+
+    def run_timeout(self) -> float:
+        """The configured timeout, or the default when the entry omits one."""
+        if self.timeout is None:
+            return DEFAULT_DRIVER_TIMEOUT
+        return self.timeout
 
 
 class CachedMeta:

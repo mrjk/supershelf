@@ -296,11 +296,6 @@ class VarPlan:
         return FileVars(states[VAR_KIND].display, match.rule, chosen)
 
     @property
-    def catalog(self) -> VarCatalog:
-        """The catalog used to resolve this plan."""
-        return self._catalog
-
-    @property
     def metadata(self) -> MetadataRegistry:
         """Drivers loaded for this profile."""
         return self._session.registry
