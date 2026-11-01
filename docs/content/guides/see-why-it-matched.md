@@ -2,7 +2,7 @@
 
 `supershelf scan inspect` prints how the match rules test kept files. It uses the same walk as `scan files --quick`: no hash, no mtime, and no ctime. The pattern order is in [Matching](../concepts/matching.md).
 
-The path argument is the same as [List files](list-files.md). Omit it to print one line per kept file and no patterns. An exact file path traces that file. Any other value traces each kept file whose path starts with it, with the same detail as a single file.
+The path argument is the same as [List files](list-files.md). Omit it to print one line per kept file and no patterns. If any kept path equals the selector, every input traces that exact path only. Otherwise the selector traces each kept file whose path starts with it, with the same detail as a single file.
 
 ```bash
 supershelf scan inspect

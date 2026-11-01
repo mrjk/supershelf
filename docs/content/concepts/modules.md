@@ -11,7 +11,7 @@ A module may export two mappings:
 
 Values are callables. They should accept strings and return a string. A return value that is not a string fails that candidate. Raising `VarCandidateError` fails that candidate and lets the next one run. Any other exception stops the command.
 
-A name that repeats a built-in, or an earlier module, stops the command. Built-in commands cannot be replaced. Keys must be strings. A mapping that is not a mapping, or a value that is not callable, stops the command.
+A name that repeats a built-in command, a Jinja name, or an earlier module, stops the command. Built-in commands cannot be replaced. Keys must be strings. A mapping that is not a mapping, or a value that is not callable, stops the command.
 
 ```python title="my_package/supershelf_vars.py"
 from supershelf.errors import VarCandidateError

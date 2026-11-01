@@ -18,7 +18,7 @@ If the path exists and is not a directory, the command stops. If the directory i
 
 `include` and `exclude` are lists of globs. They match the path relative to the input directory. `*` stays in one directory. `**` crosses directories. The match is against the whole relative path.
 
-If `include` is set, a file must match at least one include pattern. If `include` is omitted, the walk starts from every file it found. If `exclude` is set, matching files are dropped. If `exclude` is omitted, nothing is dropped for that reason. Exclude runs after include.
+If `include` is set, a file must match at least one include pattern. If `include` is omitted or null, the walk starts from every file it found. `include: []` keeps no file. If `exclude` is set, matching files are dropped. If `exclude` is omitted, null, or `[]`, nothing is dropped for that reason. Exclude runs after include.
 
 `**/*.pdf` matches a PDF in any nested directory. `*.pdf` matches a PDF sitting in the input directory only.
 
@@ -43,7 +43,7 @@ Stored mtime and ctime are UTC ISO-8601 with a numeric offset, so they can be pa
 
 `path` in the table is relative to the input directory, with `/` separators. `input` is the 1-based index in that profile's `inputs` list.
 
-`scan files` takes an optional path, the same text as that column. Omit it to list every kept file. An exact file path lists that file. Any other value lists paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice.
+`scan files` takes an optional path, the same text as that column. Omit it to list every kept file. If any kept path equals the selector, every input lists that exact path only. Otherwise the selector lists paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice.
 
 The columns are `profile`, `input`, `path`, `mtime`, `ctime`, and `sha256`. `--quick` omits the last three.
 

@@ -61,7 +61,7 @@ books    1      Bank2000/card/CARD_1234_20211231.pdf         invoice  bank2000_c
 books    1      notes/readme.txt                             unsorted unsorted
 ```
 
-The path argument is the same as [List files](list-files.md). Omit it to classify every kept file. An exact file path classifies that file. Any other value classifies paths that start with it.
+The path argument is the same as [List files](list-files.md). Omit it to classify every kept file. If any kept path equals the selector, every input classifies that exact path only. Otherwise the selector classifies paths that start with it.
 
 A kept file that no rule claims is absent from this table. The command warns once for that file and still exits successfully. A path argument limits both the table and those warnings to the selected files. `scan files` still lists that file.
 

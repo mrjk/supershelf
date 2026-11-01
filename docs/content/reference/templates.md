@@ -35,7 +35,7 @@ Bank2000
 - The result must be a string.
 - An unknown name fails that candidate. The next candidate in the list can run.
 - A syntax error stops the command when the template is loaded.
-- Each distinct source is compiled once per process.
+- Each distinct source is compiled once for that profile. Another profile in the same command compiles it again.
 - The rendered string is not rendered again.
 - A key cannot read a later key in the same mapping.
 - A reference to the key being rendered sees the previous layer.

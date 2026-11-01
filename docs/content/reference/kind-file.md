@@ -60,7 +60,7 @@ The first column must be `PATH`. `path` or `Path` is an error. A missing `PATH`,
 
 A column other than `PATH` and `__date__` must be lowercase and match `[a-z_][a-z0-9_]*`.
 
-An empty file, or a file of whitespace only, is an empty table, not a missing-header error. A blank line is skipped. A row with values and an empty `PATH` is an error.
+An empty file, or a file of whitespace only, is an empty table, not a missing-header error. A blank line is skipped. A row with values and an empty `PATH` is an error. A row with fewer cells than the header is padded with empty cells. A row with more cells than the header stops the command.
 
 ## TOML and YAML
 
@@ -70,7 +70,7 @@ TOML cannot be a root list, so the file is `[[rows]]` tables. Each table has `pa
 
 `path` is the path relative to the input, with `/` separators. It is an exact match, not a glob.
 
-A name under `vars` must match `[A-Za-z_][A-Za-z0-9_]*`. A duplicate name in one `vars` mapping stops the command. A missing `path` stops the command. A number, boolean, date, list, or nested mapping stops the command. Quote scalars such as dates.
+A name under `vars` must match `[A-Za-z_][A-Za-z0-9_]*`. TOML rejects a duplicate key in one `vars` table. YAML keeps the last value for a duplicate key and does not stop. A missing `path` stops the command. A number, boolean, date, list, or nested mapping stops the command. Quote scalars such as dates. In YAML, also quote `yes`, `no`, `on`, and `off`, because those words become booleans.
 
 ## Names
 

@@ -23,9 +23,9 @@ The rule kind picks the file. An override that changes `__kind__` does not switc
 
 The row key is the path relative to the input, with `/` separators. It is an exact match. Case is not folded. Two inputs that share one kind file treat the same relative path as one row. Put `{{ __input__.path }}` in a template when those inputs must not share rows.
 
-The parsed file is cached for the process by its absolute path. The winner is also cached by kind and input. Nothing is written to `cache_file`. A kind with no matched file is never looked up, so `always` does not create a file for it.
+The parsed file is cached on that profile by its absolute path. Another profile in the same command does not share the cache. The winner is cached by kind and input directory. Nothing is written to `cache_file`. A kind with no matched file is never looked up, so `always` does not create a file for it.
 
-`-vv` logs each candidate the first time a kind and input are searched: a missing path and the kind, the file when it is first loaded, or a path already loaded for another search. An empty list logs that there is no candidate list, except when the mode is `disabled`. A repeated search stays quiet. `-v` does not add these lines. `disabled` does not search.
+`-vv` logs each path tried the first time a kind and input directory are searched: a missing path, the file when it is first loaded, or a path already loaded for another search. The search stops at the first existing file, so later templates are not rendered and are not logged. An empty list logs that there is no candidate list, except when the mode is `disabled`. A repeated search stays quiet. `-v` does not add these lines. `disabled` does not search.
 
 ## Mode
 

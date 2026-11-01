@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from supershelf.cli import App
+from supershelf.cli import App, PackageVersion
 from supershelf.constants import LOGGER_NAME
 
 
@@ -21,6 +21,18 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("SUPERSHELF_PROFILES", raising=False)
     monkeypatch.delenv("SUPERSHELF_KIND_OVERRIDES_MODE", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+
+def test_version_prints_package_version(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    app = App(parse=False)
+
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["--version"])
+
+    assert caught.value.code == 0
+    assert capsys.readouterr().out.strip() == PackageVersion.line()
 
 
 def test_profiles_lists_name_and_path(

@@ -8,7 +8,11 @@ pip install .
 
 That installs the `supershelf` command. The version line is filled from the program:
 
-<!-- placeholder: supershelf --version -->
+<!-- extract: version -->
+```text
+supershelf 0.1.0
+```
+<!-- /extract -->
 
 ## One profile
 

@@ -6,9 +6,9 @@ User errors stop the command and print a message without a traceback. When the e
 
 `VarConfigError` is a `SupershelfError` for a var table, a `vars_schema` entry, a template, a module, or a kind file that is invalid as written. It exits with status 2. These are checked before the walk, except a kind file, which is checked the first time that kind and input need it. A non-template literal that cannot cast to the name's type is this error, including when a later candidate might have worked.
 
-`VarResolveError` is a fact or kind-file cell that cannot cast, or a `mandatory` name that is still unset after the last layer. A candidate list that misses does not raise it. The message names the profile, the input, the path, and the variable. The tip is the last miss, when there is one. A kind-file `__date__` cell that does not match the date format is the same kind of error. There is no next candidate.
+`VarResolveError` is a fact or kind-file cell that cannot cast, or a `mandatory` name that is still unset after the last layer. A candidate list that misses does not raise it. The message names the profile, the input, the path, and the variable. The tip is the cast message for a failed fact or cell, `{name} is mandatory and no layer set it.` when a mandatory name is still unset, or the date-format message for a kind-file `__date__` cell. There is no next candidate.
 
-`VarCandidateError` is not an exit by itself. Built-in commands and user modules raise it to skip one candidate. A rendered value that misses the name's type or its validation skips that candidate the same way. The next candidate then runs. If you raise any other exception from a module, the command stops.
+`VarCandidateError` is not an exit by itself. Built-in commands and user modules raise it to skip one candidate. A rendered value that misses the name's type or its validation skips that candidate the same way. The next candidate then runs. Any other exception from a module is not caught here. The command stops and the traceback is printed.
 
 ## Warnings
 

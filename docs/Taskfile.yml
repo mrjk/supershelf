@@ -27,13 +27,20 @@ tasks:
     cmds:
       - task --list
 
+  extract:
+    desc: Write CLI help and the version line into the content pages
+    cmds:
+      - "{{.PY}} python extract.py"
+
   serve:
     desc: Preview the documentation site
+    deps: [extract]
     cmds:
       - "{{.PY}} zensical serve -f mkdocs.yml --dev-addr {{.DOCS_DEV_ADDR}}"
 
   build:
     desc: Build the static site into site/
+    deps: [extract]
     cmds:
       - "{{.PY}} zensical build -f mkdocs.yml"
 

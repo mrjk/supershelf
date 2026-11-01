@@ -58,7 +58,7 @@ supershelf scan files "Bank2000/REL_20260425_ab12cd34.pdf"
 supershelf scan files Bank2000
 ```
 
-An exact file path lists that file only. The same path in two inputs is listed twice. Any other value lists paths that start with it, so `Bank2000` also lists `Bank2000/card/CARD_1234_20211231.pdf` and `Bank2000.txt`. A value that no kept file has stops the command.
+An exact file path lists that file only. The same path in two inputs is listed twice. If any kept path equals the selector, every input uses that exact path only, so a file named `Bank2000` does not also list `Bank2000.txt`. Otherwise the selector lists paths that start with it, so `Bank2000` lists `Bank2000/card/CARD_1234_20211231.pdf` and `Bank2000.txt` when no kept file is exactly `Bank2000`. A value that no kept file has stops the command.
 
 ```bash
 supershelf scan files --quick

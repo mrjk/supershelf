@@ -9,7 +9,7 @@ Which file is loaded, and which profiles run:
 3. Discovery in the current directory, then the user config directory
 4. Built-in defaults for omitted keys inside the file
 
-There is no environment variable for `root_dir` or the other keys below. An omitted key uses its default. A YAML null is the same as omitting the key. An empty string and an empty list stay set. A command that reads a key stops if that key has the wrong type. `supershelf profiles` checks that the file is a mapping and that `config.profile`, when set, is a string. It does not render paths.
+There is no environment variable for `root_dir` or the other keys below. An omitted key uses its default. On the optional `config` keys, and on `include`, `exclude`, `depth`, and `follow_symlinks`, a YAML null is the same as omitting the key. An empty string and an empty list stay set. `include: []` keeps no file. A candidate, and `vars_schema.<name>.default`, reject null: null is not unset. A command that reads a key stops if that key has the wrong type. `supershelf profiles` checks that the file is a mapping and that `config.profile`, when set, is a string. It does not render paths.
 
 ## config
 
@@ -45,8 +45,8 @@ Other keys under `config` are stored. This version does not interpret them.
 | Key | Type | Default |
 | --- | --- | --- |
 | `path` | string | required |
-| `include` | list of strings | omitted: keep every file the walk found |
-| `exclude` | list of strings | omitted: drop nothing |
+| `include` | list of strings | omitted or null: keep every file the walk found. `[]` keeps no file |
+| `exclude` | list of strings | omitted or null: drop nothing. `[]` drops nothing |
 | `depth` | integer `0` or greater | `0`, no recursion limit |
 | `follow_symlinks` | boolean | `true` |
 
@@ -98,8 +98,6 @@ In `default_vars`, rule `vars`, and override `vars`, each value is a string or a
 
 | Variable | Overrides | Meaning |
 | --- | --- | --- |
-| `SUPERSHELF_CONFIG` | `--config` wins | File or directory, same rules as `--config`. |
-| `SUPERSHELF_PROFILES` | `--profile` wins | Comma-separated profile names. |
+| `SUPERSHELF_CONFIG` | `--config` wins | File or directory. A blank or whitespace flag stops the command. A blank or whitespace variable is unset. A set value uses the same path rules as `--config`. |
+| `SUPERSHELF_PROFILES` | `--profile` wins | Comma-separated profile names. A blank flag stops the command. A blank or whitespace variable is unset, so every discovered profile is kept. |
 | `SUPERSHELF_KIND_OVERRIDES_MODE` | `--kind-overrides-mode` wins | `auto`, `manual`, `always`, or `disabled`. Wins over `config.kind_overrides_mode`. |
-
-<!-- placeholder: config schema -->

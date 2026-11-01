@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version as package_version
+
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
-from supershelf.constants import LOGGER_NAME
+from supershelf.constants import APP_NAME, LOGGER_NAME
 from supershelf.match import (
     DETAIL_NO_PATTERNS,
     STATUS_HIT,
@@ -33,6 +35,21 @@ def kept_path() -> Argument:
             "Anything else selects paths that start with it."
         ),
     )
+
+
+class PackageVersion:
+    """Distribution version printed by --version."""
+
+    UNKNOWN = "unknown"
+
+    @staticmethod
+    def line() -> str:
+        """`supershelf` plus the installed version, or `unknown`."""
+        try:
+            number = package_version(APP_NAME)
+        except PackageNotFoundError:
+            number = PackageVersion.UNKNOWN
+        return f"{APP_NAME} {number}"
 
 
 class GlobalFlags:
@@ -325,6 +342,13 @@ class ScanCommand(Parser):
 
 class App(LoggingOptMixin, GlobalFlags, Parser):
     """Load supershelf profiles and scan their inputs."""
+
+    version = Argument(
+        "--version",
+        action="version",
+        version=PackageVersion.line(),
+        help="Print the installed version and exit.",
+    )
 
     class Meta:
         app_name = LOGGER_NAME

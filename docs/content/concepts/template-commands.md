@@ -30,6 +30,6 @@ A miss raises `VarCandidateError`. That fails the current candidate only, so the
 
 `pdf_cdate()` and `pdf_mdate()` read the PDF creation and modification dates. The result is `YYYY-MM-DD`. A file that is not a PDF, a missing date, or an unreadable file fails the candidate.
 
-The file is opened only when a candidate calls one of these. Both dates for one file hash are read once per process. A failed read is cached too, so a later candidate does not open the file again.
+The file is opened only when a candidate calls one of these. Both dates for one file hash are read once for that profile. Another profile in the same command reads the file again. A failed read is cached too, so a later candidate in that profile does not open the file again.
 
 These two dates are the only file-metadata fields in this version. See [Limits](limits.md).

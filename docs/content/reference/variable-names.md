@@ -38,7 +38,7 @@ Named regex groups are printed after these, in pattern order. A group name that 
 
 ## Profile scope
 
-These names are in scope for path templates and variable templates. They are not printed as their own rows. An assignment may reuse one of these names. That stores a printed value and hides the profile value from later templates for that file.
+These names are in scope for path templates and variable templates. They are not printed as their own rows. An assignment cannot reuse one of them. A name that starts with `__` and is not a managed variable stops the command with "is not a supershelf variable". The managed names are the internal facts, `file_ctime`, `file_mtime`, and `__date__`.
 
 | Name | Value |
 | --- | --- |
@@ -69,6 +69,8 @@ Kind-file path templates also see:
 | --- | --- | --- | --- | --- |
 | `__kind__` | no | no | no | yes |
 | other internals, `file_ctime`, `file_mtime` | no | no | no | no |
-| `__date__` and any other variable name | yes | yes | yes | yes |
+| `__date__` | yes | yes | yes | yes |
+| a name that does not start with `__` | yes | yes | yes | yes |
+| any other name that starts with `__` | no | no | no | no |
 
 A variable name matches `[A-Za-z_][A-Za-z0-9_]*`.

@@ -6,4 +6,4 @@ Supershelf is free software. You can redistribute it and modify it under the ter
 
 The full text is the `LICENSE` file at the repository root.
 
-A code of conduct is not part of this repository yet.
+The code of conduct is the `CODE_OF_CONDUCT.md` file at the repository root.

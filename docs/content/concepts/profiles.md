@@ -9,9 +9,9 @@ The file must be a mapping. TOML and YAML are accepted. The stored type is `toml
 The first source that yields a file wins. Later sources are not merged in.
 
 1. `--config` points at a file or a directory. It overrides `SUPERSHELF_CONFIG`. A missing path, or a directory with no matching file, stops the command. Supershelf does not fall through to the current directory.
-2. `SUPERSHELF_CONFIG` uses the same rules as `--config`.
+2. `SUPERSHELF_CONFIG`, when it is set to a non-blank value, uses the same path rules as `--config`. A blank or whitespace value is unset, and discovery continues. A blank or whitespace `--config` stops the command.
 3. The current directory.
-4. The user config directory: `$XDG_CONFIG_HOME/supershelf`, or `~/.config/supershelf` when `XDG_CONFIG_HOME` is unset.
+4. The user config directory: `$XDG_CONFIG_HOME/supershelf`, or `~/.config/supershelf` when `XDG_CONFIG_HOME` is unset or empty.
 
 An explicit file is loaded as that file only. An explicit directory uses the directory rules below.
 
@@ -45,6 +45,7 @@ Selection happens after the files are loaded.
 
 - `--profile` wins over `SUPERSHELF_PROFILES`.
 - Both accept a comma-separated list. Spaces around names are ignored.
+- A blank `--profile` stops the command. A blank or whitespace `SUPERSHELF_PROFILES` is unset.
 - The result keeps the requested order. A repeated name is kept once.
 - An unknown name stops the command. The message lists the known names.
 - With no selector, every discovered profile is kept.

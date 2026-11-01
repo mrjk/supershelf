@@ -58,7 +58,7 @@ This profile sets a default owner, then replaces the vendor on the Bank2000 stat
 supershelf scan vars "Bank2000/REL_20260425_ab12cd34.pdf"
 ```
 
-Example `vars` cell, with the file facts shortened:
+Example `vars` cell. The rows between `__file_name__` and `date` are omitted: the other internal facts, then `file_ctime` and `file_mtime`.
 
 ```text
 __kind__: invoice
@@ -79,7 +79,7 @@ receipt: ab12cd34
 sources: rule:bank2000_statement
 ```
 
-Each name is two lines. The cell above leaves out the other file facts. The printed order is the internal facts, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in the order they were first stored. `vendor` was set in `default_vars` and replaced by the rule, so it keeps the earlier position, and both layers stay in `sources`. `owner` stays `sample` because the rule does not set it.
+Each name is two lines. The printed order is the internal facts, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in the order they were first stored. `vendor` was set in `default_vars` and replaced by the rule, so it keeps the earlier position, and both layers stay in `sources`. `owner` stays `sample` because the rule does not set it.
 
 ## Declare a type
 
@@ -112,9 +112,9 @@ Each name is two lines. The cell above leaves out the other file facts. The prin
         filename_regex: 'REL_(?P<amount>[0-9]+[.][0-9]{2})\.pdf'
     ```
 
-For `REL_12.50.pdf`, `amount` prints as `12.50` and the JSON value is `12.5`. Templates still read the string `12.50`. `EUR12.50` stops the file, because a regex group has no next candidate.
+For `REL_12.50.pdf`, the table shows `amount: 12.50`. In `--format json` and `--format yaml` that name is an object: `value` is `12.5`, and `value_sources` lists the layers. `display` is not in the object. `csv` still uses the two-line display string. Templates still read the string `12.50`. `EUR12.50` stops the file, because a regex group has no next candidate.
 
-There is no `--quick` on this command. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. An exact file path lists that file in every input that has it. Any other value lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
+There is no `--quick` on this command. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. If any kept path equals the selector, every input lists that exact path only. Otherwise the selector lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
 
 A key in one mapping cannot read a key that appears later in that same mapping. `{{ vendor }}` inside `default_vars`, next to `vendor`, still sees the previous layer, which is the fact scope. It does not see the candidate list being tried.
 
