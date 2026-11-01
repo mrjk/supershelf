@@ -9,6 +9,7 @@ Working notes for this repository. The public site is `docs/content/` and is not
 - A profile or kind file a user would paste: [examples.md](examples.md). No section numbers. A comment may cite a product step. The rule itself stays in behavior or architecture.
 - How any mrjk app is built: [../RULES.md](../RULES.md). Cite it as rules 2.1.
 - An idea that is not accepted: [drafts/](drafts/). It does not move into behavior until it is accepted. `2.3.3` is [drafts/file-metadata.md](drafts/file-metadata.md).
+- A decision that is accepted and blocked on another step stays in drafts until that step exists. `record_key` is [drafts/record-key.md](drafts/record-key.md). It waits on file metadata and schema version 2.
 - `docs/v1/` is the old barbu accounting spec. Do not add to it.
 - `docs/DRAFT.md` is empty. Do not use it.
 

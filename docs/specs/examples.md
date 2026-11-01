@@ -18,7 +18,7 @@ config:
   # Default paths
   database_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite" # 4. record run creates this file. Scan commands do not.
   cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache" # Rendered. Nothing writes it.
-  record_identity: path # 4.2. path (default) or hash. Omitted uses path.
+  record_identity: path # 4.2. Bare path means path then hash. Bare hash means hash then path. A list does not expand. Omitted uses path.
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See 2.3.1.
   #   - my_package.supershelf_vars
   kind_overrides_config: # Omitted uses this list. First existing file wins. Per-file rows. Cached by input and kind, and by path.
@@ -123,6 +123,9 @@ match_rules:
       - banking*
     filename_glob:
       - REL*
+
+    # 4.2. Omitted inherits config.record_identity. A list is the fallback order.
+    # record_identity: [hash, path]
 
 
     # Specified in 2.3.1. A string is one template. A list is tried in order.

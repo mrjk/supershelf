@@ -273,7 +273,7 @@ Modules. A missing or null `var_modules` loads no modules. `[]` loads no modules
 Missing and null are both `None` before the type check.
 
 - `profile.py`: `default_date_format`, `root_dir`, `database_file`, `cache_file`.
-- `record.py`: `RecordIdentity.resolve`, a `WordChoice`. The flag wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then packaged `path`. An empty string is invalid and does not fall back.
+- `record.py`: `RecordIdentity.resolve`. The flag wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then packaged `path`. A bare `path` expands to `path` then `hash`. A bare `hash` expands to `hash` then `path`. A list does not expand its items. An empty string, an empty list, a repeated step, or an unknown step is invalid and does not fall back. Rule lists are behavior 4.2.
 - `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. `KindOverrideMode` is a `WordChoice`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
 - `scan.py`: a null `inputs` uses the same "no inputs" error as a missing key. An empty list stays "inputs is empty".
 
@@ -285,7 +285,7 @@ Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `1`. F
 
 ### 3.1 Tables
 
-`meta` stores `schema_version` and, after a successful `record run`, `identity` (`path` or `hash`).
+`meta` stores `schema_version` and, after a successful `record run`, `identity`. The value is the profile default list, comma-separated, no spaces: `path,hash` or `hash,path`. A legacy `path` compares equal to `path,hash`. A legacy `hash` compares equal to `hash,path`. Behavior 4.2.
 
 `contents` is one row per sha256. The primary key is `hash`. Many documents reference one row.
 
@@ -308,7 +308,7 @@ A partial unique index on `(input_path, path)` applies where `presence` is not `
 
 - `id`, `document_id`, `seq` unique per document, starting at 1
 - `event`: `new`, `move`, `generation`, `vars`, `missing`, `present`, `unmatched`, or `output`
-- `identity`: the rule that decided this event
+- `identity`: the first step of the list that decided this event. `path` or `hash`. A `path` list stores `path` even when the hash step performed a move.
 - `recorded_at`
 - the same file facts and `vars_json` as `documents`
 - nullable output columns: `output_name`, `operation`, `destination`, `source_hash`, `previous_json`
@@ -325,21 +325,26 @@ Each binding is `type`, `value`, `display`, and `value_sources`. `value` is the 
 
 ### 3.3 Decision order
 
-The observed set is the walked inputs, then PATH. Documents whose input directory was not walked are left as they are. Documents outside PATH are left as they are.
+The observed set is the walked inputs, then PATH. Documents whose input directory was not walked are left as they are. Documents outside PATH are left as they are. The database file is ignored.
 
-In-scope documents are visited in id order.
+The list for each document is behavior 4.2. A file reserved in an earlier step cannot be taken later. Inside a step, documents run in id order.
 
-1. The location still has a matched file and the hash matches. The document stays. Status is `vars`, `present`, `refresh`, or `unchanged`, in that order of precedence. `present` is the return from `missing` or `unmatched` when the variables did not change.
-2. The location still has a matched file and the hash differs. Under `path`, that is a new generation and the old bytes elsewhere are a different document. Under `hash`, if the old hash is live on exactly one other in-scope file and that file is not already claimed, the document moves there and the bytes at the old path are a new document. Otherwise it is a new generation.
-3. The location is still in the kept walk and no rule matches. Status `unmatched`, unless it is already unmatched.
-4. The location is gone. If exactly one unclaimed in-scope file has this hash, and exactly one in-scope document whose location is gone wants it, the document moves. Otherwise it is `missing`, unless it is already missing.
-5. Each unclaimed in-scope matched file becomes a new document, generation 1, event `new`.
+1. The location still has a matched file and the hash matches. The document stays, for every list. Status is `vars`, `present`, `refresh`, or `unchanged`, in that order of precedence. `present` is the return from `missing` or `unmatched` when the variables did not change. Reserve the file.
+2. The location is still in the kept walk and no rule matches. Status `unmatched`, unless it is already unmatched. The list stops. The hash is not followed. The event keeps the latest identity word.
+3. Walk the remaining list. Stop at the first step that matches.
+   `path` matches when the location still has a matched file. A different hash is a generation. Reserve that path. The step declines when the location is not in the kept walk.
+   `hash`, and this document's list reaches it before `path`: eligibility and ownership are behavior 4.2. One eligible unreserved successor is a move. Several hash-first successors move to the lowest `(input_path, relative path)` and the others are `duplicate`. The old path is not reserved when the document leaves it. A reserved file does not make this step match. The step declines when none remain.
+   `hash` after `path` declined: this document's own continuation. Any unclaimed in-scope matched file with that hash counts. The move happens only when exactly one gone document wants that hash. Several successors do not match.
+   When the list is exhausted, the document is `missing` unless it is already missing.
+4. Each unclaimed in-scope matched file becomes a new document, generation 1, event `new`, identity the first step of its rule list. A hash-first file whose hash is already owned is `duplicate` instead. It is not written. On a first run the lowest path of a shared hash is the new document.
 
 A move keeps the generation number. A generation increments it. A move or a generation stores the new snapshot on that event and does not also append `vars`.
 
+`duplicate` is a status word. It is not an event and not a presence. The plan prints it. The write skips it.
+
 Location changes are written by first marking the moving documents `missing`, so a swap of two paths can commit under the partial unique index, then writing the final presence and path.
 
-`duplicates` on the status row counts other documents that would be `present` with that hash after the plan. Documents left out of scope still count.
+`duplicates` on the status row counts other in-scope present documents with that hash, plus extra live files reported as `duplicate` for that hash. Documents left out of scope still count. A never-inserted copy is not in `record duplicates`.
 
 ### 3.4 Output event
 
@@ -357,10 +362,14 @@ A missing file opened for reading is an empty previous state. The file is not cr
 
 `record run` opens for write only when a row would change, or when the stored identity rule differs and the file already exists. The identity key is updated in that transaction. A failure rolls the transaction back. The schema created for a new file stays.
 
-`RecordConfigError` is a bad `record_identity` word. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
+`RecordConfigError` is a bad `record_identity` word or list, on the flag, the environment variable, the profile, or a match rule. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
 
-Two copies. Both documents reference the same `contents.hash`. `record duplicates` groups that hash.
+Two copies, path. Both documents reference the same `contents.hash`. `record duplicates` groups that hash.
+
+Two copies, hash. One document references `contents.hash`. The extra path is a `duplicate` status row and has no document row.
 
 Collision under `path`. The generation event keeps the document id. The new document's `new` event stores the old hash. The duplicate query shows current `no` on the generation that was replaced and current `yes` on the new document.
+
+Collision under `hash`. The move keeps the document id and the generation. The new bytes are a new document. A second hash-first file with the old hash is not inserted.
 
 Output slot. After `append_output`, `events` has one `output` row and the document's presence, hash, and generation are unchanged.

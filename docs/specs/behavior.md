@@ -197,6 +197,8 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
   Groups are not merged across fields or rules. Globs keep no groups.
 - Patterns are literal. Do not template them.
 - Unknown keys on a rule, including vars, are ignored in this step.
+- `record_identity` on a rule is ignored here. `record status` and `record run` read it. 4.2.
+  A bad value does not stop a scan.
 - A pattern that is not a string, a rule with neither name nor kind, or any other bad shape is a config error.
 - match_rules missing, or a file that no rule claims:
   - Log a warning with profile, input, and relative path.
@@ -539,7 +541,9 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
 
 - It uses the same full walk as scan vars, and the same resolved values.
   There is no --quick and no path filter.
-  It does not create the database file, the cache file, or an output tree.
+- It does not open, create, read, or write the profile database, and it does not append events.
+  Behavior 4 owns that file. Resolution does not read vars_json.
+  It does not create the cache file or an output tree.
 - Profile selection is the same as the other commands: --config and --profile.
 - Say var, not field. A field is a match-rule slot, such as regex or filename_glob.
   The feed flag is --var.
@@ -575,6 +579,13 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
 - Duplicate path rows: update the first, leave the later row, and keep the warning from 2.3.2.
 - --dry-run prints the same summary the prompt would show, asks nothing, and writes nothing.
 - A resolve error writes nothing.
+- data feed and data prune edit kind-file cells and columns only.
+  Those writes belong on the kind file. They do not open the profile database.
+- A feed or prune can change what the next record run resolves.
+  That run may append a vars event. data does not write the event.
+  A kind cell filled by feed is later labeled kind:<path>, not rule:<name>.
+- data has no PATH filter. --missing uses the full walk.
+  A later PATH filter must not drop kind-file rows outside that filter.
 - data feed and data prune ask once for the whole run, before any write.
   The question is on stderr. y or yes writes. Anything else writes nothing.
   Not a terminal, and no --force, stops the command and tells the user to pass --force.
@@ -591,6 +602,8 @@ Disabled mode. `kind_overrides_mode` is `disabled`. `data feed` still creates or
 Shared path. Two inputs resolve the same kind file and the same relative path, and the selected `vendor` values differ. The command stops and names both inputs.
 
 Not a terminal. `data feed` with no `--force` and no `--dry-run` stops and tells the user to pass `--force`.
+
+Database left alone. `data feed` fills an empty `vendor` cell. The sqlite file is not opened. The next `record run` may append `vars`. The new source label is `kind:<path>`.
 
 ### 3.2 data feed
 
@@ -679,26 +692,33 @@ Unset. No layer set `owner`. Feed does not blank a hand-written `owner` cell, an
   An empty schema column stays. A non-empty extra column stays. One filled cell keeps the column.
   CSV drops the column. TOML and YAML omit the key.
 - --missing:
-  Drop a row whose path is not a matched file of that kind in this scan.
-  A file that moved to another kind is dropped from the old file.
+  Drop a kind-file row whose path is not a matched file of that kind in this scan.
+  This is not document presence missing. It does not delete a document, an event, or a hash.
+  A document can stay missing or unmatched in the database after its kind-file row is gone.
+  A file that moved to another kind is dropped from the old kind file.
   Two inputs that share one kind file keep the row when either input still matches that path for that kind.
 - --clear:
   Rewrite each existing kind file with no rows. The file stays.
   CSV keeps its header. TOML and YAML keep an empty document.
-  It does not delete the file.
+  It does not delete the kind file, and it does not empty the database.
+  The next record run sees the lower layers and may append vars.
 
 #### Cases
 
 Prune default. A column `note` is not in the schema and every cell is empty. No flags drops it. A schema column that is empty stays. A non-schema column with one filled cell stays.
 
-Prune flags. `--missing` does not also drop empty columns. `--empty-fields` does not also drop missing rows. `--all` includes `--clear`, so the file ends with no rows.
+Prune flags. `--missing` does not also drop empty columns. `--empty-fields` does not also drop missing rows. `--all` includes `--clear`, so the kind file ends with no rows. The database rows stay.
+
+Missing word. `--missing` drops a kind-file row for a path that is not matched as that kind. The document row stays, including when its presence is `missing`.
 
 ### 3.4 data show
 
 #### Command
 
 - supershelf data show [KIND]
-- Prints resolved values. It does not write and does not prompt.
+- Prints the live resolve. It does not read the profile database.
+  It does not write and does not prompt.
+  A recorded document is not required. A file that was never recorded is still shown.
 - One table per profile and kind, because each kind has its own columns.
   It does not return one merged row list.
   A title line names the profile, the kind, and the kind file path when there is one.
@@ -729,16 +749,18 @@ Columns are a clak table.
 - Writes nothing. A missing sqlite file stays missing. An existing file is opened read-only.
 - Columns: profile, input, path, status, hash, generation, kind, rule, duplicates.
 - input is the 1-based index. path is relative to the input directory.
-- status is `new`, `generation`, `move`, `vars`, `missing`, `present`, `unmatched`, `refresh`, or `unchanged`.
-- duplicates is how many other documents would be present with that same current hash after this plan.
-- `--record-identity` is `path` or `hash`. 4.2.
+- status is `new`, `generation`, `move`, `vars`, `missing`, `present`, `unmatched`, `refresh`, `unchanged`, or `duplicate`.
+- duplicates is how many other in-scope present documents share that hash, plus how many extra live files this plan reports as `duplicate` for that hash.
+- A `duplicate` row is an extra live file. path is that file. The hash is the owner's hash. It is not inserted. `record history` has no row for it.
+- `--record-identity` is a word or a comma-separated list. 4.2.
 
 #### record run
 
 - supershelf record run [PATH]
-- Prints the status rows whose status is not `unchanged`, then writes them.
+- Prints the status rows whose status is not `unchanged`, then writes every printed row except `duplicate`.
 - `--dry-run` prints those rows and writes nothing. It does not create the sqlite file, its parents, or a journal.
 - A run with no changes does not create a missing sqlite file.
+- A run that prints only `duplicate` rows writes nothing and does not create a missing sqlite file.
 - A run with changes creates parent directories, then writes one transaction per profile.
 - A later profile can commit after an earlier profile already committed.
 - `--record-identity` is the same flag as `record status`.
@@ -764,16 +786,70 @@ Columns are a clak table.
 
 - A document has a stable integer id. Rows are never deleted. Revert is a later walk of the events.
 - The location is the absolute input directory plus the relative path. The input index is stored. Reordering inputs is not a move. A missing input directory leaves that input's documents untouched.
-- The same hash on two live matched files is two documents. Duplicates are a query on the shared hash.
-- `config.record_identity` is `path` or `hash`. Packaged default is `path`.
-  Precedence is `--record-identity`, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then `path`.
-  A bad word, including a different case or an empty string, stops before the walk.
-  The message names the flag, the environment variable, or `config.record_identity`.
-  Each event stores the rule that decided it.
-  A later run that uses the other rule warns, leaves old events as they are, and decides new links with the new rule.
-- `path`, the default. A matched file still at the document's location keeps that document. New bytes there are a new generation. A move happens when that location is gone, exactly one in-scope live file has the current hash, and only one in-scope document wants that hash.
-- `hash`. The current hash owns the document. Exactly one in-scope live file with that hash is that document, including when the old path now has different bytes. Those new bytes are a new document. A new generation happens when the old hash is not live in scope and the new bytes sit at the document's last path.
-- Both rules agree on a rename plus an edit. The old path is gone and the old hash is not live, so the old document becomes missing and the new path is a new document.
+- `record_identity` is one step or a list of steps. The steps in this version are `path` and `hash`.
+  A list is tried in order. The first step that matches links the document. Later steps do not run.
+  A step that declines does not link and does not claim a file.
+- A bare word expands. `path` means `[path, hash]`. `hash` means `[hash, path]`.
+  An item inside a list does not expand. `[path]` is the path step only. `[hash]` is the hash step only.
+  `path` and `[path, hash]` are the same list. `hash` and `[hash, path]` are the same list.
+- The packaged default is `path`, which is `[path, hash]`.
+  Precedence for the profile default is `--record-identity`, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then `path`.
+  A match rule's `record_identity` wins over that default. Omitted or null on the rule inherits the default.
+  The flag and the environment variable are a word or a comma-separated list. Spaces around a comma are ignored.
+  The profile value and the rule value are a string or a list of strings.
+  Kind files do not carry this key. Two rules may share a kind and use different lists.
+- A bad value stops `record status` and `record run` before the walk. Exit 2. Nothing is written.
+  Bad: a different case, an empty string, an empty list, an empty comma item, a repeated step, a step other than `path` or `hash`, or a template string.
+  The word `key` is reserved and is bad in this version. drafts/record-key.md.
+  The message names the flag, the environment variable, `config.record_identity`, or the match rule.
+- The list for a document is the list of the rule that matches the live file at the recorded path, when that file exists.
+  Otherwise it is the list of the rule named on the document, when that rule still exists.
+  Otherwise the latest event's identity word is expanded.
+  A file that is still in the walk and matches no rule does not change that word. The unmatched event stores the latest event's identity.
+- `events.identity` stores the first step of the list used for that document. The column accepts `path` or `hash` only.
+  A rename under the word `path` still stores `path`.
+  `meta.identity` stores the profile default as a comma-separated list with no spaces: `path,hash` or `hash,path`.
+  A stored `path` compares equal to `path,hash`. A stored `hash` compares equal to `hash,path`.
+  A write that updates meta stores the normalized list.
+- The profile default warns once per profile when its normalized list differs from `meta.identity` under that comparison.
+  A document warns once per rule name per run when its resolved list differs from the expansion of its latest event identity.
+  The message names the profile, and the rule when the warning is for a rule, plus the old list and the new list.
+  Old events stay. `--dry-run` warns. A profile-default change with no document row to write still updates meta.
+  A rule-list change with no document row to write does not write.
+  Changing `path` to `[path, hash]`, or `hash` to `[hash, path]`, does not warn.
+- `path` matches when the recorded path still has a live matched file.
+  The same hash stays. Status is `vars`, `present`, `refresh`, or `unchanged`, in that order.
+  A different hash is a generation. The old bytes elsewhere are not this document.
+  The step declines when the path is not in the kept walk.
+- The recorded path is still in the kept walk and no rule matches. Status is `unmatched`, once. The list stops. The hash is not followed. The event stores the latest identity word.
+- `hash` matches when at least one eligible, unreserved, in-scope live file has the document's hash.
+  Hash-first means this document's list reaches `hash` before `path`, or has no `path` step.
+  Other files count for a hash-first document only when their own lists are hash-first.
+  A path-first file is not absorbed. The same sha256 can be an invoice document and a draft document.
+  After an earlier step declined, the hash step is this document's own continuation.
+  It then sees any unclaimed in-scope matched file with that hash.
+  It declines when no such file remains.
+- Hash-first ownership. Among in-scope present documents that are hash-first and share a hash, the lowest id owns that hash.
+  A document id is not fused into another. Rows are never deleted. Switching the list to `hash` does not merge ids.
+  The owner's recorded path still has that hash: the owner stays. Every other unclaimed hash-first file with that hash is `duplicate`.
+  The owner's path is gone, or now has different bytes, and exactly one unclaimed eligible file has the hash: `move`. Generation unchanged.
+  Several eligible files: `move` to the lowest `(input_path, relative path)`. The others are `duplicate`.
+  One warning names the document, the hash, the chosen path, and the other paths. `--dry-run` warns too.
+  Bytes left at the old path are a different hash and follow the new-file rule.
+  A later copy is `duplicate` of the lowest owner. It is not a new document.
+  On a first run, the lowest `(input_path, relative path)` among hash-first files that share a hash is `new`. The others are `duplicate` of that document and are not written.
+- A reserved file cannot be claimed again. Same path and same hash is reserved first, for every list.
+  A path step that generations reserves that path.
+  A hash follow cannot take a reserved path. A reserved file does not make the hash step match.
+  When the only copies are reserved, the hash step declines. The path step then runs if the recorded path still has a live file.
+- Path-first, path gone. Exactly one unclaimed in-scope matched file has the hash, and exactly one in-scope document whose path is gone wants it: `move`.
+  Several successors: do not guess. The document is `missing`. Each of those files is `new`.
+- `[path]` does not follow a renamed file. The same bytes at a new path are `missing` plus `new`.
+  `[hash]` does not keep an in-place byte change. The same path with new bytes, and the old hash nowhere, is `missing` plus `new`.
+- The word `path` and the word `hash` agree when the old path is gone and the old hash is not live.
+  The old document is `missing`. The new path is `new`.
+- `record duplicates` reads stored documents. It does not scan. A file that was never inserted does not appear there.
+  The `duplicate` status row is the report for that file.
 - A file that leaves the walked inputs becomes `missing`. The row and its events stay. A second run that still does not see it does not append another missing event.
 - A file that is still in the walk, and that no rule matches, becomes `unmatched`. The last hash, kind, rule, and variables stay. A never-recorded unmatched file is not inserted. A later match appends `present`, `vars`, or `generation`.
 - PATH limits the observed set to matching paths in inputs that were walked. The run does not mark, move, or insert anything outside that set. A filtered run can mark a selected path missing while those bytes still exist outside the filter. A full run reconciles that.
@@ -783,25 +859,47 @@ Columns are a clak table.
 
 #### Cases
 
-Two copies. `a.pdf` and `b.pdf` have the same sha256. The run stores two documents. `record duplicates` lists that hash twice, and both rows say current `yes`.
+Two copies, path. `a.pdf` and `b.pdf` have the same sha256. `record_identity` is `path` or `[path, hash]`. The run stores two documents. `record duplicates` lists that hash twice, and both rows say current `yes`.
 
-Move. A recorded file leaves its path and the same hash is the only live file at a new path. The same document id follows it. The generation number stays. `record history` with the old path still prints the move.
+Two copies, hash. The same files. `record_identity` is `hash` or `[hash, path]`. `a.pdf` stays the document. `b.pdf` is `duplicate` and is not inserted. A second run prints `duplicate` again and writes nothing. `record duplicates` does not list `b.pdf`.
 
-Generation. New bytes replace the file at the recorded path, and the old hash is not live anywhere in scope. The document gains a generation. The previous generation stays in the history.
+First run, hash. No document yet. `a.pdf` and `b.pdf` share a hash and both rules are hash-first. The lower `(input_path, relative path)` is `new`. The other is `duplicate`.
 
-Collision, path. The old path now has new bytes, and the old hash is live at a new path. `record_identity` is `path`. The old path keeps the document and gains a generation. The new path is a second document. The shared hash shows up in `record duplicates`. The older document's row has current `no`.
+Move. A recorded file leaves its path and the same hash is the only live file at a new path. The word `path` and the word `hash` both move. The generation number stays. `record history` with the old path still prints the move. The event stores the first step of the list, so a `path` list still stores `path`.
 
-Collision, hash. The same files, with `record_identity` set to `hash`. The old hash moves to the new path. The new bytes at the old path are a new document.
+Generation. New bytes replace the file at the recorded path, and the old hash is not live anywhere in scope. The word `path` and the word `hash` both gain a generation. `[hash]` does not: the document is `missing` and the file is `new`.
 
-Rename plus edit. The old path is gone and the new path has a different hash. The old document is missing. The new path is a new document. `path` and `hash` agree.
+Collision, path. The old path now has new bytes, and the old hash is live at a new path. The list is path-first. The old path keeps the document and gains a generation. The new path is a second document. The shared hash shows up in `record duplicates`. The older document's row has current `no`.
 
-Unmatched. The file is still in the input and no rule matches. The document becomes unmatched. The row stays. A later match with the same bytes appends `present`.
+Collision, hash. The same files. The list is hash-first. The old hash moves to the new path. The new bytes at the old path are a new document. Two files still have the old hash: the document moves to the lowest path, and the other is `duplicate`. One warning names both paths.
+
+Hash onto a stay. Document 1 at `a.pdf` and document 2 at `b.pdf` share a hash. `a.pdf` is replaced. The list is hash-first. `b.pdf` was reserved by the same-hash stay. The hash step declines. Document 1 gains a generation at `a.pdf`. Document 2 stays. The run commits.
+
+Rename plus edit. The old path is gone and the new path has a different hash. The old document is missing. The new path is a new document. `path` and `hash` agree. `[path, key]` is that case too, and `key` is rejected in this version.
+
+Path only. The list is `[path]`. The old path is gone and one new path has the same hash. The document is `missing`. The new path is `new`.
+
+Mixed rules. The invoice rule is `[hash, path]`. The draft rule is `[path]`. Both files have the same sha256. They stay two documents. The draft is not `duplicate`.
+
+No merge. Two documents already store the same hash. This run uses `hash`. Both stay. A third hash-first file is `duplicate` of the lower id.
+
+Two wanters. Two path-first documents are gone and one file has their hash. Both are `missing`. The file is `new`.
+
+Several hash successors, path gone. One hash-first document is gone. Two hash-first files have its hash. The document moves to the lower path. The other file is `duplicate`.
+
+Unmatched. The file is still in the input and no rule matches. The document becomes unmatched. The row stays. The event keeps the previous identity word. A later match with the same bytes appends `present`.
 
 Filter. PATH names one file that disappeared. Another input still has those bytes. The named document becomes missing. The other input's document is not moved and is not marked missing. A run with no PATH moves the document onto the surviving path when the move rule matches.
 
 Refresh. Only mtime changes. Status is `refresh`. History gains no row.
 
-Identity switch. The database was written with `path`. This run passes `--record-identity hash`. The command warns. Old events keep `path`. New events store `hash`.
+Rule change. The file is still at its path with the same hash. The matched rule name changes. Status is `vars`. The event stores the first step of the new list. A change from `path` to `hash` warns once for that rule.
+
+Identity switch. The database was written with `path`. This run passes `--record-identity hash`. The command warns. Old events keep `path`. New events store `hash`. Meta stores `hash,path`.
+
+Same list. Meta stores `path`. The profile value is `[path, hash]`. Those compare equal. There is no warning.
+
+Bad list. A rule sets `HASH`, `""`, `[]`, `[path, path]`, `{{ author }}`, or `key`. The command stops before the walk. Exit 2. Nothing is written.
 
 ### 4.3 Writes
 
