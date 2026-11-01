@@ -1,0 +1,10 @@
+nav:
+  - list-files.md
+  - match-a-kind.md
+  - see-why-it-matched.md
+  - set-variables.md
+  - set-the-document-date.md
+  - override-one-file.md
+  - share-variables-for-a-kind.md
+  - use-several-profiles.md
+  - examples

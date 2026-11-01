@@ -62,4 +62,4 @@ If `supershelf.toml`, `supershelf.yaml`, or `supershelf.yml` exists in the direc
 
 `--config` points at a file or a directory and overrides `SUPERSHELF_CONFIG`. A missing explicit path does not fall through to the current directory.
 
-That is the last guide. The same mechanisms, without the walkthrough, are in [Concepts](../concepts/index.md).
+The next page is a catalog of profiles for one inbox: [Base](examples/base.md).
