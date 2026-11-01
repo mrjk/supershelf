@@ -6,7 +6,7 @@ User errors stop the command and print a message without a traceback. When the e
 
 `VarConfigError` is a `SupershelfError` for a var table, a `vars_schema` entry, a `kind_schema` entry, a template, a module, or a kind file that is invalid as written. It exits with status 2. These are checked before the walk, except a kind file, which is checked the first time that kind and input need it. A non-template literal that cannot cast to the name's type is this error, including when a later candidate might have worked. `supershelf schema` uses the same check. A profile with neither `vars_schema` nor `kind_schema` stops that command with this error.
 
-`RecordConfigError` is a `record_identity` value other than `path` or `hash`. It exits with status 2. The message names `--record-identity`, `SUPERSHELF_RECORD_IDENTITY`, or `config.record_identity`.
+`RecordConfigError` is a bad `record_identity` word or list. It exits with status 2. The steps in this version are `path` and `hash`. A different case, an empty string, an empty list, an empty comma item, a repeated step, a template, or the word `key` is this error. The message names `--record-identity`, `SUPERSHELF_RECORD_IDENTITY`, `config.record_identity`, or the match rule (`Profile NAME match rule RULE`). `record status` and `record run` check every rule before the walk. Scan commands do not.
 
 `DatabaseError` is a profile sqlite file that cannot be used: the parent is not a directory, the path is not a supershelf database, the schema version is not 1, or the file is locked. It exits with status 1. The tip names a path change or a retry.
 

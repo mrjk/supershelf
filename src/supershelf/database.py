@@ -16,6 +16,7 @@ from supershelf.constants import (
     EVENT_PRESENT,
     EVENT_UNMATCHED,
     EVENT_VARS,
+    IDENTITY_HASH,
     IDENTITY_PATH,
     OP_COPY,
     OP_HARDLINK,
@@ -167,6 +168,7 @@ class DatabaseChange:
     document_id: int | None
     generation: int
     file: StoredFile
+    identity: str
 
 
 @dataclass(frozen=True)
@@ -449,6 +451,16 @@ class ShelfDatabase:
             return None
         return str(row["value"])
 
+    def _event_identity_word(self) -> str:
+        """First step of the stored profile list. Events accept path or hash only."""
+        stored = self.identity()
+        if not stored:
+            return IDENTITY_PATH
+        word = stored.split(",", 1)[0]
+        if word in (IDENTITY_PATH, IDENTITY_HASH):
+            return word
+        return IDENTITY_PATH
+
     def apply(
         self,
         changes: list[DatabaseChange],
@@ -463,7 +475,7 @@ class ShelfDatabase:
                 if change.status == EVENT_MOVE:
                     self._mark_missing(change)
             for change in changes:
-                self._apply_change(change, identity, recorded_at)
+                self._apply_change(change, change.identity, recorded_at)
             self._set_meta("identity", identity)
             connection.commit()
         except DatabaseError:
@@ -506,7 +518,7 @@ class ShelfDatabase:
         connection = self._begin()
         try:
             document = self._require_document(document_id)
-            identity = self.identity() or IDENTITY_PATH
+            identity = self._event_identity_word()
             self._ensure_hash(source_hash)
             seq = self._next_seq(document_id)
             file = document.file()

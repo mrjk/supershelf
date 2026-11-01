@@ -18,7 +18,11 @@ class VarResolveError(SupershelfError):
 
 
 class RecordConfigError(SupershelfError):
-    """record_identity is not path or hash."""
+    """A record_identity word or list is invalid.
+
+    The value came from --record-identity, SUPERSHELF_RECORD_IDENTITY,
+    config.record_identity, or a match rule. Exit 2.
+    """
 
     rc = 2
 

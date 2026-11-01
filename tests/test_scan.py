@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from supershelf.cli import App
 from supershelf.configs import ShelfConfig
-from supershelf.constants import LOGGER_NAME
+from supershelf.constants import ENV_RECORD_IDENTITY, LOGGER_NAME
 from supershelf.errors import SupershelfError
 from supershelf.profile import ShelfProfile
 from supershelf.scan import InputFile, InputScanResult, KeptPath, ResolvedInput
@@ -351,3 +352,36 @@ def test_filter_kept_leaves_an_unmatched_input_empty() -> None:
 def test_filter_kept_unknown_path_is_an_error() -> None:
     with pytest.raises(SupershelfError, match="No kept file 'missing.pdf'"):
         KeptPath.narrow_groups([[_result("a.txt")]], "missing.pdf")
+
+
+def test_scan_kinds_ignores_record_identity_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SUPERSHELF_CONFIG", raising=False)
+    monkeypatch.delenv("SUPERSHELF_PROFILES", raising=False)
+    monkeypatch.delenv(ENV_RECORD_IDENTITY, raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.pdf").write_bytes(b"bank")
+    (tmp_path / "profile.work.toml").write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+record_identity = "key"
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    app.dispatch(["scan", "kinds"])
+    output = capsys.readouterr().out
+    assert "a.pdf" in output
+    assert "bill" in output
+    assert (tmp_path / "profile.work.sqlite").exists() is False

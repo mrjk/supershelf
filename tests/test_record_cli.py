@@ -1,12 +1,14 @@
 """record status, run, history, and duplicates."""
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from supershelf.cli import App
 from supershelf.constants import ENV_RECORD_IDENTITY
+from supershelf.database import ShelfDatabase
 
 _PROFILE = """\
 [default_vars]
@@ -225,6 +227,130 @@ def test_identity_switch_warns_and_keeps_old_events(
     history = json.loads(capsys.readouterr().out)
     assert [row["identity"] for row in history] == ["path", "hash"]
     assert [row["event"] for row in history] == ["new", "generation"]
+    with ShelfDatabase.open_read(tmp_path / "profile.work.sqlite") as database:
+        assert database.identity() == "hash,path"
+
+
+def test_two_hash_copies_are_not_inserted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = _profile(tmp_path)
+    text = (tmp_path / "profile.work.toml").read_text(encoding="utf-8")
+    (tmp_path / "profile.work.toml").write_text(
+        '[config]\nrecord_identity = "hash"\n' + text,
+        encoding="utf-8",
+    )
+    (inbox / "b.pdf").write_bytes((inbox / "a.pdf").read_bytes())
+    app = App(parse=False)
+    app.dispatch(["record", "run"])
+    first = capsys.readouterr().out
+    assert "new" in first
+    assert "duplicate" in first
+    assert "b.pdf" in first
+    app.dispatch(["record", "history", "--format", "json"])
+    history = json.loads(capsys.readouterr().out)
+    assert [row["path"] for row in history] == ["a.pdf"]
+    app.dispatch(["record", "duplicates"])
+    assert "b.pdf" not in capsys.readouterr().out
+    app.dispatch(["record", "run"])
+    second = capsys.readouterr().out
+    assert "duplicate" in second
+    assert "new" not in second
+    app.dispatch(["record", "history", "--format", "json"])
+    again = json.loads(capsys.readouterr().out)
+    assert [row["event"] for row in again] == ["new"]
+
+
+def test_bad_rule_identity_exits_before_the_walk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _profile(tmp_path)
+    (tmp_path / "profile.work.toml").write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+
+[[match_rules]]
+name = "other"
+glob = "nope-*"
+record_identity = "key"
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["record", "run"])
+    assert caught.value.code == 2
+    assert "match rule other" in capsys.readouterr().err
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+@pytest.mark.parametrize(
+    "record_identity",
+    ['"HASH"', '""', "[]", '["path", "path"]', '"{{ author }}"', '"key"'],
+)
+def test_bad_rule_lists_exit_2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record_identity: str,
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _profile(tmp_path)
+    (tmp_path / "profile.work.toml").write_text(
+        f"""\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+record_identity = {record_identity}
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["record", "run"])
+    assert caught.value.code == 2
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+    capsys.readouterr()
+
+
+def test_path_list_matches_legacy_meta_without_a_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _profile(tmp_path)
+    app = App(parse=False)
+    app.dispatch(["record", "run"])
+    capsys.readouterr()
+    database = tmp_path / "profile.work.sqlite"
+    raw = sqlite3.connect(database)
+    raw.execute("UPDATE meta SET value = 'path' WHERE key = 'identity'")
+    raw.commit()
+    raw.close()
+    text = (tmp_path / "profile.work.toml").read_text(encoding="utf-8")
+    (tmp_path / "profile.work.toml").write_text(
+        '[config]\nrecord_identity = ["path", "hash"]\n' + text,
+        encoding="utf-8",
+    )
+    app.dispatch(["record", "run"])
+    assert "record_identity was" not in capsys.readouterr().err
+    with ShelfDatabase.open_read(database) as stored:
+        assert stored.identity() == "path"
 
 
 def test_history_without_a_database_prints_no_rows(

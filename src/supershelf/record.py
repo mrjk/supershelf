@@ -7,6 +7,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any, NoReturn
 
 from supershelf.common import WordChoice
 from supershelf.constants import (
@@ -20,14 +21,18 @@ from supershelf.constants import (
     EVENT_UNMATCHED,
     EVENT_VARS,
     IDENTITY_HASH,
+    IDENTITY_PATH,
+    KEY_MATCH_RULES,
     KEY_RECORD_IDENTITY,
     LOGGER_NAME,
     PRESENCE_MISSING,
     PRESENCE_PRESENT,
     PRESENCE_UNMATCHED,
     RECORD_IDENTITIES,
+    STATUS_DUPLICATE,
     STATUS_REFRESH,
     STATUS_UNCHANGED,
+    TEMPLATE_MARKERS,
 )
 from supershelf.database import (
     DatabaseChange,
@@ -43,7 +48,11 @@ from supershelf.scan import InputFile, InputScanResult, KeptPath
 
 
 class RecordIdentity(WordChoice):
-    """path or hash. The flag wins, then the env var, then config."""
+    """One step or a list of steps. The flag wins, then the env var, then config.
+
+    A bare word expands. `path` is path then hash. `hash` is hash then path.
+    A list, and a comma-separated flag, do not expand each item.
+    """
 
     words = RECORD_IDENTITIES
     flag_name = "--record-identity"
@@ -51,13 +60,142 @@ class RecordIdentity(WordChoice):
     config_key = KEY_RECORD_IDENTITY
     config_label = "config.record_identity"
     requirement = "{label} must be path or hash"
-    advice = "Use path or hash, in lower case."
+    advice = "Use path or hash, in lower case. A list does not expand each item."
     error = RecordConfigError
 
     @classmethod
     def packaged(cls) -> str:
-        """The packaged link rule."""
+        """The packaged link rule. `resolve` expands this word."""
         return PACKAGED.record_identity
+
+    @classmethod
+    def resolve(
+        cls,
+        section: Mapping[str, Any],
+        flag: str | None,
+        environ: Mapping[str, str],
+    ) -> tuple[str, ...]:
+        """Flag, then environment, then config, then packaged path."""
+        if flag is not None:
+            return cls.parse_flag(flag, cls.flag_name)
+        if cls.env_name in environ:
+            return cls.parse_flag(environ[cls.env_name], cls.env_name)
+        raw = section.get(cls.config_key)
+        if raw is not None:
+            return cls.parse_config(raw, cls.config_label)
+        return cls.expand_word(cls.packaged())
+
+    @classmethod
+    def parse_flag(cls, value: object, label: str) -> tuple[str, ...]:
+        """A word, or comma-separated steps. Spaces around a comma are ignored."""
+        if not isinstance(value, str):
+            cls._reject(label)
+        parts = tuple(part.strip() for part in value.split(","))
+        if len(parts) == 1:
+            return cls._expand_bare(parts[0], label)
+        return cls._steps(parts, label)
+
+    @classmethod
+    def parse_config(cls, value: object, label: str) -> tuple[str, ...]:
+        """A YAML string expands. A YAML list does not. A string is not split on commas."""
+        if isinstance(value, str):
+            return cls._expand_bare(value, label)
+        if isinstance(value, list):
+            return cls._steps(tuple(value), label)
+        cls._reject(label)
+
+    @classmethod
+    def rule_lists(
+        cls,
+        document: Mapping[str, Any],
+        profile_name: str,
+        default: tuple[str, ...],
+    ) -> dict[str, tuple[str, ...]]:
+        """Every match rule's list. Omitted or null inherits `default`."""
+        raw = document.get(KEY_MATCH_RULES)
+        if not isinstance(raw, list):
+            return {}
+        found: dict[str, tuple[str, ...]] = {}
+        for index, item in enumerate(raw, start=1):
+            if not isinstance(item, Mapping):
+                continue
+            name = cls._rule_name(item, index)
+            if KEY_RECORD_IDENTITY not in item or item.get(KEY_RECORD_IDENTITY) is None:
+                found[name] = default
+                continue
+            label = f"Profile {profile_name} match rule {name}"
+            found[name] = cls.parse_config(item.get(KEY_RECORD_IDENTITY), label)
+        return found
+
+    @classmethod
+    def text(cls, steps: tuple[str, ...]) -> str:
+        """Comma-separated list with no spaces. This is the meta value."""
+        return ",".join(steps)
+
+    @classmethod
+    def same(cls, stored: str, steps: tuple[str, ...]) -> bool:
+        """Legacy `path` equals path then hash. Legacy `hash` equals hash then path."""
+        if stored == cls.text(steps):
+            return True
+        if stored == IDENTITY_PATH and steps == (IDENTITY_PATH, IDENTITY_HASH):
+            return True
+        if stored == IDENTITY_HASH and steps == (IDENTITY_HASH, IDENTITY_PATH):
+            return True
+        return False
+
+    @classmethod
+    def expand_word(cls, word: str) -> tuple[str, ...]:
+        """Expand a stored identity word. A list item does not use this."""
+        if word == IDENTITY_PATH:
+            return (IDENTITY_PATH, IDENTITY_HASH)
+        if word == IDENTITY_HASH:
+            return (IDENTITY_HASH, IDENTITY_PATH)
+        cls._reject(cls.config_label)
+
+    @classmethod
+    def _expand_bare(cls, word: object, label: str) -> tuple[str, ...]:
+        return cls.expand_word(cls._one_step(word, label))
+
+    @classmethod
+    def _steps(cls, items: tuple[object, ...], label: str) -> tuple[str, ...]:
+        if not items:
+            cls._reject(label)
+        checked: list[str] = []
+        for item in items:
+            word = cls._one_step(item, label)
+            if word in checked:
+                cls._reject(label)
+            checked.append(word)
+        return tuple(checked)
+
+    @classmethod
+    def _one_step(cls, word: object, label: str) -> str:
+        if (
+            not isinstance(word, str)
+            or not word
+            or cls._templated(word)
+            or word not in cls.words
+        ):
+            cls._reject(label)
+        return word
+
+    @staticmethod
+    def _templated(word: str) -> bool:
+        return any(marker in word for marker in TEMPLATE_MARKERS)
+
+    @classmethod
+    def _rule_name(cls, item: Mapping[str, Any], index: int) -> str:
+        name = item.get("name")
+        kind = item.get("kind")
+        if isinstance(name, str) and name.strip():
+            return name
+        if isinstance(kind, str) and kind.strip():
+            return kind
+        return str(index)
+
+    @classmethod
+    def _reject(cls, label: str) -> NoReturn:
+        raise cls.error(cls.requirement.format(label=label), advice=cls.advice)
 
 
 @dataclass(frozen=True)
@@ -77,6 +215,7 @@ class LiveFile:
     file_stem: str
     file_ext: str
     vars_json: str
+    steps: tuple[str, ...]
 
     def location(self) -> tuple[str, str]:
         """Absolute input directory plus the relative path."""
@@ -91,6 +230,7 @@ class LiveFile:
         kind: str,
         rule: str,
         snapshot: str,
+        steps: tuple[str, ...],
     ) -> LiveFile:
         """Build a live file from a walk result and its resolved variables."""
         suffix = found.suffix
@@ -114,6 +254,7 @@ class LiveFile:
             file_stem=found.stem,
             file_ext=extension,
             vars_json=snapshot,
+            steps=steps,
         )
 
     def stored(self) -> StoredFile:
@@ -137,23 +278,25 @@ class LiveFile:
 
 @dataclass(frozen=True)
 class PlannedRow:
-    """One status row. `unchanged` has no database change."""
+    """One status row. `unchanged` and `duplicate` have no database change."""
 
     status: str
     document_id: int | None
     generation: int
     file: StoredFile
     duplicates: int
+    identity: str
 
     def change(self) -> DatabaseChange | None:
         """The write for this row, or None when nothing would be stored."""
-        if self.status == STATUS_UNCHANGED:
+        if self.status in (STATUS_UNCHANGED, STATUS_DUPLICATE):
             return None
         return DatabaseChange(
             status=self.status,
             document_id=self.document_id,
             generation=self.generation,
             file=self.file,
+            identity=self.identity,
         )
 
 
@@ -200,23 +343,28 @@ class DuplicateListing:
 
 
 class RecordPlan:
-    """Link live files to documents for one profile and one identity rule."""
+    """Link live files to documents. Each document walks its own step list."""
 
     def __init__(
         self,
-        identity: str,
         documents: list[DocumentRow],
         live: list[LiveFile],
         kept: set[tuple[str, str]],
         walked_inputs: set[str],
         selector: KeptPath,
+        rules: Mapping[str, tuple[str, ...]],
+        prior: Mapping[int, str],
         ignored: set[tuple[str, str]] | None = None,
+        profile: str = "",
     ) -> None:
-        self.identity = identity
         self.documents = documents
         self.selector = selector
         self.walked_inputs = walked_inputs
+        self.rules = dict(rules)
+        self.prior = dict(prior)
+        self.profile = profile
         self.ignored = ignored or set()
+        self.warnings: list[str] = []
         self.live = [
             item
             for item in live
@@ -229,116 +377,298 @@ class RecordPlan:
         }
         for item in self.live:
             self.kept.add(item.location())
+        self._live_at: dict[tuple[str, str], LiveFile] = {}
+        self._claimed_files: set[tuple[str, str]] = set()
+        self._claimed_docs: set[int] = set()
+        self._decisions: dict[int, tuple[str, StoredFile, int, str]] = {}
+        self._duplicates: dict[tuple[str, str], LiveFile] = {}
+        self._scoped: list[DocumentRow] = []
+        self._wanters: dict[str, int] = {}
 
     def rows(self) -> list[PlannedRow]:
-        """Status rows in document id order, then new files in walk order."""
-        live_at = {item.location(): item for item in self.live}
-        by_hash: dict[str, list[LiveFile]] = {}
-        for item in self.live:
-            by_hash.setdefault(item.hash, []).append(item)
-        claimed_files: set[tuple[str, str]] = set()
-        claimed_docs: set[int] = set()
-        decisions: dict[int, tuple[str, StoredFile, int]] = {}
-        scoped = [document for document in self.documents if self._document_in_scope(document)]
-        scoped.sort(key=lambda document: document.id)
-
-        for document in scoped:
-            location = (document.input_path, document.path)
-            live = live_at.get(location)
-            if live is None:
-                continue
-            if live.hash == document.hash:
-                decisions[document.id] = (
-                    self._stay(document, live),
-                    live.stored(),
-                    document.generation,
-                )
-                claimed_files.add(location)
-                claimed_docs.add(document.id)
-                continue
-            target = self._hash_target(document, location, by_hash, claimed_files)
-            if target is not None:
-                decisions[document.id] = (EVENT_MOVE, target.stored(), document.generation)
-                claimed_files.add(target.location())
-                claimed_docs.add(document.id)
-                continue
-            decisions[document.id] = (
-                EVENT_GENERATION,
-                live.stored(),
-                document.generation + 1,
-            )
-            claimed_files.add(location)
-            claimed_docs.add(document.id)
-
-        gone = [
-            document
-            for document in scoped
-            if document.id not in claimed_docs
-            and (document.input_path, document.path) not in self.kept
+        """Status rows in document id order, then unclaimed files in walk order."""
+        self.warnings = []
+        self._live_at = {item.location(): item for item in self.live}
+        self._claimed_files = set()
+        self._claimed_docs = set()
+        self._decisions = {}
+        self._duplicates = {}
+        self._scoped = [
+            document for document in self.documents if self._document_in_scope(document)
         ]
-        wanters: dict[str, int] = {}
-        for document in gone:
-            wanters[document.hash] = wanters.get(document.hash, 0) + 1
+        self._scoped.sort(key=lambda document: document.id)
+        self._stay_phase()
+        self._unmatched_phase()
+        self._walk_phase()
+        fresh = self._fresh_files()
+        self._note_rule_warnings()
+        return self._with_duplicates(fresh)
 
-        for document in scoped:
-            if document.id in claimed_docs:
+    def _stay_phase(self) -> None:
+        """Same path and same hash stays, for every list. Reserve that file."""
+        for document in self._scoped:
+            location = (document.input_path, document.path)
+            live = self._live_at.get(location)
+            if live is None or live.hash != document.hash:
+                continue
+            if location in self._claimed_files:
+                continue
+            self._decisions[document.id] = (
+                self._stay(document, live),
+                live.stored(),
+                document.generation,
+                live.steps[0],
+            )
+            self._claimed_files.add(location)
+            self._claimed_docs.add(document.id)
+
+    def _unmatched_phase(self) -> None:
+        """A path still in the walk with no rule stops. The hash is not followed."""
+        for document in self._scoped:
+            if document.id in self._claimed_docs:
                 continue
             location = (document.input_path, document.path)
-            if location in self.kept and location not in live_at:
-                if document.presence != PRESENCE_UNMATCHED:
-                    decisions[document.id] = (
-                        EVENT_UNMATCHED,
-                        document.file(),
-                        document.generation,
-                    )
-                claimed_docs.add(document.id)
+            if location not in self.kept or location in self._live_at:
                 continue
-            if location in live_at:
+            if document.presence != PRESENCE_UNMATCHED:
+                self._decisions[document.id] = (
+                    EVENT_UNMATCHED,
+                    document.file(),
+                    document.generation,
+                    self.prior.get(document.id, IDENTITY_PATH),
+                )
+            self._claimed_docs.add(document.id)
+
+    def _walk_phase(self) -> None:
+        """Walk each remaining document's list. Stop at the first step that matches."""
+        self._wanters = {}
+        for document in self._scoped:
+            if document.id in self._claimed_docs or self._hash_first(self._steps_for(document)):
                 continue
-            candidates = [
-                item
-                for item in by_hash.get(document.hash, [])
-                if item.location() not in claimed_files
-            ]
-            if len(candidates) == 1 and wanters.get(document.hash) == 1:
-                target = candidates[0]
-                decisions[document.id] = (EVENT_MOVE, target.stored(), document.generation)
-                claimed_files.add(target.location())
-                claimed_docs.add(document.id)
+            if not self._reaches_hash_after_path(document):
+                continue
+            if not self._path_gone(document):
+                continue
+            self._wanters[document.hash] = self._wanters.get(document.hash, 0) + 1
+        for document in self._scoped:
+            if document.id in self._claimed_docs:
+                continue
+            steps = self._steps_for(document)
+            if self._take_steps(document, steps):
                 continue
             if document.presence != PRESENCE_MISSING:
-                decisions[document.id] = (
+                self._decisions[document.id] = (
                     EVENT_MISSING,
                     document.file(),
                     document.generation,
+                    steps[0],
                 )
-            claimed_docs.add(document.id)
+            self._claimed_docs.add(document.id)
 
-        fresh: list[tuple[str, StoredFile, int]] = []
-        for item in self.live:
-            if item.location() in claimed_files:
+    def _take_steps(self, document: DocumentRow, steps: tuple[str, ...]) -> bool:
+        """True when a step links the document."""
+        location = (document.input_path, document.path)
+        for step in steps:
+            if step == IDENTITY_PATH and self._take_path(document, location, steps[0]):
+                return True
+            if step != IDENTITY_HASH:
                 continue
-            fresh.append((EVENT_NEW, item.stored(), 1))
-            claimed_files.add(item.location())
-        return self._with_duplicates(decisions, fresh)
+            if self._hash_first(steps) and self._take_hash_first(document, steps[0]):
+                return True
+            if not self._hash_first(steps) and self._take_hash_continuation(document, steps[0]):
+                return True
+        return False
 
-    def _hash_target(
+    def _take_path(
         self,
         document: DocumentRow,
         location: tuple[str, str],
-        by_hash: dict[str, list[LiveFile]],
-        claimed_files: set[tuple[str, str]],
-    ) -> LiveFile | None:
-        if self.identity != IDENTITY_HASH:
-            return None
-        others = [
+        identity: str,
+    ) -> bool:
+        """Generation at the recorded path. Declines when the path is gone or reserved."""
+        live = self._live_at.get(location)
+        if live is None or location not in self.kept or location in self._claimed_files:
+            return False
+        self._decisions[document.id] = (
+            EVENT_GENERATION,
+            live.stored(),
+            document.generation + 1,
+            identity,
+        )
+        self._claimed_files.add(location)
+        self._claimed_docs.add(document.id)
+        return True
+
+    def _take_hash_first(self, document: DocumentRow, identity: str) -> bool:
+        """One successor moves. Several move to the lowest path and duplicate the rest."""
+        eligible = self._hash_eligible(document)
+        if not eligible:
+            return False
+        ordered = sorted(eligible, key=lambda item: (item.input_path, item.path))
+        chosen = ordered[0]
+        self._decisions[document.id] = (
+            EVENT_MOVE,
+            chosen.stored(),
+            document.generation,
+            identity,
+        )
+        self._claimed_files.add(chosen.location())
+        self._claimed_docs.add(document.id)
+        if len(ordered) > 1:
+            for item in ordered[1:]:
+                self._duplicates[item.location()] = item
+                self._claimed_files.add(item.location())
+            self._warn_successors(document, chosen, ordered[1:])
+        return True
+
+    def _take_hash_continuation(self, document: DocumentRow, identity: str) -> bool:
+        """After path declined: move only when one gone document wants the one file."""
+        if not self._path_gone(document):
+            return False
+        candidates = [
             item
-            for item in by_hash.get(document.hash, [])
-            if item.location() != location and item.location() not in claimed_files
+            for item in self.live
+            if item.hash == document.hash and item.location() not in self._claimed_files
         ]
-        if len(others) == 1:
-            return others[0]
-        return None
+        if len(candidates) != 1 or self._wanters.get(document.hash) != 1:
+            return False
+        target = candidates[0]
+        self._decisions[document.id] = (
+            EVENT_MOVE,
+            target.stored(),
+            document.generation,
+            identity,
+        )
+        self._claimed_files.add(target.location())
+        self._claimed_docs.add(document.id)
+        return True
+
+    def _fresh_files(self) -> list[tuple[str, StoredFile, int, str]]:
+        """New documents, and hash-first copies that are not inserted."""
+        classified: dict[tuple[str, str], tuple[str, str]] = {}
+        for location, item in self._duplicates.items():
+            classified[location] = (STATUS_DUPLICATE, item.steps[0])
+        pending: dict[str, list[LiveFile]] = {}
+        for item in self.live:
+            if item.location() in classified or item.location() in self._claimed_files:
+                continue
+            if self._hash_first(item.steps) and self._hash_owned(item.hash):
+                classified[item.location()] = (STATUS_DUPLICATE, item.steps[0])
+                continue
+            if self._hash_first(item.steps):
+                pending.setdefault(item.hash, []).append(item)
+                continue
+            classified[item.location()] = (EVENT_NEW, item.steps[0])
+        for files in pending.values():
+            ordered = sorted(files, key=lambda item: (item.input_path, item.path))
+            classified[ordered[0].location()] = (EVENT_NEW, ordered[0].steps[0])
+            for item in ordered[1:]:
+                classified[item.location()] = (STATUS_DUPLICATE, item.steps[0])
+        fresh: list[tuple[str, StoredFile, int, str]] = []
+        for item in self.live:
+            found = classified.get(item.location())
+            if found is None:
+                continue
+            status, identity = found
+            fresh.append((status, item.stored(), 1, identity))
+        return fresh
+
+    def _hash_eligible(self, document: DocumentRow) -> list[LiveFile]:
+        """Unreserved hash-first files that carry this document's hash."""
+        found: list[LiveFile] = []
+        for item in self.live:
+            if item.hash != document.hash or item.location() in self._claimed_files:
+                continue
+            if self._hash_first(item.steps):
+                found.append(item)
+        return found
+
+    def _hash_owned(self, digest: str) -> bool:
+        """An in-scope present hash-first document already has this hash."""
+        for document in self._scoped:
+            if not self._hash_first(self._steps_for(document)):
+                continue
+            decision = self._decisions.get(document.id)
+            if decision is None:
+                if document.presence == PRESENCE_PRESENT and document.hash == digest:
+                    return True
+                continue
+            status, file, _generation, _identity = decision
+            if status in (EVENT_MISSING, EVENT_UNMATCHED):
+                continue
+            if file.hash == digest:
+                return True
+        return False
+
+    def _steps_for(self, document: DocumentRow) -> tuple[str, ...]:
+        """Live file at the recorded path, else the named rule, else the prior word."""
+        live = self._live_at.get((document.input_path, document.path))
+        if live is not None:
+            return live.steps
+        if document.rule in self.rules:
+            return self.rules[document.rule]
+        word = self.prior.get(document.id, IDENTITY_PATH)
+        return RecordIdentity.expand_word(word)
+
+    def _rule_name_for(self, document: DocumentRow) -> str:
+        live = self._live_at.get((document.input_path, document.path))
+        if live is not None:
+            return live.rule
+        return document.rule
+
+    def _path_gone(self, document: DocumentRow) -> bool:
+        return (document.input_path, document.path) not in self.kept
+
+    def _reaches_hash_after_path(self, document: DocumentRow) -> bool:
+        steps = self._steps_for(document)
+        if IDENTITY_PATH not in steps or IDENTITY_HASH not in steps:
+            return False
+        return steps.index(IDENTITY_HASH) > steps.index(IDENTITY_PATH)
+
+    @staticmethod
+    def _hash_first(steps: tuple[str, ...]) -> bool:
+        """Hash occurs before path, or the list has no path step."""
+        if IDENTITY_HASH not in steps:
+            return False
+        if IDENTITY_PATH not in steps:
+            return True
+        return steps.index(IDENTITY_HASH) < steps.index(IDENTITY_PATH)
+
+    def _warn_successors(
+        self,
+        document: DocumentRow,
+        chosen: LiveFile,
+        rest: list[LiveFile],
+    ) -> None:
+        others = ", ".join(
+            item.path
+            for item in sorted(rest, key=lambda item: (item.input_path, item.path))
+        )
+        self.warnings.append(
+            f"Profile {self.profile} document {document.id} hash {document.hash} "
+            f"moves to {chosen.path}. Other paths: {others}."
+        )
+
+    def _note_rule_warnings(self) -> None:
+        """Once per rule name when the resolved list differs from the prior word."""
+        seen: set[str] = set()
+        for document in self._scoped:
+            word = self.prior.get(document.id)
+            if word is None:
+                continue
+            steps = self._steps_for(document)
+            old = RecordIdentity.expand_word(word)
+            if steps == old:
+                continue
+            rule = self._rule_name_for(document)
+            if rule in seen:
+                continue
+            seen.add(rule)
+            self.warnings.append(
+                f"Profile {self.profile} match rule {rule} record_identity was "
+                f"{RecordIdentity.text(old)} and this run uses {RecordIdentity.text(steps)}. "
+                "Existing events stay."
+            )
 
     def _stay(self, document: DocumentRow, live: LiveFile) -> str:
         facts = (
@@ -375,43 +705,51 @@ class RecordPlan:
 
     def _with_duplicates(
         self,
-        decisions: dict[int, tuple[str, StoredFile, int]],
-        fresh: list[tuple[str, StoredFile, int]],
+        fresh: list[tuple[str, StoredFile, int, str]],
     ) -> list[PlannedRow]:
         presence = {
             document.id: (document.hash, document.presence) for document in self.documents
         }
-        ordered: list[tuple[int, str, StoredFile, int]] = []
-        for document_id in sorted(decisions):
-            status, file, generation = decisions[document_id]
-            ordered.append((document_id, status, file, generation))
+        ordered: list[tuple[int, str, StoredFile, int, str]] = []
+        for document_id in sorted(self._decisions):
+            status, file, generation, identity = self._decisions[document_id]
+            ordered.append((document_id, status, file, generation, identity))
             if status == EVENT_MISSING:
                 presence[document_id] = (file.hash, PRESENCE_MISSING)
             elif status == EVENT_UNMATCHED:
                 presence[document_id] = (file.hash, PRESENCE_UNMATCHED)
             else:
                 presence[document_id] = (file.hash, PRESENCE_PRESENT)
+        duplicate_counts: dict[str, int] = {}
         synthetic = 0
-        for status, file, generation in fresh:
+        for status, file, generation, identity in fresh:
             synthetic -= 1
-            ordered.append((synthetic, status, file, generation))
+            ordered.append((synthetic, status, file, generation, identity))
+            if status == STATUS_DUPLICATE:
+                duplicate_counts[file.hash] = duplicate_counts.get(file.hash, 0) + 1
+                continue
             presence[synthetic] = (file.hash, PRESENCE_PRESENT)
-        counts: dict[str, int] = {}
+        present_counts: dict[str, int] = {}
         for digest, state in presence.values():
             if state == PRESENCE_PRESENT:
-                counts[digest] = counts.get(digest, 0) + 1
+                present_counts[digest] = present_counts.get(digest, 0) + 1
         rows: list[PlannedRow] = []
-        for document_id, status, file, generation in ordered:
-            state = presence[document_id][1]
-            count = counts.get(file.hash, 0)
-            others = count - 1 if state == PRESENCE_PRESENT else count
+        for document_id, status, file, generation, identity in ordered:
+            state = presence[document_id][1] if document_id in presence else None
+            others = present_counts.get(file.hash, 0)
+            if state == PRESENCE_PRESENT:
+                others -= 1
+            extras = duplicate_counts.get(file.hash, 0)
+            if status == STATUS_DUPLICATE:
+                extras -= 1
             rows.append(
                 PlannedRow(
                     status=status,
                     document_id=None if document_id < 0 else document_id,
                     generation=generation,
                     file=file,
-                    duplicates=others,
+                    duplicates=others + extras,
+                    identity=identity,
                 )
             )
         return rows
@@ -420,9 +758,15 @@ class RecordPlan:
 class _ProfileRun:
     """One profile's scan, plan, and optional write."""
 
-    def __init__(self, shelf: ShelfProfile, identity: str) -> None:
+    def __init__(
+        self,
+        shelf: ShelfProfile,
+        steps: tuple[str, ...],
+        rules: Mapping[str, tuple[str, ...]],
+    ) -> None:
         self.shelf = shelf
-        self.identity = identity
+        self.steps = steps
+        self.rules = rules
         self._logger = logging.getLogger(LOGGER_NAME)
 
     def plan(self, path: str | None) -> list[PlannedRow]:
@@ -462,27 +806,36 @@ class _ProfileRun:
                     kind=resolved.kind,
                     rule=matched.rule,
                     snapshot=variables.snapshot(resolved),
+                    steps=self.rules.get(matched.rule, self.steps),
                 )
             )
         with ShelfDatabase.open_read(self.shelf.database_file) as database:
             stored = database.identity()
-            if stored is not None and stored != self.identity:
+            if stored is not None and not RecordIdentity.same(stored, self.steps):
                 self._logger.warning(
                     "Profile %s record_identity was %s and this run uses %s. "
                     "Existing events stay.",
                     self.shelf.name,
                     stored,
-                    self.identity,
+                    RecordIdentity.text(self.steps),
                 )
-            rows = RecordPlan(
-                self.identity,
+            prior: dict[int, str] = {}
+            for event in database.events():
+                prior[event.document_id] = event.identity
+            plan = RecordPlan(
                 database.documents(),
                 live,
                 kept,
                 walked,
                 selector,
+                self.rules,
+                prior,
                 ignored,
-            ).rows()
+                profile=self.shelf.name,
+            )
+            rows = plan.rows()
+        for message in plan.warnings:
+            self._logger.warning("%s", message)
         if path is not None and not rows and not self._selector_saw_file(selector, kept):
             raise SupershelfError(
                 f"No kept file {path!r}",
@@ -496,16 +849,17 @@ class _ProfileRun:
         if dry_run or (not changes and not self._identity_differs()):
             return
         recorded_at = datetime.now(timezone.utc).isoformat()
+        meta = RecordIdentity.text(self.steps)
         with ShelfDatabase.open_write(self.shelf.database_file) as database:
             if changes:
-                database.apply(changes, self.identity, recorded_at)
+                database.apply(changes, meta, recorded_at)
                 return
-            database.note_identity(self.identity)
+            database.note_identity(meta)
 
     def _identity_differs(self) -> bool:
         with ShelfDatabase.open_read(self.shelf.database_file) as database:
             stored = database.identity()
-        return stored is not None and stored != self.identity
+        return stored is not None and not RecordIdentity.same(stored, self.steps)
 
     @staticmethod
     def _selector_saw_file(selector: KeptPath, kept: set[tuple[str, str]]) -> bool:
@@ -553,12 +907,13 @@ class RecordSession:
         runs = ShelfRuns.load(config, profile)
         built: list[_ProfileRun] = []
         for shelf in runs.shelves:
-            identity = RecordIdentity.resolve(
+            steps = RecordIdentity.resolve(
                 ShelfProfile.config_section(shelf.document),
                 identity_flag,
                 env,
             )
-            built.append(_ProfileRun(shelf, identity))
+            rules = RecordIdentity.rule_lists(shelf.document, shelf.name, steps)
+            built.append(_ProfileRun(shelf, steps, rules))
         return cls(built)
 
     def status(self, path: str | None) -> list[dict[str, object]]:

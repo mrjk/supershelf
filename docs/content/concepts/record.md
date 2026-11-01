@@ -32,8 +32,9 @@ Status words:
 | `unmatched` | The file is still in the walk, and no rule matches. The last hash and variables stay. |
 | `refresh` | Only mtime, ctime, or the input index changed. No history row. |
 | `unchanged` | Nothing to write. `record run` leaves this row out. |
+| `duplicate` | An extra live file whose hash this run already keeps. It is printed and not inserted. |
 
-`duplicates` on a status row is how many other documents would be present with that same current hash. `record duplicates` is the wider query: a hash is listed when two or more documents have carried it, including an older generation. `current` is `yes` when that hash is the document's hash now.
+`duplicates` on a status row counts other present documents with that hash, including documents outside the path filter, plus other extra files reported as `duplicate` for that hash. `record duplicates` is the wider query: a hash is listed when two or more documents have carried it, including an older generation. `current` is `yes` when that hash is the document's hash now. A file that was never inserted does not appear there.
 
 ## What stays the same document
 
@@ -41,17 +42,21 @@ A document has a stable id. Rows are not deleted. A later revert walks the event
 
 The location is the input directory plus the path relative to that input. Reordering the `inputs` list is not a move. A missing input directory leaves that input's documents as they are.
 
-`config.record_identity` chooses the link when a scan could be read two ways. The packaged default is `path`. `--record-identity` wins, then `SUPERSHELF_RECORD_IDENTITY`, then the config key.
+`record_identity` chooses the link when a scan could be read two ways. The packaged default is `path`. For the profile default, `--record-identity` wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`. A match rule's `record_identity` wins over that default for files that rule claims. Omitted or null on the rule inherits the profile default. The flag does not override a rule that set the key.
+
+A bare word expands. `path` means path then hash. `hash` means hash then path. A list does not expand: `[path]` is the path step only, and `[hash]` is the hash step only. The flag and the environment variable are a word or a comma-separated list (`hash, path`). The profile value and the rule value are a string or a list of strings.
+
+The list is tried in order. The first step that matches links the document. `events.identity` stores the first step of that list, `path` or `hash`, even when a later step did the work. `meta.identity` stores the profile default only, as `path,hash` or `hash,path`. A stored `path` compares equal to `path,hash`. A stored `hash` compares equal to `hash,path`. A rule override is not written to meta.
 
 `path`. A file that is still at the recorded path keeps that document. New bytes there are a new generation. A move happens when the recorded path is gone, exactly one in-scope file has the hash, and only one document wants that hash.
 
-`hash`. The current hash owns the document. One live file with that hash is that document, including when the old path now holds different bytes. Those new bytes are a new document.
+`hash`. The current hash owns the document among hash-first files. One live file with that hash is that document, including when the old path now holds different bytes. Those new bytes are a new document. A second hash-first file with that hash is `duplicate` and is not inserted. On a first run the lower path is the new document.
 
 Both rules agree when a file is renamed and edited in the same run. The old path is gone and the old hash is not live, so the old document becomes missing and the new path is a new document.
 
-A path filter observes only the selected paths. It does not mark, move, or insert anything outside that set. A filtered run can mark a selected path missing while those bytes still exist under another name. A later run with no path can move the document onto that name.
+Changing the profile default warns once and still updates meta when no document row changes. Changing one rule's list warns once for that rule name. `--dry-run` warns too. Old events keep the identity word that wrote them. `path` and `[path, hash]` are the same list, so that change does not warn. A bad list, a template, or the word `key` stops `record status` and `record run` before the walk. Scan commands ignore the key.
 
-Changing the rule later warns. Old events keep the rule that wrote them. The new run decides new links with the new rule.
+A path filter observes only the selected paths. It does not mark, move, or insert anything outside that set. A filtered run can mark a selected path missing while those bytes still exist under another name. A later run with no path can move the document onto that name.
 
 Bank2000 invoice `2026-04-25.pdf` is recorded. The next scan finds new bytes at that path, and the old bytes at `2026-04-25-copy.pdf`.
 

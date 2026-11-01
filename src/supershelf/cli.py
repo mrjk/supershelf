@@ -419,7 +419,11 @@ class RecordIdentityFlag:
 
     record_identity = Argument(
         "--record-identity",
-        help="Link rule for this run: path or hash. Overrides SUPERSHELF_RECORD_IDENTITY.",
+        help=(
+            "Link rule for this run: a word or a comma-separated list. "
+            "Does not override a match rule that set record_identity. "
+            "Overrides SUPERSHELF_RECORD_IDENTITY and config.record_identity."
+        ),
     )
 
 

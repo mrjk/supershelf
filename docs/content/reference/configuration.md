@@ -22,7 +22,7 @@ These keys live under `config`.
 | `root_dir` | string | `{{ __profile_dir__ }}` | Path template. Relative results resolve from the config directory. |
 | `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. Scan commands do not. |
 | `cache_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` | Path template. Rendered, not created. |
-| `record_identity` | string | `path` | `path` or `hash`. How a record run links a file to a document. See [Record](../concepts/record.md). |
+| `record_identity` | string or list of strings | `path` | `path`, `hash`, or a list of those steps. A bare `path` means path then hash. A bare `hash` means hash then path. A list does not expand. `""` and `[]` are invalid and do not fall back. See [Record](../concepts/record.md). |
 | `var_modules` | list of strings | none | Importable modules. See [Modules](../concepts/modules.md). |
 | `kind_overrides_mode` | string | `auto` | `auto`, `manual`, `always`, or `disabled`. See [Kind files](../concepts/kind-files.md). |
 | `kind_overrides_date_format` | string | `default_date_format` | `strptime` format for a kind-file `__date__` cell. |
@@ -67,6 +67,7 @@ Unknown keys on an input stop the command.
 | `directory_glob` | string or list of strings | Directory under the input. |
 | `filename_glob` | string or list of strings | Filename. |
 | `vars` | mapping | Assignment layer for this rule. Ignored by matching. Read by `scan vars`. |
+| `record_identity` | string or list of strings | the profile default | Fallback order for this rule. Omitted or null inherits `config.record_identity`. Ignored by scan commands. Read by `record status` and `record run`. |
 
 A rule needs `name` or `kind`, and at least one pattern. Other unknown keys are ignored while matching.
 

@@ -469,8 +469,11 @@ positional arguments:
 options:
   -h, --help                  show this help message and exit
   --record-identity RECORD_IDENTITY
-                              Link rule for this run: path or hash. Overrides
-                              SUPERSHELF_RECORD_IDENTITY. (default: None)
+                              Link rule for this run: a word or a comma-
+                              separated list. Does not override a match rule
+                              that set record_identity. Overrides
+                              SUPERSHELF_RECORD_IDENTITY and
+                              config.record_identity. (default: None)
 
 Output options:
   --expand-keys, --no-expand-keys
@@ -537,8 +540,11 @@ positional arguments:
 options:
   -h, --help                  show this help message and exit
   --record-identity RECORD_IDENTITY
-                              Link rule for this run: path or hash. Overrides
-                              SUPERSHELF_RECORD_IDENTITY. (default: None)
+                              Link rule for this run: a word or a comma-
+                              separated list. Does not override a match rule
+                              that set record_identity. Overrides
+                              SUPERSHELF_RECORD_IDENTITY and
+                              config.record_identity. (default: None)
 
 Output options:
   --expand-keys, --no-expand-keys

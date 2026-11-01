@@ -43,7 +43,13 @@ def _file(**overrides: object) -> StoredFile:
 
 
 def _new(**overrides: object) -> DatabaseChange:
-    return DatabaseChange(status=EVENT_NEW, document_id=None, generation=1, file=_file(**overrides))
+    return DatabaseChange(
+        status=EVENT_NEW,
+        document_id=None,
+        generation=1,
+        file=_file(**overrides),
+        identity="path",
+    )
 
 
 def test_read_of_a_missing_file_creates_nothing(tmp_path: Path) -> None:
@@ -88,6 +94,7 @@ def test_failed_apply_rolls_back(tmp_path: Path) -> None:
                         document_id=9,
                         generation=1,
                         file=_file(),
+                        identity="path",
                     )
                 ],
                 "path",
@@ -168,6 +175,7 @@ def test_refresh_updates_mtime_without_an_event(tmp_path: Path) -> None:
                     document_id=1,
                     generation=1,
                     file=_file(mtime="2026-05-01T00:00:00+00:00", input_index=2),
+                    identity="path",
                 )
             ],
             "path",

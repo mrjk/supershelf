@@ -42,4 +42,15 @@ To follow the hash instead of the path when both change in one run, set the link
 supershelf record run --record-identity hash
 ```
 
-The config key is `record_identity`, and the environment variable is `SUPERSHELF_RECORD_IDENTITY`. The default is `path`. The two readings of one Bank2000 invoice are in [Record](../concepts/record.md).
+A comma-separated list is the same flag: `--record-identity hash, path`. The config key is `record_identity`, and the environment variable is `SUPERSHELF_RECORD_IDENTITY`. The default is `path`, which means path then hash. A bare `hash` means hash then path. A list does not expand, so `[path]` does not follow a rename.
+
+A match rule can set its own list. Omitted, it inherits the profile default. The flag does not override a rule that set the key.
+
+```toml
+[[match_rules]]
+name = "bill"
+glob = "**"
+record_identity = ["hash", "path"]
+```
+
+The two readings of one Bank2000 invoice are in [Record](../concepts/record.md).
