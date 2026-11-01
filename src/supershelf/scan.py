@@ -6,9 +6,11 @@ import hashlib
 import logging
 import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import Any, Protocol
 
 from pydantic import (
     BaseModel,
@@ -22,7 +24,6 @@ from supershelf.common import render_user_path
 from supershelf.constants import KEY_INPUTS, LOGGER_NAME
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
-from supershelf.profile import ShelfProfile
 
 _HASH_CHUNK_SIZE = 1024 * 1024
 _Ancestor = tuple[int, int]
@@ -231,11 +232,21 @@ class KeptPath:
         return narrowed
 
 
+class ScanSource(Protocol):
+    """Profile fields a walk reads. `ShelfProfile` satisfies this."""
+
+    name: str
+    path: Path
+    document: Mapping[str, Any]
+    scope: Mapping[str, Any]
+    root_dir: Path
+
+
 class InputScanner:
     """Scan one profile's inputs."""
 
-    def __init__(self, profile: ShelfProfile, *, quick: bool = False) -> None:
-        self.profile = profile
+    def __init__(self, source: ScanSource, *, quick: bool = False) -> None:
+        self.source = source
         self.quick = quick
         self._logger = logging.getLogger(LOGGER_NAME)
 
@@ -250,7 +261,7 @@ class InputScanner:
                 files = self._with_metadata(files)
             results.append(
                 InputScanResult(
-                    profile=self.profile.name,
+                    profile=self.source.name,
                     index=index,
                     config=resolved,
                     results=files,
@@ -259,17 +270,17 @@ class InputScanner:
         return results
 
     def _raw_inputs(self) -> list:
-        document = self.profile.document
+        document = self.source.document
         raw = document.get(KEY_INPUTS)
         if raw is None:
             raise SupershelfError(
-                f"Profile {self.profile.name} has no inputs",
-                advice=f"Add an inputs list to {self.profile.path}.",
+                f"Profile {self.source.name} has no inputs",
+                advice=f"Add an inputs list to {self.source.path}.",
             )
         if not isinstance(raw, list):
-            raise SupershelfError(f"Profile {self.profile.name} inputs must be a list")
+            raise SupershelfError(f"Profile {self.source.name} inputs must be a list")
         if not raw:
-            raise SupershelfError(f"Profile {self.profile.name} inputs is empty")
+            raise SupershelfError(f"Profile {self.source.name} inputs is empty")
         return raw
 
     def _parse_input(self, index: int, item: object) -> InputSpec:
@@ -277,14 +288,14 @@ class InputScanner:
             return InputSpec.model_validate(item)
         except ValidationError as exc:
             raise SupershelfError(
-                f"Invalid input {index} in {self.profile.path}: {exc}"
+                f"Invalid input {index} in {self.source.path}: {exc}"
             ) from exc
 
     def _resolve_input(self, spec: InputSpec) -> ResolvedInput | None:
         candidate = render_user_path(
             spec.path,
-            self.profile.scope,
-            self.profile.root_dir,
+            self.source.scope,
+            self.source.root_dir,
             empty_message="inputs.path is empty",
         )
         if candidate.is_symlink() or candidate.exists():

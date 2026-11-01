@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from supershelf.common import config_section as read_config_section
 from supershelf.common import render_user_path
@@ -30,9 +30,7 @@ from supershelf.constants import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
-
-if TYPE_CHECKING:
-    from supershelf.scan import InputScanResult
+from supershelf.scan import InputScanResult, InputScanner
 
 _PATH_STEPS = (
     (KEY_ROOT_DIR, VAR_ROOT_DIR),
@@ -99,8 +97,6 @@ class ShelfProfile:
 
     def scan(self, *, quick: bool = False) -> list[InputScanResult]:
         """Scan this profile's inputs. Does not create the database or cache."""
-        from supershelf.scan import InputScanner
-
         return InputScanner(self, quick=quick).run()
 
     def show_time(self, stored: str) -> str:

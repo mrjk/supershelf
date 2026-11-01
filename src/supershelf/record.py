@@ -43,6 +43,7 @@ from supershelf.database import (
 from supershelf.defaults import PACKAGED
 from supershelf.errors import RecordConfigError, SupershelfError
 from supershelf.profile import ShelfProfile
+from supershelf.runs import ShelfRuns
 from supershelf.scan import InputFile, InputScanResult, KeptPath
 from supershelf.var_template import is_template
 
@@ -793,8 +794,6 @@ class _ProfileRun:
                 return False
             return found.absolute.resolve() != database_path
 
-        from supershelf.cli import ShelfRuns
-
         walk = ShelfRuns([self.shelf]).resolved(
             None,
             groups=[scans],
@@ -906,8 +905,6 @@ class RecordSession:
     ) -> RecordSession:
         """Resolve the link rule before any walk."""
         env = os.environ if environ is None else environ
-        from supershelf.cli import ShelfRuns
-
         runs = ShelfRuns.load(config, profile)
         built: list[_ProfileRun] = []
         for shelf in runs.shelves:
@@ -947,8 +944,6 @@ class RecordReader:
     @classmethod
     def load(cls, config: str | None, profile: str | None) -> RecordReader:
         """Load profiles so each database path can be opened read-only."""
-        from supershelf.cli import ShelfRuns
-
         return cls(ShelfRuns.load(config, profile).shelves)
 
     def history(self, path: str | None) -> list[dict[str, object]]:
