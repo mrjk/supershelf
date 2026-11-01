@@ -600,6 +600,228 @@ def test_always_creates_the_first_template(tmp_path: Path) -> None:
     assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
 
 
+def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            **_kind_document(
+                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                kind_overrides_mode="always",
+            ),
+            "vars_schema": {
+                "amount": {"type": "float"},
+                "__date__": {"desc": "Document date"},
+                "vendor": {"type": "text"},
+            },
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == "PATH,amount,__date__,vendor\na.txt,,,\n"
+
+
+def test_always_creates_kind_schema_local_names(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            **_kind_document(
+                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                kind_overrides_mode="always",
+            ),
+            "vars_schema": {
+                "company_name": {"type": "text"},
+                "employee_name": {"type": "text"},
+            },
+            "kind_schema": {
+                "note": {
+                    "vars_schema": {
+                        "company": "company_name",
+                        "employee": {"schema": "employee_name"},
+                    }
+                }
+            },
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == "PATH,company,employee\na.txt,,\n"
+
+
+def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            **_kind_document(
+                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                kind_overrides_mode="always",
+            ),
+            "vars_schema": {
+                "amount": {"type": "float"},
+                "vendor": {"type": "text"},
+            },
+            "kind_schema": {"invoice": {"vars_schema": {"amount": "amount"}}},
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == "PATH,amount,vendor\na.txt,,\n"
+
+
+def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            **_kind_document(
+                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                kind_overrides_mode="always",
+            ),
+            "vars_schema": {"amount": {"type": "float"}},
+            "kind_schema": {"note": {"vars_schema": {}}},
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+
+
+def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            **_kind_document(
+                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                kind_overrides_mode="always",
+            ),
+            "vars_schema": {
+                "Amount": {"type": "text"},
+                "vendor": {"type": "text"},
+                "date": {"type": "date"},
+            },
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == "PATH,vendor\na.txt,\n"
+
+
+def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("\n\n", encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            "vars_schema": {"amount": {"type": "float"}},
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == "PATH,amount\na.txt,\n"
+
+
+def test_missing_schema_columns_are_appended_on_the_right(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        'PATH,amount,notes\na.txt,"12,50",ada\n\nshort.txt\n',
+        encoding="utf-8",
+    )
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            "vars_schema": {
+                "amount": {"type": "text"},
+                "vendor": {"type": "text"},
+            },
+        },
+        tmp_path,
+    )
+    _values(plan)
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == (
+        "PATH,amount,notes,vendor\n"
+        'a.txt,"12,50",ada,\n'
+        "\n"
+        "short.txt,,,\n"
+        "b.txt,,,\n"
+    )
+
+
+def test_added_columns_keep_quoted_cell_text(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_bytes(b'PATH,note\r\na.txt,"hello\nworld"\r\n')
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            "vars_schema": {"vendor": {"type": "text"}},
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    assert kind.read_bytes() == b'PATH,note,vendor\r\na.txt,"hello\nworld",\r\n'
+
+
+def test_semicolon_schema_columns_use_the_separator(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH;amount\na.txt;12,50\n", encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep=";"),
+            "vars_schema": {"vendor": {"type": "text"}},
+        },
+        tmp_path,
+    )
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == "PATH;amount;vendor\na.txt;12,50;\nb.txt;;\n"
+
+
+def test_manual_does_not_add_schema_columns(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    original = "PATH,amount\na.txt,12\n"
+    kind.write_text(original, encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="manual"),
+            "vars_schema": {"vendor": {"type": "text"}},
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == original
+
+
+def test_dry_run_does_not_add_schema_columns(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    original = "PATH,amount\na.txt,12\n"
+    kind.write_text(original, encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            "vars_schema": {"vendor": {"type": "text"}},
+        },
+        tmp_path,
+        dry_run=True,
+    )
+    _values(plan)
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == original
+    assert f"Would add columns vendor to kind file {kind}" in caplog.text
+    assert f"Would append 1 rows to kind file {kind}" in caplog.text
+
+
 def test_disabled_ignores_an_existing_kind_file(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,

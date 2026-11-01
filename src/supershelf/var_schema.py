@@ -870,6 +870,19 @@ class VarCatalog:
             rows.append((name, self._specs[name]))
         return tuple(rows)
 
+    def csv_headers(self, kind: str) -> tuple[str, ...]:
+        """Schema column names for this kind, in profile order.
+
+        A kind_schema entry uses its local names. Otherwise declared
+        vars_schema names are used. No schema means no extra columns.
+        """
+        found = self._kinds.get(kind)
+        if found is not None:
+            return tuple(found.vars)
+        if self.vars_schema_present:
+            return tuple(name for name, _spec in self.domain_specs())
+        return ()
+
     def kind_schemas(self) -> tuple[KindSchema, ...]:
         """Parsed kinds, in profile order."""
         return self._kinds.items()

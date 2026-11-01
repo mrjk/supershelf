@@ -117,7 +117,7 @@ Each mapping:
 | `default` | typed literal, string, or list of candidates | omitted. Not copied. Applies only to this kind's local name. |
 | `validation` | mapping | copied when omitted. A present mapping replaces the referenced one. |
 
-`type` and `internal` cannot be set here. Unknown keys stop the command. This version does not check kind-file column names against these keys. A new CSV kind file still starts as `PATH,__date__`.
+`type` and `internal` cannot be set here. Unknown keys stop the command. On a CSV, `auto` and `always` use these local names as columns. A kind that is not listed uses the declared `vars_schema` names. A name that is not a legal column is left out. With no schema columns, a new CSV still starts as `PATH,__date__`.
 
 ### Variable values
 

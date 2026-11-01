@@ -143,7 +143,7 @@ The output is one JSON document, keyed by profile name. Add `kind_schema` when a
             mandatory: true
     ```
 
-A string is the catalog name. Null or a blank string uses the local name. TOML has no null, so that form is `""`. An object may omit `schema`, which then uses the local name. `invoice` is then an object under `$defs`. `amount` is required. The rules are in [Variables](../concepts/variables.md). This version does not check the columns of a kind file against that object.
+A string is the catalog name. Null or a blank string uses the local name. TOML has no null, so that form is `""`. An object may omit `schema`, which then uses the local name. `invoice` is then an object under `$defs`. `amount` is required. The rules are in [Variables](../concepts/variables.md). A new CSV for that kind uses these local names as columns. An existing CSV gains any that are missing, on the right.
 
 `scan vars` has no `--quick`. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. If any kept path equals the selector, every input lists that exact path only. Otherwise the selector lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
 

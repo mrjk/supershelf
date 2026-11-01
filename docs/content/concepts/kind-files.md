@@ -44,13 +44,13 @@ An empty file, or a file of whitespace only, is an empty table. `auto` and `alwa
 
 `always` creates missing parent directories. If a parent exists and is a file, that is an error and no kind file is written.
 
-`auto` and `always` do not delete a row, edit a cell, drop a column, reorder rows, or rewrite the existing bytes. A path already present is not appended again, including a duplicate row that was warned and kept as the first. New rows follow the walk, input index first. A new row sets `PATH` in CSV, or `path` in TOML and YAML. The other cells are empty, so a row created on this run does not change this run's values.
+`auto` and `always` do not delete a row, edit a cell, drop a column, or reorder rows. They do not rewrite existing cell text. When schema columns are missing from a CSV, those names are appended on the right and existing rows gain empty cells. A path already present is not appended again, including a duplicate row that was warned and kept as the first. New rows follow the walk, input index first. A new row sets `PATH` in CSV, or `path` in TOML and YAML. The other cells are empty, so a row created on this run does not change this run's values.
 
 A non-empty file whose last byte is not a newline gets a newline, then the new rows. The new bytes are one write at the end. A crash during that write can leave a partial last row. There is no lock. Two overlapping runs can append the same path twice.
 
 Writes happen after the run succeeds. A variable error writes nothing.
 
-`--dry-run` reads when the mode reads, and does not create or append. It logs only when something would change. A file that would be created logs its path and its row count. A file that would gain rows logs its path and how many rows would be appended. Zero rows logs nothing. `manual` and `disabled` log nothing. Those lines are info logs, so `-v` shows them.
+`--dry-run` reads when the mode reads, and does not create, append, or add columns. It logs only when something would change. A file that would be created logs its path and its row count. A file that would gain rows logs its path and how many rows would be appended. A CSV that would gain schema columns logs those names, even when no row would be appended. Otherwise zero rows logs nothing. `manual` and `disabled` log nothing. Those lines are info logs, so `-v` shows them.
 
 When `scan vars` is given a path, only the selected files are matched, so only those paths can be appended.
 

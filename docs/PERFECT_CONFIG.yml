@@ -485,22 +485,32 @@
       Unmatched files have no kind, so they get no row. Files the walk skipped get no row.
       Rows already in the file stay, including paths that are not in this scan.
     - auto and always may append missing paths.
-      They must not delete a row, edit a cell, drop a column, reorder rows, or rewrite the existing bytes.
+      They must not delete a row, edit a cell, drop a column, or reorder rows.
+      They must not rewrite existing cell text.
+      When schema columns are missing from a CSV, append those names on the right.
+      Pad each existing data row with empty cells. Leave a blank line blank.
       A path already present is not appended again, including a duplicate row that was warned and kept as the first.
       Append in walk order, input index first.
       Do that once per absolute path, after the rows for this run have been read, and only if the run succeeds.
       A new row sets PATH in CSV, or path in TOML and YAML. Other cells are empty, so a row created on this run does not change this run's values.
-      A non-empty file whose last byte is not a newline gets a newline, then the new rows. Earlier bytes stay.
-      The new bytes are one write at the end. A crash during that write can leave a partial last row.
-      There is no temp file, because that would rewrite the file.
-      CSV append uses the existing header order and config.kind_overrides_sep.
-      PATH is filled. Other columns, including __date__, are empty. No new column is added.
+      A non-empty file whose last byte is not a newline gets a newline, then the new rows.
+      When no schema column is added, earlier bytes stay.
+      The new row bytes are one write at the end. A crash during that write can leave a partial last row.
+      There is no temp file.
+      Adding schema columns rewrites the CSV so every row has the new empty cells. The text of each existing cell stays.
+      CSV append uses the header after those columns are added, and config.kind_overrides_sep.
+      PATH is filled. Other columns are empty.
     - A new file is an always create, or an auto or always fill of an empty or whitespace-only file.
       manual leaves that file unchanged. Whitespace in a filled file is not kept.
-      A new CSV header is PATH and __date__, joined by kind_overrides_sep.
-      Omitted, that header is PATH,__date__. The example semicolon writes PATH;__date__.
-      No SHA, no DATE, and no other columns. The header line has no data.
-      Then one row per matched file. Each new row sets PATH and leaves __date__ empty.
+      A new CSV header starts with PATH.
+      When that kind has schema columns, those names follow, in schema order, joined by kind_overrides_sep.
+      A kind_schema entry supplies its local names. Otherwise declared vars_schema names are used.
+      Locked internals are left out. __date__ is included only when that schema lists it.
+      A name that is not a legal column is left out.
+      With no schema columns, the header is PATH and __date__.
+      Omitted, that header is PATH,__date__. The example semicolon with no schema writes PATH;__date__.
+      No SHA column and no DATE column. The header line has no data.
+      Then one row per matched file. Each new row sets PATH and leaves the other cells empty.
       A new TOML or YAML file is the same rows, with path set and vars omitted.
     - An empty kind_overrides_config creates and appends nothing in every mode.
       In every mode except disabled, -vv still logs that there is no candidate list.

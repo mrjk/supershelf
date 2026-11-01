@@ -81,7 +81,7 @@ Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the catalo
 
 When the kind lists a name the profile also has, files of that kind use the kind's spec. `mandatory: false` there leaves the name optional for that kind. Names the kind does not list stay on the profile spec, including profile `mandatory`.
 
-`supershelf schema` prints one JSON document, keyed by profile name. It does not walk inputs. With `kind_schema`, each kind is an object under `$defs`. Without it, the object is the declared `vars_schema` names. Locked internals are left out. `__date__` is included only when `vars_schema.__date__` is set. If neither key is set, the command stops with status 2. The schema describes resolved values, not the strings in a kind file or in rule `vars`. This version does not check CSV column names against it. A new kind file still starts as `PATH,__date__`.
+`supershelf schema` prints one JSON document, keyed by profile name. It does not walk inputs. With `kind_schema`, each kind is an object under `$defs`. Without it, the object is the declared `vars_schema` names. Locked internals are left out. `__date__` is included only when `vars_schema.__date__` is set. If neither key is set, the command stops with status 2. The schema describes resolved values, not the strings in a kind file or in rule `vars`. `auto` and `always` add missing schema columns on the right of a CSV. A name that is not a legal column is left out. With no schema columns, a new CSV still starts as `PATH,__date__`.
 
 ## Candidates
 

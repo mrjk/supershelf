@@ -82,8 +82,8 @@ Two rows with the same path: a warning, the first row is kept, and the later row
 
 A new file is an `always` create, or an `auto` or `always` replacement of an empty or whitespace-only file. `manual` does not write.
 
-A new CSV header is `PATH` and `__date__`, joined by `kind_overrides_sep`. Omitted, that header is `PATH,__date__`. The semicolon example writes `PATH;__date__`. There is no `SHA` column, no `DATE` column, and no other column. Then one row per matched file. Each new row sets `PATH` and leaves `__date__` empty.
+A new CSV header starts with `PATH`. When that kind has schema columns, those names follow in schema order, joined by `kind_overrides_sep`. A `kind_schema` entry supplies its local names. Otherwise the declared `vars_schema` names are used. Locked internals are left out. `__date__` is included only when that schema lists it. A name that is not a legal column is left out. With no schema columns, the header is `PATH` and `__date__`. Omitted, that header is `PATH,__date__`. The semicolon example with no schema writes `PATH;__date__`. There is no `SHA` column and no `DATE` column. Then one row per matched file. Each new row sets `PATH` and leaves the other cells empty.
 
 A new TOML or YAML file is the same rows, with `path` set and `vars` omitted.
 
-An append uses the existing header order and does not add a column. `PATH` or `path` is filled. The other cells are empty.
+`auto` and `always` append any missing schema columns to an existing CSV, on the right, in schema order. Columns already there stay, including names the schema does not list. Cell text is not rewritten. Each existing data row gains empty cells for the new columns. A short row is padded out to the old width first. A blank line stays blank. `manual` and `disabled` do not add columns. `--dry-run` logs the names and does not write. A real add is a debug log. An append then uses that header. `PATH` or `path` is filled. The other new cells are empty.

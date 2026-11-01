@@ -105,7 +105,7 @@ parent options:
 
 ## supershelf schema
 
-Prints one JSON document for the selected profiles. The object is keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Without it, the object is the declared `vars_schema` names. Neither key stops the command. The command does not walk inputs and does not write a kind file. Column names in a new CSV kind file stay `PATH,__date__`.
+Prints one JSON document for the selected profiles. The object is keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Without it, the object is the declared `vars_schema` names. Neither key stops the command. The command does not walk inputs and does not write a kind file. Column names in a new CSV come from that kind's schema. With no schema columns, they stay `PATH,__date__`.
 
 <!-- extract: help schema -->
 ```text

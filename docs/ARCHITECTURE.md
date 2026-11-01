@@ -2,7 +2,7 @@
 
 Behind the scenes: models, pipelines, cast rules, and edge cases. Use cases live in [PERFECT_CONFIG.yml](PERFECT_CONFIG.yml). The short command pipeline on the doc site is `docs/content/reference/architecture.md`.
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. It does not choose kind-file columns. A new CSV kind file still starts as `PATH,__date__`. Packaged defaults, at the end of this file, are loaded from `src/supershelf/default.toml`.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. `scan vars` uses those names as CSV columns. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, at the end of this file, are loaded from `src/supershelf/default.toml`.
 
 ## Variable types
 
@@ -171,7 +171,7 @@ Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the refere
 
 When a kind lists a name the profile also has, files of that kind use the overlaid spec. The kind may set `mandatory: false`. A matched kind with no `kind_schema` entry keeps the profile catalog. Names a kind does not list keep the profile spec, including profile `mandatory`.
 
-`supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names, excluding locked internals. `__date__` is included only when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. This version does not check kind-file column names against the schema.
+`supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names, excluding locked internals. `__date__` is included only when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.
 
 ## Cases
 

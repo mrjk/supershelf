@@ -377,6 +377,7 @@ class KindTable:
         self.missing = missing
         self._pending: list[str] = []
         self._pending_seen: set[str] = set()
+        self._extra_columns: list[str] = []
 
     @classmethod
     def missing(cls, path: Path, sep: str) -> KindTable:
@@ -411,6 +412,31 @@ class KindTable:
         self._pending.append(relative)
         self._pending_seen.add(relative)
 
+    def add_schema_columns(self, names: tuple[str, ...]) -> None:
+        """Remember schema columns this CSV does not already have."""
+        if self.suffix != ".csv":
+            return
+        present = set(self.columns or ())
+        present.update(self._extra_columns)
+        for name in names:
+            if name in present or not self._legal_column(name):
+                continue
+            self._extra_columns.append(name)
+            present.add(name)
+
+    def sync_schema_columns(self, dry_run: bool, logger: logging.Logger) -> None:
+        """Append missing schema columns on the right of an existing CSV."""
+        if self.suffix != ".csv" or not self._extra_columns:
+            return
+        if self.missing or self.blank or self.columns is None:
+            return
+        added = ", ".join(self._extra_columns)
+        if dry_run:
+            logger.info("Would add columns %s to kind file %s", added, self.path)
+            return
+        if self._extend_columns():
+            logger.debug("Added columns %s to kind file %s", added, self.path)
+
     def commit(self, dry_run: bool, logger: logging.Logger) -> None:
         """Create or append after the run. A dry run only logs a real change."""
         if not self._pending:
@@ -427,12 +453,110 @@ class KindTable:
             return
         self._append()
 
+    def _create_columns(self) -> tuple[str, ...]:
+        if self.suffix == ".csv" and self._extra_columns:
+            return (KIND_CSV_PATH, *self._extra_columns)
+        return self._FRESH_COLUMNS
+
     def _write_new(self) -> None:
         self._require_parent()
         self.path.write_text(
-            self._rendered(self._FRESH_COLUMNS, header=True),
+            self._rendered(self._create_columns(), header=True),
             encoding="utf-8",
         )
+
+    def _extend_columns(self) -> bool:
+        """Append empty cells. Existing cell text stays on each line."""
+        added = tuple(self._extra_columns)
+        raw = self.path.read_bytes()
+        bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+        text = raw.decode("utf-8-sig")
+        records = self._split_records(text)
+        header_at = self._header_record(records)
+        if header_at is None:
+            return False
+        width = len(self.columns or ())
+        names = self.sep.join(added)
+        updated: list[str] = []
+        for index, (body, ending) in enumerate(records):
+            if index == header_at:
+                updated.append(f"{body}{self.sep}{names}{ending}")
+                continue
+            row = self._record_cells(body)
+            if row is None:
+                updated.append(body + ending)
+                continue
+            missing = width + len(added) - len(row)
+            if missing > 0:
+                updated.append(f"{body}{self.sep * missing}{ending}")
+                continue
+            updated.append(body + ending)
+        self.path.write_bytes(bom + "".join(updated).encode("utf-8"))
+        self.columns = tuple(self.columns or ()) + added
+        self._extra_columns.clear()
+        return True
+
+    @classmethod
+    def _split_records(cls, text: str) -> list[tuple[str, str]]:
+        """Split CSV text into records, keeping each body and its line ending."""
+        records: list[tuple[str, str]] = []
+        start = 0
+        in_quotes = False
+        index = 0
+        length = len(text)
+        while index < length:
+            char = text[index]
+            if char == '"':
+                if in_quotes and index + 1 < length and text[index + 1] == '"':
+                    index += 2
+                    continue
+                in_quotes = not in_quotes
+                index += 1
+                continue
+            if not in_quotes and char in "\r\n":
+                if char == "\r" and index + 1 < length and text[index + 1] == "\n":
+                    ending = "\r\n"
+                else:
+                    ending = char
+                records.append((text[start:index], ending))
+                index += len(ending)
+                start = index
+                continue
+            index += 1
+        if start < length:
+            records.append((text[start:], ""))
+        return records
+
+    def _header_record(self, records: list[tuple[str, str]]) -> int | None:
+        for index, (body, _ending) in enumerate(records):
+            if self._record_cells(body) is not None:
+                return index
+        return None
+
+    def _record_cells(self, body: str) -> list[str] | None:
+        if body.strip() == "":
+            return None
+        try:
+            rows = list(csv.reader([body], delimiter=self.sep))
+        except csv.Error:
+            return None
+        if len(rows) != 1 or not any(cell.strip() for cell in rows[0]):
+            return None
+        return rows[0]
+
+    @classmethod
+    def _legal_column(cls, name: str) -> bool:
+        if name == KIND_CSV_PATH or name in cls._SHA_ALIASES or name in cls._DATE_ALIASES:
+            return False
+        if cls._LOWER_NAME.fullmatch(name) is None:
+            return False
+        if name == VAR_DATE:
+            return True
+        try:
+            VarTable._check_key(name, "kind file", False)
+        except VarConfigError:
+            return False
+        return True
 
     def _append(self) -> None:
         block = self._rendered(
@@ -775,6 +899,7 @@ class KindFiles:
         self._dry_run = dry_run
         self._tables: dict[Path, KindTable] = {}
         self._winners: dict[tuple[str, str], KindTable | None] = {}
+        self._catalog: VarCatalog | None = None
         self._logger = logging.getLogger(LOGGER_NAME)
 
     @classmethod
@@ -803,6 +928,10 @@ class KindFiles:
             templates = tuple(raw)
         return cls(templates, root_dir, profile_scope, mode, date_format, sep, dry_run)
 
+    def bind_catalog(self, catalog: VarCatalog) -> None:
+        """Use this catalog when a kind file is chosen."""
+        self._catalog = catalog
+
     def cells_for(
         self,
         kind: str,
@@ -826,7 +955,10 @@ class KindFiles:
 
     def commit(self) -> None:
         """Write queued rows once. A failed resolve never reaches this."""
+        writable = self._mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS)
         for table in self._tables.values():
+            if writable:
+                table.sync_schema_columns(self._dry_run, self._logger)
             table.commit(self._dry_run, self._logger)
 
     def _winner(self, kind: str, input_dir: Path) -> KindTable | None:
@@ -852,10 +984,18 @@ class KindFiles:
                     f"Kind file {path} is not a file",
                     advice="Point kind_overrides_config at a csv, toml, or yaml file.",
                 )
-            return self._load_existing(path, kind)
+            return self._with_headers(self._load_existing(path, kind), kind)
         if self._mode == KIND_MODE_ALWAYS and rendered:
-            return self._hold(KindTable.missing(rendered[0], self._sep))
+            return self._with_headers(
+                self._hold(KindTable.missing(rendered[0], self._sep)),
+                kind,
+            )
         return None
+
+    def _with_headers(self, table: KindTable, kind: str) -> KindTable:
+        if self._catalog is not None:
+            table.add_schema_columns(self._catalog.csv_headers(kind))
+        return table
 
     def _load_existing(self, path: Path, kind: str) -> KindTable:
         resolved = path.resolve()
@@ -980,6 +1120,7 @@ class VarPlan:
             compile_source=environment.compile_source,
             names=names,
         )
+        kinds.bind_catalog(catalog)
         for rule_name, table in rules.items():
             cls._check_literals(
                 catalog,
