@@ -1,0 +1,12 @@
+nav:
+  - index.md
+  - profiles.md
+  - paths.md
+  - inputs.md
+  - matching.md
+  - variables.md
+  - kind-files.md
+  - template-commands.md
+  - modules.md
+  - errors.md
+  - limits.md

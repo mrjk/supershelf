@@ -1,0 +1,7 @@
+nav:
+  - cli.md
+  - configuration.md
+  - templates.md
+  - variable-names.md
+  - kind-file.md
+  - architecture.md
