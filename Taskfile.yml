@@ -4,8 +4,9 @@ version: "3"
 
 dotenv: [".env"]
 
+# Named docsite so the public docs:* tasks do not clash with the include.
 includes:
-  docs:
+  docsite:
     taskfile: ./docs/Taskfile.yml
     dir: ./docs
     internal: true
@@ -26,4 +27,20 @@ tasks:
   docs:
     desc: Serve the documentation site
     cmds:
-      - task: docs:serve
+      - task: docsite:serve
+
+  docs:build:
+    desc: Build the documentation site
+    cmds:
+      - task: docsite:build
+
+  docs:release:
+    desc: Build the site and publish it to gh-pages
+    cmds:
+      - task: docsite:release
+
+  ci:
+    desc: Run tests and build the documentation
+    cmds:
+      - task: test
+      - task: docs:build

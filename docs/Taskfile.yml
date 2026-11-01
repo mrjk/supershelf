@@ -8,15 +8,19 @@ vars:
   PY: '{{.PY | default "uv run --group docs"}}'
   DOCS_DEV_ADDR:
     sh: |
+      _preset="${DOCS_DEV_ADDR-__unset__}"
       envfile="{{.ROOT_DIR}}/.env"
       if [ ! -f "$envfile" ]; then envfile="{{.ROOT_DIR}}/../.env"; fi
-      . "$envfile"
+      if [ -f "$envfile" ]; then . "$envfile"; fi
+      if [ "$_preset" != "__unset__" ]; then DOCS_DEV_ADDR="$_preset"; fi
       printf "%s" "${DOCS_DEV_ADDR:-127.0.0.1:8089}"
   GITHUB_OWNER:
     sh: |
+      _preset="${GITHUB_OWNER-__unset__}"
       envfile="{{.ROOT_DIR}}/.env"
       if [ ! -f "$envfile" ]; then envfile="{{.ROOT_DIR}}/../.env"; fi
-      . "$envfile"
+      if [ -f "$envfile" ]; then . "$envfile"; fi
+      if [ "$_preset" != "__unset__" ]; then GITHUB_OWNER="$_preset"; fi
       printf "%s" "${GITHUB_OWNER:-}"
 
 tasks:
@@ -51,6 +55,11 @@ tasks:
         if [ -z "{{.GITHUB_OWNER}}" ]; then
           echo "Set GITHUB_OWNER in .env before release." >&2
           exit 1
+        fi
+      - |
+        if [ -n "${GITHUB_ACTIONS:-}" ]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         fi
       - task: build
       - "{{.PY}} ghp-import -n -p -f site"

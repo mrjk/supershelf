@@ -1,0 +1,27 @@
+name: Deploy website
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Publish documentation
+        run: mise x -- task docs:release
+        env:
+          GITHUB_OWNER: ${{ github.repository_owner }}
