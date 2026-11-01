@@ -1,6 +1,6 @@
 # Behavior
 
-What the commands do. Types, cast, and packaged defaults are in [architecture.md](architecture.md). A profile a user would paste is in [examples.md](examples.md). `2.3.3` is parked in [drafts/file-metadata.md](drafts/file-metadata.md).
+What the commands do. Types, cast, and packaged defaults are in [architecture.md](architecture.md). A profile a user would paste is in [examples.md](examples.md). `2.3.3` is an accepted draft in [drafts/file-metadata.md](drafts/file-metadata.md). It is not implemented.
 
 ## 1 App initialization
 

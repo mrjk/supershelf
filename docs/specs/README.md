@@ -8,7 +8,7 @@ Working notes for this repository. The public site is `docs/content/` and is not
 - Types, cast, models, source labels, `kind_schema`, or packaged defaults: [architecture.md](architecture.md). Cite it as architecture 1.7. Those numbers are not product steps.
 - A profile or kind file a user would paste: [examples.md](examples.md). No section numbers. A comment may cite a product step. The rule itself stays in behavior or architecture.
 - How any mrjk app is built: [../RULES.md](../RULES.md). Cite it as rules 2.1.
-- An idea that is not accepted: [drafts/](drafts/). It does not move into behavior until it is accepted. `2.3.3` is [drafts/file-metadata.md](drafts/file-metadata.md).
+- An idea that is not accepted: [drafts/](drafts/). It does not move into behavior until it is accepted. `2.3.3` is the accepted draft [drafts/file-metadata.md](drafts/file-metadata.md). It is not implemented.
 - A decision that is accepted and blocked on another step stays in drafts until that step exists. `record_key` is [drafts/record-key.md](drafts/record-key.md). It waits on file metadata and schema version 2.
 - `docs/v1/` is the old barbu accounting spec. Do not add to it.
 - `docs/DRAFT.md` is empty. Do not use it.
@@ -22,7 +22,7 @@ Product steps live in behavior.md only.
 - `2.1` Scan files (`2.1.1` command, `2.1.2` walk)
 - `2.2` Matching (`2.2.1` commands, `2.2.2` algorithm)
 - `2.3` Vars (`2.3.1` resolve, `2.3.2` kind files)
-- `2.3.3` is reserved for the parked metadata draft
+- `2.3.3` is the accepted metadata draft. It stays out of behavior.md until implementation.
 - `3` Data (`3.1` shared rules, `3.2` feed, `3.3` prune, `3.4` show)
 - `4` Record (`4.1` commands, `4.2` link, `4.3` writes)
 

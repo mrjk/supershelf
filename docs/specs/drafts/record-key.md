@@ -1,15 +1,16 @@
 # Record key
 
-Status: accepted, blocked. This is not part of [behavior.md](../behavior.md). Nothing here is implemented. Move it into behavior 4.2 only when file metadata is accepted and the database schema can store it.
+Status: accepted, blocked. This is not part of [behavior.md](../behavior.md). Nothing here is implemented. Move it into behavior 4.2 only when file metadata is implemented and the schema can store `link_key`.
 
 Behavior 4.2 links a document with `path` and `hash`. This step adds `key` to that list. The word `key` is a config error until then.
 
 ## Why it is blocked
 
-- The template reads variables, including file metadata. Metadata is [file-metadata.md](file-metadata.md) and is still parked.
+- The template reads variables, including file metadata. Metadata is the accepted draft [file-metadata.md](file-metadata.md). It is not implemented.
+- Both drafts name schema version `2`. The one that ships first takes version `2`. The other takes the next version and includes the tables that already shipped. The migration rule is in file-metadata.md.
 - `events.identity` accepts only `path` or `hash`. A `key` step has to be stored.
 - The rendered string needs a `link_key` column on `documents` and on `events`.
-- Schema version is `1`. Behavior 4.3 does not migrate it. This step is schema version `2`.
+- Schema version is `1`. Behavior 4.3 does not migrate it. This step uses the shared version rule above, not a private version `2`.
 
 ## Config
 
