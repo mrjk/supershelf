@@ -8,6 +8,8 @@ A command loads profiles, renders paths, walks inputs, matches rules, and resolv
 4. `Matcher` compiles `match_rules` once and claims a kind for each kept file.
 5. `VarPlan` resolves facts, then `default_vars`, then the winning rule's `vars`, then the kind-file row for that path, then the first matching override. Each written name is cast to its `vars_schema` type. When that kind has a `kind_schema` entry, the names it lists use the overlaid spec. A name with no entry stays `text`. See [Variables](../concepts/variables.md).
 
-`scan files` runs steps 1 to 3. `scan kinds` and `scan inspect` run steps 1 to 4. `scan vars` runs all five, and may create or append a kind file after the run succeeds. `schema` loads the profile and prints JSON Schema. It does not walk inputs or write a kind file. None of these commands create the database file, the cache file, or an output tree.
+6. `record run` compares that result with the profile database and appends events. `record status` prints the comparison and writes nothing.
+
+`scan files` runs steps 1 to 3. `scan kinds` and `scan inspect` run steps 1 to 4. `scan vars` runs steps 1 to 5, and may create or append a kind file after the run succeeds. `record status` and `record run` run steps 1 to 6. `record run` does not create or append a kind file. `schema` loads the profile and prints JSON Schema. It does not walk inputs or write a kind file. Scan commands, `schema`, and `profiles` do not create the database file. Nothing writes `cache_file`. There is no output tree.
 
 Var modules are the extension point. A module listed in `config.var_modules` may export `GLOBALS` and `FILTERS`. Those callables are available inside variable templates. See [Modules](../concepts/modules.md).

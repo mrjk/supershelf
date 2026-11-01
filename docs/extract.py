@@ -78,6 +78,11 @@ class DocExtract:
             "help scan kinds": ("scan", "kinds"),
             "help scan vars": ("scan", "vars"),
             "help scan inspect": ("scan", "inspect"),
+            "help record": ("record",),
+            "help record status": ("record", "status"),
+            "help record run": ("record", "run"),
+            "help record history": ("record", "history"),
+            "help record duplicates": ("record", "duplicates"),
         }
         blocks = {
             name: DocExtract._help(argv)

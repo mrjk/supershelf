@@ -54,6 +54,7 @@ def test_shipped_defaults_match_the_architecture() -> None:
     assert PACKAGED.root_dir == "{{ __profile_dir__ }}"
     assert PACKAGED.database_file == "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
     assert PACKAGED.cache_file == "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+    assert PACKAGED.record_identity == "path"
     assert PACKAGED.kind_overrides_mode == "auto"
     assert PACKAGED.kind_overrides_sep == ","
     assert PACKAGED.kind_overrides_config == [

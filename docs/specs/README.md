@@ -23,8 +23,9 @@ Product steps live in behavior.md only.
 - `2.3` Vars (`2.3.1` resolve, `2.3.2` kind files)
 - `2.3.3` is reserved for the parked metadata draft
 - `3` Data (`3.1` shared rules, `3.2` feed, `3.3` prune, `3.4` show)
+- `4` Record (`4.1` commands, `4.2` link, `4.3` writes)
 
-The next command stage is `4`. Do not use `4` for the engine.
+The next command stage is `5`. Do not use `5` for the engine.
 
 At most three dotted numbers. A section that is already `X.Y.Z` keeps word headings under it. Do not renumber a section to make room. Add the next free id.
 

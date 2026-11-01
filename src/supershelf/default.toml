@@ -4,6 +4,7 @@ default_date_format = "%Y-%m-%d"
 root_dir = "{{ __profile_dir__ }}"
 database_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
 cache_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+record_identity = "path"
 kind_overrides_mode = "auto"
 # kind_overrides_date_format is unset (None) and falls back to default_date_format
 # var_modules is unset (None): no modules

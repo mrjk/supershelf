@@ -17,6 +17,16 @@ class VarResolveError(SupershelfError):
     """A variable had no candidate that rendered."""
 
 
+class RecordConfigError(SupershelfError):
+    """record_identity is not path or hash."""
+
+    rc = 2
+
+
+class DatabaseError(SupershelfError):
+    """The profile sqlite file cannot be read or written."""
+
+
 class VarCandidateError(Exception):
     """Skip this candidate and try the next one.
 

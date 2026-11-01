@@ -2,13 +2,13 @@
 
 Behind the scenes: models, cast rules, and edge cases. Command steps live in [behavior.md](behavior.md). Pasteable config lives in [examples.md](examples.md). The short command pipeline on the doc site is `docs/content/reference/architecture.md`.
 
-These numbers are not product steps. Cite them as architecture 1.7. Product steps are 1, 2, and 3 in behavior.md.
+These numbers are not product steps. Cite them as architecture 1.7. Product steps are 1, 2, 3, and 4 in behavior.md.
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. `scan vars` uses those names as CSV columns. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `record run` writes the profile database in section 3. Scan commands, `schema`, and `profiles` do not. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. `scan vars` uses those names as CSV columns. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
 
 ## 1 Types and values
 
-A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `supershelf schema` builds one model per declared object and prints `model_json_schema()`. This version adds no database.
+A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `supershelf schema` builds one model per declared object and prints `model_json_schema()`. Resolving a variable does not write the database.
 
 ### 1.1 VarSpec
 
@@ -215,6 +215,7 @@ default_date_format = "%Y-%m-%d"
 root_dir = "{{ __profile_dir__ }}"
 database_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
 cache_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+record_identity = "path"
 kind_overrides_mode = "auto"
 # kind_overrides_date_format is unset (None) and falls back to default_date_format
 # var_modules is unset (None): no modules
@@ -241,7 +242,7 @@ These stay in code. The parser needs them to read both files, or they are not a 
 Only `None` falls back.
 
 - `kind_overrides_date_format` uses `default_date_format`. That is the user's string, or the packaged `%Y-%m-%d` when `default_date_format` is also `None`.
-- `default_date_format`, `root_dir`, `database_file`, `cache_file`, `kind_overrides_mode`, `kind_overrides_sep`, and `kind_overrides_config` use the packaged value.
+- `default_date_format`, `root_dir`, `database_file`, `cache_file`, `record_identity`, `kind_overrides_mode`, `kind_overrides_sep`, and `kind_overrides_config` use the packaged value.
 - An input item's `depth` uses packaged `input_depth`. `follow_symlinks` uses packaged `input_follow_symlinks`.
 - `profile` uses the filename, then the packaged `"default"`. Blank text is unset, the same as `None`. On `profile.NAME.*`, the filename still wins over `config.profile`.
 - `var_modules`, `match_rules`, and `default_vars` have no next key. The layer is off. A present `overrides` key is a config error. There is no fallback for it.
@@ -272,7 +273,94 @@ Modules. A missing or null `var_modules` loads no modules. `[]` loads no modules
 Missing and null are both `None` before the type check.
 
 - `profile.py`: `default_date_format`, `root_dir`, `database_file`, `cache_file`.
+- `record.py`: `RecordIdentity.resolve`. The flag wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then packaged `path`. An empty string is invalid and does not fall back.
 - `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
 - `scan.py`: a null `inputs` uses the same "no inputs" error as a missing key. An empty list stays "inputs is empty".
 
 These also use a missing key and null as `None`: `kind_overrides_config`, `var_modules`, `match_rules`, `default_vars`, and the profile name. A present `overrides` key is a config error, not `None`.
+
+## 3 Profile database
+
+Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `1`. Foreign keys are on. Rows are never deleted. `ShelfDatabase.append_output` can append an output event. No command calls it.
+
+### 3.1 Tables
+
+`meta` stores `schema_version` and, after a successful `record run`, `identity` (`path` or `hash`).
+
+`contents` is one row per sha256. The primary key is `hash`. Many documents reference one row.
+
+`documents` is the current projection:
+
+- `id` integer primary key, never reused
+- `presence`: `present`, `missing`, or `unmatched`
+- `generation` integer, starting at 1
+- `hash` references `contents`
+- `input_index`, `input_path` (absolute input directory), `path` (relative, slash separators)
+- `mtime` and `ctime`, the stored UTC timestamps, or null
+- `match_kind`, `rule`
+- `file_dir`, `file_name`, `file_stem`, `file_ext` (`archive.tar.gz` stores `gz`; no suffix stores `""`)
+- `vars_json`
+- `updated_at`, UTC ISO-8601
+
+A partial unique index on `(input_path, path)` applies where `presence` is not `missing`. Two missing documents may keep the same last path.
+
+`events` is append-only:
+
+- `id`, `document_id`, `seq` unique per document, starting at 1
+- `event`: `new`, `move`, `generation`, `vars`, `missing`, `present`, `unmatched`, or `output`
+- `identity`: the rule that decided this event
+- `recorded_at`
+- the same file facts and `vars_json` as `documents`
+- nullable output columns: `output_name`, `operation`, `destination`, `source_hash`, `previous_json`
+
+Indexes: `events.hash`, `events.destination`.
+
+`refresh` updates `mtime`, `ctime`, and `input_index` on the document and does not insert an event.
+
+### 3.2 Variable snapshot
+
+`vars_json` is one JSON object. Keys are sorted. Identity facts that already have columns are left out: `__kind__`, `__rule_name__`, `__ctime__`, `__mtime__`, `__file_hash__`, `__file_name__`, `__file_stem__`, `__file_ext__`, `__file_path__`, `__file_dir__`. `__date__` is included when it is set. Profile-scope names are not included. An unset name is left out.
+
+Each binding is `type`, `value`, `display`, and `value_sources`. `value` is the JSON form of the Python value. A float can be `12.5` while `display` is `12.50`. A difference in the name set, the type, the value, the display, or the sources is a variable change.
+
+### 3.3 Decision order
+
+The observed set is the walked inputs, then PATH. Documents whose input directory was not walked are left as they are. Documents outside PATH are left as they are.
+
+In-scope documents are visited in id order.
+
+1. The location still has a matched file and the hash matches. The document stays. Status is `vars`, `present`, `refresh`, or `unchanged`, in that order of precedence. `present` is the return from `missing` or `unmatched` when the variables did not change.
+2. The location still has a matched file and the hash differs. Under `path`, that is a new generation and the old bytes elsewhere are a different document. Under `hash`, if the old hash is live on exactly one other in-scope file and that file is not already claimed, the document moves there and the bytes at the old path are a new document. Otherwise it is a new generation.
+3. The location is still in the kept walk and no rule matches. Status `unmatched`, unless it is already unmatched.
+4. The location is gone. If exactly one unclaimed in-scope file has this hash, and exactly one in-scope document whose location is gone wants it, the document moves. Otherwise it is `missing`, unless it is already missing.
+5. Each unclaimed in-scope matched file becomes a new document, generation 1, event `new`.
+
+A move keeps the generation number. A generation increments it. A move or a generation stores the new snapshot on that event and does not also append `vars`.
+
+Location changes are written by first marking the moving documents `missing`, so a swap of two paths can commit under the partial unique index, then writing the final presence and path.
+
+`duplicates` on the status row counts other documents that would be `present` with that hash after the plan. Documents left out of scope still count.
+
+### 3.4 Output event
+
+No command inserts `output`. `ShelfDatabase.append_output` inserts one event and does not change the document projection. `operation` is `copy`, `symlink`, or `hardlink`. `previous_json` is the revert payload:
+
+```json
+{"existed": false, "ours": false}
+```
+
+When this profile wrote the previous destination, `ours` is true and the object also has `operation` and `source_hash` from that earlier event. `existed` true and `ours` false means a file was already there and this profile did not write it. The outputs story fills these keys. This story only reserves them.
+
+### 3.5 Open and errors
+
+A missing file opened for reading is an empty previous state. The file is not created. A real read of an existing file uses SQLite read-only mode.
+
+`record run` opens for write only when a row would change, or when the stored identity rule differs and the file already exists. The identity key is updated in that transaction. A failure rolls the transaction back. The schema created for a new file stays.
+
+`RecordConfigError` is a bad `record_identity` word. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
+
+Two copies. Both documents reference the same `contents.hash`. `record duplicates` groups that hash.
+
+Collision under `path`. The generation event keeps the document id. The new document's `new` event stores the old hash. The duplicate query shows current `no` on the generation that was replaced and current `yes` on the new document.
+
+Output slot. After `append_output`, `events` has one `output` row and the document's presence, hash, and generation are unchanged.

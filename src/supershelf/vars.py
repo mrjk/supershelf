@@ -1178,6 +1178,11 @@ class VarPlan:
         )
         return FileVars(states[VAR_KIND].display, match.rule, chosen)
 
+    @property
+    def catalog(self) -> VarCatalog:
+        """The catalog used to resolve this plan."""
+        return self._catalog
+
     def commit(self) -> None:
         """Create or append kind rows after every file in this plan has resolved."""
         self._kinds.commit()

@@ -9,7 +9,7 @@ Which file is loaded, and which profiles run:
 3. Discovery in the current directory, then the user config directory
 4. Built-in defaults for omitted keys inside the file
 
-There is no environment variable for `root_dir` or the other keys below. An omitted key uses its default. On the optional `config` keys, and on `include`, `exclude`, `depth`, and `follow_symlinks`, a YAML null is the same as omitting the key. An empty string and an empty list stay set. `include: []` keeps no file. A candidate, and `vars_schema.<name>.default`, reject null: null is not unset. A command that reads a key stops if that key has the wrong type. `supershelf profiles` checks that the file is a mapping and that `config.profile`, when set, is a string. It does not render paths.
+There is no environment variable for `root_dir` or the other keys below, except `kind_overrides_mode` and `record_identity`. An omitted key uses its default. On the optional `config` keys, and on `include`, `exclude`, `depth`, and `follow_symlinks`, a YAML null is the same as omitting the key. An empty string and an empty list stay set. `include: []` keeps no file. A candidate, and `vars_schema.<name>.default`, reject null: null is not unset. A command that reads a key stops if that key has the wrong type. `supershelf profiles` checks that the file is a mapping and that `config.profile`, when set, is a string. It does not render paths.
 
 ## config
 
@@ -20,8 +20,9 @@ These keys live under `config`.
 | `profile` | string | from the filename, or `default` | Profile name when the filename is not `profile.NAME.*`. See [Profiles](../concepts/profiles.md). |
 | `default_date_format` | string | `%Y-%m-%d` | `strftime` pattern for mtime and ctime in `scan files`. Not a template. |
 | `root_dir` | string | `{{ __profile_dir__ }}` | Path template. Relative results resolve from the config directory. |
-| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. Rendered, not created. |
+| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. Scan commands do not. |
 | `cache_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` | Path template. Rendered, not created. |
+| `record_identity` | string | `path` | `path` or `hash`. How a record run links a file to a document. See [Record](../concepts/record.md). |
 | `var_modules` | list of strings | none | Importable modules. See [Modules](../concepts/modules.md). |
 | `kind_overrides_mode` | string | `auto` | `auto`, `manual`, `always`, or `disabled`. See [Kind files](../concepts/kind-files.md). |
 | `kind_overrides_date_format` | string | `default_date_format` | `strptime` format for a kind-file `__date__` cell. |

@@ -46,7 +46,7 @@ These names are in scope for path templates and variable templates. They are not
 | `__default_date_format__` | `config.default_date_format`. |
 | `__config_data__` | The parsed config file. Dotted keys read nested mappings. |
 | `__root_dir__` | Rendered root directory. |
-| `__database_file__` | Rendered database path. The file is not created. |
+| `__database_file__` | Rendered database path. `record run` creates it when a row would change. |
 | `__cache_file__` | Rendered cache path. The file is not created. |
 
 Kind-file path templates also see:

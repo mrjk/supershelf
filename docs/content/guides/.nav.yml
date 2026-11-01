@@ -6,5 +6,6 @@ nav:
   - set-the-document-date.md
   - override-one-file.md
   - share-variables-for-a-kind.md
+  - record-matched-files.md
   - use-several-profiles.md
   - examples

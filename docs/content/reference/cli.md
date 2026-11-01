@@ -2,7 +2,7 @@
 
 Every command accepts `--config`, `--profile`, `--dry-run`, and `--version`, plus the log flags from the CLI library. The listings below are the program's own help text.
 
-`--config` selects the config file or directory and overrides `SUPERSHELF_CONFIG`. `--profile` is a comma-separated list of profile names and overrides `SUPERSHELF_PROFILES`. `--dry-run` on `scan vars` reads kind files and does not create or append. The other scan commands only print. See [Limits](../concepts/limits.md).
+`--config` selects the config file or directory and overrides `SUPERSHELF_CONFIG`. `--profile` is a comma-separated list of profile names and overrides `SUPERSHELF_PROFILES`. `--dry-run` on `scan vars` reads kind files and does not create or append. On `record run` it prints the rows that would change and does not create the database. The other scan commands only print. See [Limits](../concepts/limits.md).
 
 The help text lists `-vvvv`. This program's log tiers stop at `-vvv`. `-vvvv` is rejected.
 
@@ -14,9 +14,9 @@ usage: supershelf [-h] [--log-colors | --no-log-colors] [--version] [-v]
                   [--log-format {default,extended,audit,debug}]
                   [--trace | --no-trace] [--config CONFIG] [--profile PROFILE]
                   [--dry-run]
-                  {profiles,schema,scan} ...
+                  {profiles,schema,scan,record} ...
 
-Load supershelf profiles and scan their inputs.
+Load supershelf profiles, scan their inputs, and record matched files.
 
 subcommands:
   profiles                    List profile names and config paths
@@ -26,6 +26,11 @@ subcommands:
     kinds                     List the kind matched for each kept file
     vars                      List variables for each matched file
     inspect                   Show how match rules test kept files
+  record                      Record matched files and read that history
+    status                    Compare matched files with the profile database
+    run                       Record matched files into the profile database
+    history                   Show recorded events
+    duplicates                List documents that share a hash
 
 options:
   -h, --help                  show this help message and exit
@@ -385,6 +390,311 @@ positional arguments:
 
 options:
   -h, --help                  show this help message and exit
+
+parent options:
+  --log-colors, --no-log-colors
+                              Enable colored logs (default: on for TTY;
+                              override with CLAK_LOG_COLORS or this flag)
+  --version                   Print the installed version and exit.
+  -v, --verbose               Increase verbosity level (-v, -vv, -vvv, -vvvv)
+  --log-format {default,extended,audit,debug}
+                              Set log formatter
+  --trace, --no-trace         Enable trace logging on errors
+  --config CONFIG             Config file or directory. Overrides SUPERSHELF_CONFIG.
+  --profile PROFILE           Comma-separated profile names. Overrides SUPERSHELF_PROFILES.
+  --dry-run                   Report actions without changing anything.
+```
+<!-- /extract -->
+
+## supershelf record
+
+<!-- extract: help record -->
+```text
+usage: supershelf record [-h] [--log-colors | --no-log-colors] [--version]
+                         [-v] [--log-format {default,extended,audit,debug}]
+                         [--trace | --no-trace] [--config CONFIG]
+                         [--profile PROFILE] [--dry-run]
+                         {status,run,history,duplicates} ...
+
+Record matched files and read that history.
+
+subcommands:
+  status                      Compare matched files with the profile database
+  run                         Record matched files into the profile database
+  history                     Show recorded events
+  duplicates                  List documents that share a hash
+
+options:
+  -h, --help                  show this help message and exit
+
+parent options:
+  --log-colors, --no-log-colors
+                              Enable colored logs (default: on for TTY;
+                              override with CLAK_LOG_COLORS or this flag)
+  --version                   Print the installed version and exit.
+  -v, --verbose               Increase verbosity level (-v, -vv, -vvv, -vvvv)
+  --log-format {default,extended,audit,debug}
+                              Set log formatter
+  --trace, --no-trace         Enable trace logging on errors
+  --config CONFIG             Config file or directory. Overrides SUPERSHELF_CONFIG.
+  --profile PROFILE           Comma-separated profile names. Overrides SUPERSHELF_PROFILES.
+  --dry-run                   Report actions without changing anything.
+```
+<!-- /extract -->
+
+## supershelf record status
+
+<!-- extract: help record status -->
+```text
+usage: supershelf record status [-h] [--expand-keys | --no-expand-keys]
+                                [--width {content,fit,terminal}]
+                                [--columns COLUMNS]
+                                [--add-index | --no-add-index]
+                                [--format {view,yaml,json,csv}]
+                                [--sort-columns SORT_COLUMNS]
+                                [--sort-mode {asc,desc}] [--wrap MODE|COL,...]
+                                [--record-identity RECORD_IDENTITY]
+                                [--log-colors | --no-log-colors] [--version]
+                                [-v]
+                                [--log-format {default,extended,audit,debug}]
+                                [--trace | --no-trace] [--config CONFIG]
+                                [--profile PROFILE] [--dry-run]
+                                [path]
+
+Compare matched files with the profile database.
+
+positional arguments:
+  path                        Path relative to the input, as shown in the path column. Omit for every kept file. An exact file path selects that file. Anything else selects paths that start with it. (default: None)
+
+options:
+  -h, --help                  show this help message and exit
+  --record-identity RECORD_IDENTITY
+                              Link rule for this run: path or hash. Overrides
+                              SUPERSHELF_RECORD_IDENTITY. (default: None)
+
+Output options:
+  --expand-keys, --no-expand-keys
+                              Expand nested dict items into table columns
+                              (default: None)
+  --width {content,fit,terminal}
+                              Table width: content (size to data), fit (shrink
+                              if wider than terminal), terminal (use terminal
+                              width). No wrap when stdout is not a TTY.
+                              (default: None)
+  --columns COLUMNS           Comma-separated columns to display (names, 1-based indexes, or negatives from end: -1=last) (default: None)
+  --add-index, --no-add-index
+                              Include key/index column in the table (default:
+                              None)
+  --format {view,yaml,json,csv}
+                              Output format (default: view table) (default:
+                              None)
+  --sort-columns SORT_COLUMNS
+                              Comma-separated columns to sort by (names,
+                              1-based indexes, or negatives from end:
+                              -1=last). Use --sort-columns=-1,1 when values
+                              start with '-'. (default: None)
+  --sort-mode {asc,desc}      Sort direction (default: asc) (default: None)
+  --wrap MODE|COL,...         Flexible table columns: they expand or shrink to the terminal. last (rightmost), first (leftmost), all (any column), or comma-separated names/indexes in priority order. Use --wrap=-1 when the value starts with '-'. Ignored when width is content or stdout is not a TTY. (default: None)
+
+parent options:
+  --log-colors, --no-log-colors
+                              Enable colored logs (default: on for TTY;
+                              override with CLAK_LOG_COLORS or this flag)
+  --version                   Print the installed version and exit.
+  -v, --verbose               Increase verbosity level (-v, -vv, -vvv, -vvvv)
+  --log-format {default,extended,audit,debug}
+                              Set log formatter
+  --trace, --no-trace         Enable trace logging on errors
+  --config CONFIG             Config file or directory. Overrides SUPERSHELF_CONFIG.
+  --profile PROFILE           Comma-separated profile names. Overrides SUPERSHELF_PROFILES.
+  --dry-run                   Report actions without changing anything.
+```
+<!-- /extract -->
+
+## supershelf record run
+
+<!-- extract: help record run -->
+```text
+usage: supershelf record run [-h] [--expand-keys | --no-expand-keys]
+                             [--width {content,fit,terminal}]
+                             [--columns COLUMNS]
+                             [--add-index | --no-add-index]
+                             [--format {view,yaml,json,csv}]
+                             [--sort-columns SORT_COLUMNS]
+                             [--sort-mode {asc,desc}] [--wrap MODE|COL,...]
+                             [--record-identity RECORD_IDENTITY]
+                             [--log-colors | --no-log-colors] [--version] [-v]
+                             [--log-format {default,extended,audit,debug}]
+                             [--trace | --no-trace] [--config CONFIG]
+                             [--profile PROFILE] [--dry-run]
+                             [path]
+
+Record matched files into the profile database.
+
+positional arguments:
+  path                        Path relative to the input, as shown in the path column. Omit for every kept file. An exact file path selects that file. Anything else selects paths that start with it. (default: None)
+
+options:
+  -h, --help                  show this help message and exit
+  --record-identity RECORD_IDENTITY
+                              Link rule for this run: path or hash. Overrides
+                              SUPERSHELF_RECORD_IDENTITY. (default: None)
+
+Output options:
+  --expand-keys, --no-expand-keys
+                              Expand nested dict items into table columns
+                              (default: None)
+  --width {content,fit,terminal}
+                              Table width: content (size to data), fit (shrink
+                              if wider than terminal), terminal (use terminal
+                              width). No wrap when stdout is not a TTY.
+                              (default: None)
+  --columns COLUMNS           Comma-separated columns to display (names, 1-based indexes, or negatives from end: -1=last) (default: None)
+  --add-index, --no-add-index
+                              Include key/index column in the table (default:
+                              None)
+  --format {view,yaml,json,csv}
+                              Output format (default: view table) (default:
+                              None)
+  --sort-columns SORT_COLUMNS
+                              Comma-separated columns to sort by (names,
+                              1-based indexes, or negatives from end:
+                              -1=last). Use --sort-columns=-1,1 when values
+                              start with '-'. (default: None)
+  --sort-mode {asc,desc}      Sort direction (default: asc) (default: None)
+  --wrap MODE|COL,...         Flexible table columns: they expand or shrink to the terminal. last (rightmost), first (leftmost), all (any column), or comma-separated names/indexes in priority order. Use --wrap=-1 when the value starts with '-'. Ignored when width is content or stdout is not a TTY. (default: None)
+
+parent options:
+  --log-colors, --no-log-colors
+                              Enable colored logs (default: on for TTY;
+                              override with CLAK_LOG_COLORS or this flag)
+  --version                   Print the installed version and exit.
+  -v, --verbose               Increase verbosity level (-v, -vv, -vvv, -vvvv)
+  --log-format {default,extended,audit,debug}
+                              Set log formatter
+  --trace, --no-trace         Enable trace logging on errors
+  --config CONFIG             Config file or directory. Overrides SUPERSHELF_CONFIG.
+  --profile PROFILE           Comma-separated profile names. Overrides SUPERSHELF_PROFILES.
+  --dry-run                   Report actions without changing anything.
+```
+<!-- /extract -->
+
+## supershelf record history
+
+<!-- extract: help record history -->
+```text
+usage: supershelf record history [-h] [--expand-keys | --no-expand-keys]
+                                 [--width {content,fit,terminal}]
+                                 [--columns COLUMNS]
+                                 [--add-index | --no-add-index]
+                                 [--format {view,yaml,json,csv}]
+                                 [--sort-columns SORT_COLUMNS]
+                                 [--sort-mode {asc,desc}]
+                                 [--wrap MODE|COL,...]
+                                 [--log-colors | --no-log-colors] [--version]
+                                 [-v]
+                                 [--log-format {default,extended,audit,debug}]
+                                 [--trace | --no-trace] [--config CONFIG]
+                                 [--profile PROFILE] [--dry-run]
+                                 [path]
+
+Show recorded events.
+
+positional arguments:
+  path                        Path relative to the input, as shown in the path column. Omit for every kept file. An exact file path selects that file. Anything else selects paths that start with it. (default: None)
+
+options:
+  -h, --help                  show this help message and exit
+
+Output options:
+  --expand-keys, --no-expand-keys
+                              Expand nested dict items into table columns
+                              (default: None)
+  --width {content,fit,terminal}
+                              Table width: content (size to data), fit (shrink
+                              if wider than terminal), terminal (use terminal
+                              width). No wrap when stdout is not a TTY.
+                              (default: None)
+  --columns COLUMNS           Comma-separated columns to display (names, 1-based indexes, or negatives from end: -1=last) (default: None)
+  --add-index, --no-add-index
+                              Include key/index column in the table (default:
+                              None)
+  --format {view,yaml,json,csv}
+                              Output format (default: view table) (default:
+                              None)
+  --sort-columns SORT_COLUMNS
+                              Comma-separated columns to sort by (names,
+                              1-based indexes, or negatives from end:
+                              -1=last). Use --sort-columns=-1,1 when values
+                              start with '-'. (default: None)
+  --sort-mode {asc,desc}      Sort direction (default: asc) (default: None)
+  --wrap MODE|COL,...         Flexible table columns: they expand or shrink to the terminal. last (rightmost), first (leftmost), all (any column), or comma-separated names/indexes in priority order. Use --wrap=-1 when the value starts with '-'. Ignored when width is content or stdout is not a TTY. (default: None)
+
+parent options:
+  --log-colors, --no-log-colors
+                              Enable colored logs (default: on for TTY;
+                              override with CLAK_LOG_COLORS or this flag)
+  --version                   Print the installed version and exit.
+  -v, --verbose               Increase verbosity level (-v, -vv, -vvv, -vvvv)
+  --log-format {default,extended,audit,debug}
+                              Set log formatter
+  --trace, --no-trace         Enable trace logging on errors
+  --config CONFIG             Config file or directory. Overrides SUPERSHELF_CONFIG.
+  --profile PROFILE           Comma-separated profile names. Overrides SUPERSHELF_PROFILES.
+  --dry-run                   Report actions without changing anything.
+```
+<!-- /extract -->
+
+## supershelf record duplicates
+
+<!-- extract: help record duplicates -->
+```text
+usage: supershelf record duplicates [-h] [--expand-keys | --no-expand-keys]
+                                    [--width {content,fit,terminal}]
+                                    [--columns COLUMNS]
+                                    [--add-index | --no-add-index]
+                                    [--format {view,yaml,json,csv}]
+                                    [--sort-columns SORT_COLUMNS]
+                                    [--sort-mode {asc,desc}]
+                                    [--wrap MODE|COL,...]
+                                    [--log-colors | --no-log-colors]
+                                    [--version] [-v]
+                                    [--log-format {default,extended,audit,debug}]
+                                    [--trace | --no-trace] [--config CONFIG]
+                                    [--profile PROFILE] [--dry-run]
+                                    [path]
+
+List documents that share a hash.
+
+positional arguments:
+  path                        Path relative to the input, as shown in the path column. Omit for every kept file. An exact file path selects that file. Anything else selects paths that start with it. (default: None)
+
+options:
+  -h, --help                  show this help message and exit
+
+Output options:
+  --expand-keys, --no-expand-keys
+                              Expand nested dict items into table columns
+                              (default: None)
+  --width {content,fit,terminal}
+                              Table width: content (size to data), fit (shrink
+                              if wider than terminal), terminal (use terminal
+                              width). No wrap when stdout is not a TTY.
+                              (default: None)
+  --columns COLUMNS           Comma-separated columns to display (names, 1-based indexes, or negatives from end: -1=last) (default: None)
+  --add-index, --no-add-index
+                              Include key/index column in the table (default:
+                              None)
+  --format {view,yaml,json,csv}
+                              Output format (default: view table) (default:
+                              None)
+  --sort-columns SORT_COLUMNS
+                              Comma-separated columns to sort by (names,
+                              1-based indexes, or negatives from end:
+                              -1=last). Use --sort-columns=-1,1 when values
+                              start with '-'. (default: None)
+  --sort-mode {asc,desc}      Sort direction (default: asc) (default: None)
+  --wrap MODE|COL,...         Flexible table columns: they expand or shrink to the terminal. last (rightmost), first (leftmost), all (any column), or comma-separated names/indexes in priority order. Use --wrap=-1 when the value starts with '-'. Ignored when width is content or stdout is not a TTY. (default: None)
 
 parent options:
   --log-colors, --no-log-colors

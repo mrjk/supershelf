@@ -21,6 +21,7 @@ from supershelf.match import (
     PatternTrial,
 )
 from supershelf.profile import ShelfProfile
+from supershelf.record import RecordReader, RecordSession
 from supershelf.scan import InputFile, filter_kept
 from supershelf.var_template import VarEnvironment
 from supershelf.vars import KindOverrideMode, VarPlan
@@ -366,8 +367,78 @@ class ScanCommand(Parser):
     inspect = Command(ScanInspectCommand, help="Show how match rules test kept files")
 
 
+class RecordIdentityFlag:
+    """Link rule shared by the commands that compare a scan with the database."""
+
+    record_identity = Argument(
+        "--record-identity",
+        help="Link rule for this run: path or hash. Overrides SUPERSHELF_RECORD_IDENTITY.",
+    )
+
+
+class RecordStatusCommand(ListViewMixin, RecordIdentityFlag, Parser):
+    """Compare matched files with the profile database."""
+
+    path = kept_path()
+
+    def cli_run(self, config=None, profile=None, path=None, record_identity=None, **_):
+        session = RecordSession.load(config, profile, record_identity)
+        return session.status(path)
+
+
+class RecordRunCommand(ListViewMixin, RecordIdentityFlag, Parser):
+    """Record matched files into the profile database."""
+
+    path = kept_path()
+
+    def cli_run(
+        self,
+        config=None,
+        profile=None,
+        path=None,
+        dry_run=False,
+        record_identity=None,
+        **_,
+    ):
+        session = RecordSession.load(config, profile, record_identity)
+        return session.run(path, dry_run=bool(dry_run))
+
+
+class RecordHistoryCommand(ListViewMixin, Parser):
+    """Show recorded events."""
+
+    path = kept_path()
+
+    def cli_run(self, config=None, profile=None, path=None, **_):
+        return RecordReader.load(config, profile).history(path)
+
+
+class RecordDuplicatesCommand(ListViewMixin, Parser):
+    """List documents that share a hash."""
+
+    path = kept_path()
+
+    def cli_run(self, config=None, profile=None, path=None, **_):
+        return RecordReader.load(config, profile).duplicates(path)
+
+
+class RecordCommand(Parser):
+    """Record matched files and read that history."""
+
+    status = Command(
+        RecordStatusCommand,
+        help="Compare matched files with the profile database",
+    )
+    run = Command(RecordRunCommand, help="Record matched files into the profile database")
+    history = Command(RecordHistoryCommand, help="Show recorded events")
+    duplicates = Command(
+        RecordDuplicatesCommand,
+        help="List documents that share a hash",
+    )
+
+
 class App(LoggingOptMixin, GlobalFlags, Parser):
-    """Load supershelf profiles and scan their inputs."""
+    """Load supershelf profiles, scan their inputs, and record matched files."""
 
     version = Argument(
         "--version",
@@ -392,6 +463,7 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
         help="Print JSON Schema for declared variables and kinds",
     )
     scan = Command(ScanCommand, help="Scan profile inputs")
+    record = Command(RecordCommand, help="Record matched files and read that history")
 
 
 def main() -> None:

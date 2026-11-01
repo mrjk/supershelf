@@ -707,3 +707,109 @@ Prune flags. `--missing` does not also drop empty columns. `--empty-fields` does
 - KIND limits the output to that kind. An unknown kind stops the command.
   A known kind with no matched files prints the title and no rows.
 - No KIND prints every kind that has a matched file.
+
+## 4 Record
+
+`supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` stays unused. This step does not write an output tree.
+
+`scan files`, `scan kinds`, `scan vars`, `scan inspect`, `schema`, and `profiles` do not create that file. `data` does not create it either.
+
+The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. `record` does not call the kind-file commit, so it does not create or append a kind file.
+
+### 4.1 Commands
+
+`PATH` is the optional scan selector from 2.1.1. A value that matches no kept file and no in-scope document stops `record status` and `record run`. `record history` and `record duplicates` do not scan. A selector that matches nothing there prints no rows.
+
+Columns are a clak table.
+
+#### record status
+
+- supershelf record status [PATH]
+- Prints every in-scope live matched file, plus every in-scope document this scan would mark missing or unmatched.
+- Writes nothing. A missing sqlite file stays missing. An existing file is opened read-only.
+- Columns: profile, input, path, status, hash, generation, kind, rule, duplicates.
+- input is the 1-based index. path is relative to the input directory.
+- status is `new`, `generation`, `move`, `vars`, `missing`, `present`, `unmatched`, `refresh`, or `unchanged`.
+- duplicates is how many other documents would be present with that same current hash after this plan.
+- `--record-identity` is `path` or `hash`. 4.2.
+
+#### record run
+
+- supershelf record run [PATH]
+- Prints the status rows whose status is not `unchanged`, then writes them.
+- `--dry-run` prints those rows and writes nothing. It does not create the sqlite file, its parents, or a journal.
+- A run with no changes does not create a missing sqlite file.
+- A run with changes creates parent directories, then writes one transaction per profile.
+- A later profile can commit after an earlier profile already committed.
+- `--record-identity` is the same flag as `record status`.
+
+#### record history
+
+- supershelf record history [PATH]
+- Reads events in id order. It does not scan and does not write.
+- No database means no rows.
+- PATH matches a document when any of its event paths, or its current path, equals the selector or starts with it. The command then prints every event for that document, so a move is still found from the old path.
+- Columns: profile, document, seq, event, identity, input, path, hash, generation, kind, rule, at.
+
+#### record duplicates
+
+- supershelf record duplicates [PATH]
+- Reads the database. It does not scan and does not write.
+- A hash is listed when two or more documents have carried it on any event.
+- PATH filters on the document's current relative path.
+- Columns: profile, hash, document, current, path, generation.
+- current is `yes` when that hash is the document's current hash, and `no` when the hash is an earlier generation.
+
+### 4.2 Link
+
+- A document has a stable integer id. Rows are never deleted. Revert is a later walk of the events.
+- The location is the absolute input directory plus the relative path. The input index is stored. Reordering inputs is not a move. A missing input directory leaves that input's documents untouched.
+- The same hash on two live matched files is two documents. Duplicates are a query on the shared hash.
+- `config.record_identity` is `path` or `hash`. Packaged default is `path`.
+  Precedence is `--record-identity`, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then `path`.
+  A bad word, including a different case or an empty string, stops before the walk.
+  The message names the flag, the environment variable, or `config.record_identity`.
+  Each event stores the rule that decided it.
+  A later run that uses the other rule warns, leaves old events as they are, and decides new links with the new rule.
+- `path`, the default. A matched file still at the document's location keeps that document. New bytes there are a new generation. A move happens when that location is gone, exactly one in-scope live file has the current hash, and only one in-scope document wants that hash.
+- `hash`. The current hash owns the document. Exactly one in-scope live file with that hash is that document, including when the old path now has different bytes. Those new bytes are a new document. A new generation happens when the old hash is not live in scope and the new bytes sit at the document's last path.
+- Both rules agree on a rename plus an edit. The old path is gone and the old hash is not live, so the old document becomes missing and the new path is a new document.
+- A file that leaves the walked inputs becomes `missing`. The row and its events stay. A second run that still does not see it does not append another missing event.
+- A file that is still in the walk, and that no rule matches, becomes `unmatched`. The last hash, kind, rule, and variables stay. A never-recorded unmatched file is not inserted. A later match appends `present`, `vars`, or `generation`.
+- PATH limits the observed set to matching paths in inputs that were walked. The run does not mark, move, or insert anything outside that set. A filtered run can mark a selected path missing while those bytes still exist outside the filter. A full run reconciles that.
+- An mtime, ctime, or input-index change updates the current row and does not append an event. The status word is `refresh`.
+- A kind, rule, or variable change appends `vars` and does not bump the generation. A generation or a move carries the new variable snapshot in that one event.
+- Coming back from `missing` or `unmatched` with the same hash and the same variables appends `present`. A hash change on that return is `generation`. A variable change with the same hash is `vars`.
+
+#### Cases
+
+Two copies. `a.pdf` and `b.pdf` have the same sha256. The run stores two documents. `record duplicates` lists that hash twice, and both rows say current `yes`.
+
+Move. A recorded file leaves its path and the same hash is the only live file at a new path. The same document id follows it. The generation number stays. `record history` with the old path still prints the move.
+
+Generation. New bytes replace the file at the recorded path, and the old hash is not live anywhere in scope. The document gains a generation. The previous generation stays in the history.
+
+Collision, path. The old path now has new bytes, and the old hash is live at a new path. `record_identity` is `path`. The old path keeps the document and gains a generation. The new path is a second document. The shared hash shows up in `record duplicates`. The older document's row has current `no`.
+
+Collision, hash. The same files, with `record_identity` set to `hash`. The old hash moves to the new path. The new bytes at the old path are a new document.
+
+Rename plus edit. The old path is gone and the new path has a different hash. The old document is missing. The new path is a new document. `path` and `hash` agree.
+
+Unmatched. The file is still in the input and no rule matches. The document becomes unmatched. The row stays. A later match with the same bytes appends `present`.
+
+Filter. PATH names one file that disappeared. Another input still has those bytes. The named document becomes missing. The other input's document is not moved and is not marked missing. A run with no PATH moves the document onto the surviving path when the move rule matches.
+
+Refresh. Only mtime changes. Status is `refresh`. History gains no row.
+
+Identity switch. The database was written with `path`. This run passes `--record-identity hash`. The command warns. Old events keep `path`. New events store `hash`.
+
+### 4.3 Writes
+
+- A resolve error writes nothing.
+- A matched file whose absolute path is the profile sqlite file is skipped, with a warning. That location is left out of this run.
+- The sqlite parent must be a directory. A parent that is a file stops the command and names `database_file`.
+- A path that exists and is not a supershelf database stops the command. The tip says to point `database_file` at a new path.
+- Schema version is `1`. A different version stops the same way. This step does not migrate.
+- A locked file stops the command. The tip says to run the command again.
+- `--dry-run` on `record run` reports the rows that would change and creates nothing.
+- `record status`, `record history`, and `record duplicates` do not write. Passing `--dry-run` to them changes nothing.

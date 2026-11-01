@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from supershelf.constants import KIND_OVERRIDE_MODES
+from supershelf.constants import KIND_OVERRIDE_MODES, RECORD_IDENTITIES
 from supershelf.errors import SupershelfError
 
 _PACKAGE_FILE = "default.toml"
@@ -24,6 +24,7 @@ class PackagedConfig(BaseModel):
     root_dir: str
     database_file: str
     cache_file: str
+    record_identity: str
     kind_overrides_mode: str
     kind_overrides_date_format: str | None = None
     var_modules: list[str] | None = None
@@ -39,6 +40,13 @@ class PackagedConfig(BaseModel):
             raise ValueError(
                 "kind_overrides_mode must be auto, manual, always, or disabled"
             )
+        return value
+
+    @field_validator("record_identity")
+    @classmethod
+    def identity_is_known(cls, value: str) -> str:
+        if value not in RECORD_IDENTITIES:
+            raise ValueError("record_identity must be path or hash")
         return value
 
 
