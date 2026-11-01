@@ -399,21 +399,24 @@ def test_kind_file_search_logs_a_cached_file_for_the_next_kind(
     ]
 
 
-def test_override_replaces_kind(tmp_path: Path) -> None:
-    plan = _plan(
-        {
-            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "a.txt"}],
-            "overrides": [{"path": "a.txt", "vars": {"__kind__": "custom", "owner": "zoe"}}],
-        },
-        tmp_path,
-    )
-    file = _file()
-    match = _match()
-    resolved = plan.resolve(file, match, tmp_path)
-    assert resolved.kind == "custom"
-    assert resolved.rule == "notes"
-    assert dict(resolved.items)["__kind__"] == "custom"
-    assert dict(resolved.items)["owner"] == "zoe"
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        [{"path": "a.txt", "vars": {"owner": "zoe"}}],
+        [],
+        None,
+    ],
+)
+def test_overrides_key_is_rejected(tmp_path: Path, overrides: object) -> None:
+    with pytest.raises(VarConfigError, match="overrides is not a profile key") as caught:
+        _plan(
+            {
+                "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "a.txt"}],
+                "overrides": overrides,
+            },
+            tmp_path,
+        )
+    assert caught.value.advice == "Per-file values belong in the kind file."
 
 
 def test_profile_scope_is_readable_and_not_printed(tmp_path: Path) -> None:
@@ -480,17 +483,10 @@ def _kind_document(path: str, **config: object) -> dict[str, object]:
 def test_kind_row_is_literal_and_follows_the_rule(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,owner,vendor\na.txt,{{ missing }},FromKind\n", encoding="utf-8")
-    plan = _plan(
-        {
-            **_kind_document("{{ __root_dir__ }}/note.csv"),
-            "overrides": [{"path": "a.txt", "vars": {"note": "{{ owner }}"}}],
-        },
-        tmp_path,
-    )
+    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path)
     values = _values(plan)
     assert values["owner"] == "{{ missing }}"
     assert values["vendor"] == "FromKind"
-    assert values["note"] == "{{ missing }}"
 
 
 def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
@@ -981,18 +977,16 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
                     "vars": {"vendor": "Bank2000"},
                 }
             ],
-            "overrides": [{"path": "a.txt", "vars": {"vendor": "Final"}}],
         },
         tmp_path,
     )
     resolved = plan.resolve(_file(), _match(), Path("/in"))
 
-    assert dict(resolved.items)["vendor"] == "Final"
+    assert dict(resolved.items)["vendor"] == "KindCo"
     assert resolved.sources["vendor"] == (
         "default",
         "rule:notes",
         f"kind:{kind}",
-        "override:a.txt",
     )
     assert resolved.sources["__kind__"] == ("fact",)
     text = str(resolved.present(None))
@@ -1006,11 +1000,11 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
         line.split(":", 1)[0] for line in lines
     )
     assert len(lines) == len(source_lines)
-    vendor_at = lines.index("vendor: Final")
+    vendor_at = lines.index("vendor: KindCo")
     assert source_lines[vendor_at] == ", ".join(resolved.sources["vendor"])
     assert "sources:" not in text
     assert "__kind__" not in resolved.present("json")
-    assert resolved.present("json")["vendor"]["value"] == "Final"
+    assert resolved.present("json")["vendor"]["value"] == "KindCo"
     assert resolved.present("json", show_all=True)["__kind__"]["value"] == "note"
 
 

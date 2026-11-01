@@ -58,9 +58,7 @@ OP_HARDLINK = "hardlink"
 OUTPUT_OPERATIONS = (OP_COPY, OP_SYMLINK, OP_HARDLINK)
 SCHEMA_VERSION = "2"
 KEY_VAR_MODULES = "var_modules"
-KEY_OVERRIDES = "overrides"
 KEY_RULE_VARS = "vars"
-KEY_OVERRIDE_PATH = "path"
 KEY_VARS_SCHEMA = "vars_schema"
 KEY_KIND_SCHEMA = "kind_schema"
 
@@ -87,7 +85,6 @@ SOURCE_FACT = "fact"
 SOURCE_DEFAULT = "default"
 SOURCE_RULE = "rule"
 SOURCE_KIND = "kind"
-SOURCE_OVERRIDE = "override"
 
 VAR_KIND = "__kind__"
 VAR_RULE_NAME = "__rule_name__"

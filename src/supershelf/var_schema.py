@@ -731,7 +731,7 @@ class KindCatalog:
         compile_source: Callable[[str], None] | None,
     ) -> VarSpec:
         label = f"kind_schema.{kind}.vars_schema.{name}"
-        _check_name(name, label)
+        check_var_name(name, label)
         key = str(name)
         if key in _LOCKED_BUILTINS:
             raise VarConfigError(
@@ -936,7 +936,7 @@ class VarCatalog:
         declared: list[str] = []
         for name, body in raw.items():
             label = f"vars_schema.{name}"
-            _check_name(name, label)
+            check_var_name(name, label)
             if not isinstance(body, dict):
                 raise VarConfigError(
                     f"{label} must be a mapping",
@@ -1033,12 +1033,12 @@ class VarCatalog:
             )
         for name, value in raw.items():
             label = f"default_vars.{name}"
-            _check_name(name, label)
+            check_var_name(name, label)
             key = str(name)
             if key in _LOCKED_BUILTINS:
                 raise VarConfigError(
                     f"default_vars cannot set {key}",
-                    advice="Only an override may set __kind__. Other internal names are fixed.",
+                    advice="__kind__ stays the kind from the match rule. Other internal names are fixed.",
                 )
             spec = specs.get(key)
             if spec is None:
@@ -1058,7 +1058,7 @@ class VarCatalog:
 
     @staticmethod
     def _implicit(name: str, label: str) -> VarSpec:
-        _check_name(name, label)
+        check_var_name(name, label)
         if name.startswith("__") and name not in _MANAGED:
             raise VarConfigError(
                 f"{label} is not a supershelf variable",
@@ -1090,7 +1090,7 @@ def cast_value(spec: VarSpec, raw: object, *, allow_typed: bool = False) -> Cast
 
 
 
-def _check_name(name: object, label: str) -> None:
+def check_var_name(name: object, label: str) -> None:
     if not isinstance(name, str) or _IDENT.fullmatch(name) is None:
         raise VarConfigError(
             f"{label} is not a variable name",

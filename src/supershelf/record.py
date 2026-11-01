@@ -32,7 +32,6 @@ from supershelf.constants import (
     STATUS_DUPLICATE,
     STATUS_REFRESH,
     STATUS_UNCHANGED,
-    TEMPLATE_MARKERS,
 )
 from supershelf.database import (
     DatabaseChange,
@@ -45,6 +44,7 @@ from supershelf.defaults import PACKAGED
 from supershelf.errors import RecordConfigError, SupershelfError
 from supershelf.profile import ShelfProfile
 from supershelf.scan import InputFile, InputScanResult, KeptPath
+from supershelf.var_template import is_template
 
 
 class RecordIdentity(WordChoice):
@@ -181,7 +181,7 @@ class RecordIdentity(WordChoice):
 
     @staticmethod
     def _templated(word: str) -> bool:
-        return any(marker in word for marker in TEMPLATE_MARKERS)
+        return is_template(word)
 
     @classmethod
     def _rule_name(cls, item: Mapping[str, Any], index: int) -> str:
@@ -233,8 +233,7 @@ class LiveFile:
         steps: tuple[str, ...],
     ) -> LiveFile:
         """Build a live file from a walk result and its resolved variables."""
-        suffix = found.suffix
-        extension = suffix[1:] if suffix.startswith(".") else suffix
+        extension = found.extension
         if not found.sha256:
             raise SupershelfError(
                 f"Profile {result.profile} has no hash for {found.path}",

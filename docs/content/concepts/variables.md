@@ -2,9 +2,9 @@
 
 `scan vars` takes the kept files, then the matched set, and prints one row per matched file. Columns: `profile`, `input`, `path`, `kind`, `rule`, `vars`, `sources`.
 
-`kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each set variable is one line: the name, `: `, then the display string. Names are sorted alphabetically. An unset variable is left out. `sources` is the next column. It has one line per name, in that same order. Each line is the labels that wrote the name, joined by `, `. `csv` uses those same two cells. `--format json` and `--format yaml` omit the `sources` column. They replace `vars` with one object per name: `value` is the Python value, and `value_sources` is the label list. `display` is not in the object. A float can have `value` `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling for both `value` and the table.
+`kind` is `__kind__` from the match rule. `rule` stays the match rule name. `vars` is one cell. Each set variable is one line: the name, `: `, then the display string. Names are sorted alphabetically. An unset variable is left out. `sources` is the next column. It has one line per name, in that same order. Each line is the labels that wrote the name, joined by `, `. `csv` uses those same two cells. `--format json` and `--format yaml` omit the `sources` column. They replace `vars` with one object per name: `value` is the Python value, and `value_sources` is the label list. `display` is not in the object. A float can have `value` `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling for both `value` and the table.
 
-Source labels are `fact`, `default`, `rule:<rule name>`, `kind:<kind file path>`, and `override:<path pattern>`. A later write appends a label. It keeps the earlier ones. The last label is the winner. A layer that misses does not add a label and does not remove earlier ones.
+Source labels are `fact`, `default`, `rule:<rule name>`, and `kind:<kind file path>`. A later write appends a label. It keeps the earlier ones. The last label is the winner. A layer that misses does not add a label and does not remove earlier ones.
 
 Internal names are left out of `vars` and `sources`, and out of the json and yaml objects, unless `--all` is set. `__date__`, schema names, regex groups, and other assigned names stay.
 
@@ -22,7 +22,7 @@ Profile scope from [Paths](paths.md) is available to templates. It is not printe
 
 Internal facts stay in scope for templates. `scan vars` prints them only with `--all`:
 
-- `__kind__`: the kind from matching, until an override replaces it
+- `__kind__`: the kind from matching
 - `__rule_name__`: the match rule name
 - `__ctime__` and `__mtime__`: the stored UTC ISO-8601 timestamps, not `default_date_format`
 - `__file_hash__`: lowercase sha256
@@ -40,16 +40,15 @@ Assignments are the user layers. Later wins on the same key. Each layer is appli
 
 1. `default_vars`
 2. `match_rules` `vars` for the winning rule.
-3. The kind-file row for that path. See [Kind files](kind-files.md).
-4. The first matching `overrides` item. This is the highest layer, and the only layer that may set `__kind__`.
+3. The kind-file row for that path. See [Kind files](kind-files.md). This is the last assignment layer.
 
-`default_vars` and rule `vars` must not set an internal name. A kind-file row must not either. Only overrides may set `__kind__`. That changes the printed kind and the `__kind__` fact seen by later override templates. It does not change `rule`, and it does not load another kind file. Overrides must not set the other internal names.
+`default_vars` and rule `vars` must not set an internal name. A kind-file row must not either. `__kind__` stays the kind from the match rule.
 
 `__date__` is not an internal. Any of these layers may set it. The filename does not. A stem that is a date stays `__file_stem__`. To use it, write a candidate such as `{{ regex_time_var(__file_stem__, __default_date_format__) }}`. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
 
 Omitted `default_vars`, omitted rule `vars`, or no kind-file cells for that path means that layer is empty.
 
-A later write replaces the display string and keeps the name's earlier source labels. The kind-file row is applied after the rule template has stored its string, so the rule does not read the cell. A later override template does. The table sorts every printed name alphabetically, and the `sources` column follows that order.
+A later write replaces the display string and keeps the name's earlier source labels. The kind-file row is applied after the rule template has stored its string, so the rule does not read the cell. The table sorts every printed name alphabetically, and the `sources` column follows that order.
 
 ## Types
 
@@ -85,9 +84,9 @@ When the kind lists a name the profile also has, files of that kind use the kind
 
 ## Candidates
 
-A var table is a mapping. This section is `default_vars`, rule `vars`, and `overrides`. A kind-file cell is one string, then cast to the name's type. Each key matches `[A-Za-z_][A-Za-z0-9_]*`. Each value is a string, or a list of strings. A string is one candidate. A list is an ordered fallback. An empty list stops the command. Numbers, booleans, nulls, dates, and nested mappings stop the command in these layers. Quote scalars such as `2026-04-25`. In YAML, also quote `yes`, `no`, `on`, and `off`. Those words become booleans before Supershelf reads them, and a boolean is a config error here. Typed literals belong on `vars_schema.<name>.default`.
+A var table is a mapping. This section is `default_vars` and rule `vars`. A kind-file cell is one string, then cast to the name's type. Each key matches `[A-Za-z_][A-Za-z0-9_]*`. Each value is a string, or a list of strings. A string is one candidate. A list is an ordered fallback. An empty list stops the command. Numbers, booleans, nulls, dates, and nested mappings stop the command in these layers. Quote scalars such as `2026-04-25`. In YAML, also quote `yes`, `no`, `on`, and `off`. Those words become booleans before Supershelf reads them, and a boolean is a config error here. Typed literals belong on `vars_schema.<name>.default`.
 
-A candidate with no `{{`, `{%`, or `{#` is a literal string. It is not compiled. Any other candidate is a Jinja template. Each distinct template source is compiled once for that profile. Another profile in the same command compiles it again. Rendered results are not cached. A syntax error stops the command when that template is loaded. Shape errors in `default_vars`, rule `vars`, and `overrides` are checked before the walk. A kind file is checked the first time that kind and input need it. `kind_overrides_sep` and `kind_overrides_date_format` are checked before the walk.
+A candidate with no `{{`, `{%`, or `{#` is a literal string. It is not compiled. Any other candidate is a Jinja template. Each distinct template source is compiled once for that profile. Another profile in the same command compiles it again. Rendered results are not cached. A syntax error stops the command when that template is loaded. Shape errors in `default_vars` and rule `vars` are checked before the walk. A kind file is checked the first time that kind and input need it. `kind_overrides_sep` and `kind_overrides_date_format` are checked before the walk.
 
 Jinja uses strict undefined names. `autoescape` is off. An unknown name fails that candidate. The rendered string is then cast to the name's type. A cast miss or a validation miss fails that candidate. The first candidate that does not fail is kept. The list is not kept. Later templates read the display string. Inserted strings are not rendered again. A non-template literal that cannot cast stops the command when the table is loaded, including when a later candidate might have worked.
 
@@ -98,9 +97,3 @@ An empty string is a success for `text`. For `int`, `float`, `bool`, `date`, `ti
 If every candidate in a layer misses, that layer does not write the name. An earlier value stays. When no layer has written it, the name stays unset and is left off the row. The command continues. `mandatory` runs after the last layer, and `None` stops the file. A fact or a kind-file cell that cannot cast still stops the file. There is no next candidate for those. This version does not write output paths.
 
 A function that has nothing to return fails that candidate only, by raising `VarCandidateError`. Any other exception from a template stops the command. Built-in commands are documented in [Template commands](template-commands.md).
-
-## Overrides
-
-`overrides` is an optional list. Each item has `path` and `vars`. Unknown keys are ignored. `path` is a glob, full-matched against the path relative to the input, with the same `*` and `**` rules as include. A path with no glob characters is an exact match. The first matching item wins. Later items are not merged. An item that matches nothing is fine. Paths are not templated.
-
-`__date__` on an override is already `YYYY-MM-DD`. Quote it. An unquoted YAML date is a config error.

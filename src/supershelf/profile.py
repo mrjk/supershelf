@@ -8,10 +8,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from supershelf.common import resolve_user_path
+from supershelf.common import config_section as read_config_section
+from supershelf.common import render_user_path
 from supershelf.configs import ShelfConfig
 from supershelf.constants import (
-    CONFIG_SECTION,
     KEY_CACHE_FILE,
     KEY_DATABASE_FILE,
     KEY_DEFAULT_DATE_FORMAT,
@@ -30,7 +30,6 @@ from supershelf.constants import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
-from supershelf.template import Template
 
 if TYPE_CHECKING:
     from supershelf.scan import InputScanResult
@@ -61,7 +60,7 @@ class ShelfProfile:
     @classmethod
     def from_config(cls, shelf_config: ShelfConfig) -> ShelfProfile:
         document = shelf_config.config
-        section = cls.config_section(document)
+        section = read_config_section(document)
         directory = shelf_config.path.parent
         date_format = cls._date_format(section)
         scope: dict[str, Any] = {
@@ -123,19 +122,18 @@ class ShelfProfile:
         *,
         label: str,
     ) -> Path:
-        rendered = Template(scope).render(template).strip()
-        if not rendered:
-            raise SupershelfError(f"{label} is empty")
-        return resolve_user_path(rendered, base).resolve()
+        return render_user_path(
+            template,
+            scope,
+            base,
+            empty_message=f"{label} is empty",
+            resolve=True,
+        )
 
     @staticmethod
     def config_section(document: Mapping[str, Any]) -> dict[str, Any]:
-        section = document.get(CONFIG_SECTION)
-        if section is None:
-            return {}
-        if not isinstance(section, dict):
-            raise SupershelfError("config must be a mapping")
-        return section
+        """The `config` mapping. A missing key is an empty mapping."""
+        return read_config_section(document)
 
     @staticmethod
     def _date_format(section: Mapping[str, Any]) -> str:

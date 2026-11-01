@@ -19,11 +19,11 @@ The goal is to read metadata, and text, from a kept file by calling an external 
 
 `scan files` and `scan kinds` do not call drivers and do not open the database. `--quick` stays on `scan files` only.
 
-`scan vars` and `record run` call a driver only while a var candidate renders `meta()`. The layers stay facts, then `default_vars`, then rule `vars`, then the kind file, then overrides. A profile that never calls `meta()` does nothing new.
+`scan vars` and `record run` call a driver only while a var candidate renders `meta()`. The layers stay facts, then `default_vars`, then rule `vars`, then the kind file. A profile that never calls `meta()` does nothing new.
 
-A candidate that already succeeded skips the rest of the list, so a filename group written first never opens the file. A kind-file cell is a literal. It does not call `meta()`. An override template can.
+A candidate that already succeeded skips the rest of the list, so a filename group written first never opens the file. A kind-file cell is a literal. It does not call `meta()`.
 
-The source label stays the layer that wrote the name: `default`, `rule:<name>`, `kind:<path>`, or `override:<path>`. There is no `meta:` label.
+The source label stays the layer that wrote the name: `default`, `rule:<name>`, or `kind:<path>`. There is no `meta:` label.
 
 Locked internals stay locked. `__date__` may be set by a candidate. The result must be `YYYY-MM-DD` or that candidate misses.
 
@@ -31,7 +31,7 @@ Var resolution still requires sha256. That hash is the cache key. A file with no
 
 ## meta()
 
-`meta(driver, field)` is one Jinja command. Use it in `default_vars`, rule `vars`, and overrides. `field` may be omitted only when that driver has a single text result (`text`). Omitting it on any other driver fails the candidate.
+`meta(driver, field)` is one Jinja command. Use it in `default_vars` and rule `vars`. `field` may be omitted only when that driver has a single text result (`text`). Omitting it on any other driver fails the candidate.
 
 ```yaml
 default_vars:

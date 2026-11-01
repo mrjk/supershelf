@@ -40,7 +40,6 @@ Other keys under `config` are stored. This version does not interpret them.
 | `default_vars` | mapping | none | Lowest assignment layer. See [Variables](../concepts/variables.md). |
 | `vars_schema` | mapping | none | Type of each variable name. A missing name is `text`. See [Variables](../concepts/variables.md). |
 | `kind_schema` | mapping | none | Per-kind names that point at `vars_schema`. See [Variables](../concepts/variables.md). |
-| `overrides` | list of mappings | none | Highest assignment layer. First matching path wins. |
 
 ### inputs item
 
@@ -70,15 +69,6 @@ Unknown keys on an input stop the command.
 | `record_identity` | string or list of strings | the profile default | Fallback order for this rule. Omitted or null inherits `config.record_identity`. Ignored by scan commands. Read by `record status` and `record run`. |
 
 A rule needs `name` or `kind`, and at least one pattern. Other unknown keys are ignored while matching.
-
-### overrides item
-
-| Key | Type | Role |
-| --- | --- | --- |
-| `path` | string | Glob, full-matched against the relative path. Not a template. |
-| `vars` | mapping | Values for a hit. The only layer that may set `__kind__`. |
-
-Unknown keys on an override item are ignored. `path` and `vars` are required.
 
 ### vars_schema item
 
@@ -123,7 +113,7 @@ Each mapping:
 
 ### Variable values
 
-In `default_vars`, rule `vars`, and override `vars`, each value is a string or a list of strings. Quote scalars such as dates. An empty list stops the command. A kind-file cell is one string, not a list. After a candidate or a cell is accepted, it is cast to the name's type. A typed literal belongs on `vars_schema.<name>.default`. Details are in [Variables](../concepts/variables.md) and [Kind file](kind-file.md).
+In `default_vars` and rule `vars`, each value is a string or a list of strings. Quote scalars such as dates. An empty list stops the command. A kind-file cell is one string, not a list. After a candidate or a cell is accepted, it is cast to the name's type. A typed literal belongs on `vars_schema.<name>.default`. Details are in [Variables](../concepts/variables.md) and [Kind file](kind-file.md).
 
 ## Environment
 

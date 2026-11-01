@@ -549,7 +549,7 @@ A candidate that already succeeded skips the rest of the list. A kind-file cell 
 
 #### meta()
 
-`meta(driver, field)` is one Jinja command. Use it in `default_vars`, rule `vars`, and overrides. `field` may be omitted only when that driver has a single text result (`text`). Omitting it on any other driver fails the candidate.
+`meta(driver, field)` is one Jinja command. Use it in `default_vars` and rule `vars`. `field` may be omitted only when that driver has a single text result (`text`). Omitting it on any other driver fails the candidate.
 
 - An unknown driver name stops the command. When the driver argument is a string literal, that check happens when the template is loaded. A non-literal driver is checked at render.
 - A disabled driver, a file the driver does not accept, a missing field, a blank value, a timeout, a non-zero exit, or undecodable stdout fails that candidate only. The next string runs.

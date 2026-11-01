@@ -9,26 +9,15 @@ from pathlib import Path
 import pytest
 
 from supershelf.cli import App
-from supershelf.configs import ShelfConfig
-from supershelf.constants import ENV_RECORD_IDENTITY, LOGGER_NAME
+from supershelf.constants import LOGGER_NAME
 from supershelf.errors import SupershelfError
-from supershelf.profile import ShelfProfile
 from supershelf.scan import InputFile, InputScanResult, KeptPath, ResolvedInput
+from tests.helpers import isolate_env
+from tests.helpers import load_profile as _profile
+from tests.helpers import write_text as _write
 
 HELLO = b"hello"
 HELLO_HASH = hashlib.sha256(HELLO).hexdigest()
-
-
-def _profile(tmp_path: Path, body: str, name: str = "work") -> ShelfProfile:
-    path = tmp_path / f"profile.{name}.toml"
-    path.write_text(body, encoding="utf-8")
-    loaded = ShelfConfig.from_path(path, logging.getLogger(LOGGER_NAME))
-    return ShelfProfile.from_config(loaded)
-
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
 
 
 def _tree(root: Path) -> None:
@@ -359,11 +348,7 @@ def test_scan_kinds_ignores_record_identity_key(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("SUPERSHELF_CONFIG", raising=False)
-    monkeypatch.delenv("SUPERSHELF_PROFILES", raising=False)
-    monkeypatch.delenv(ENV_RECORD_IDENTITY, raising=False)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    isolate_env(monkeypatch, tmp_path)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "a.pdf").write_bytes(b"bank")

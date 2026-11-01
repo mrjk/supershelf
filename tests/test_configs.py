@@ -15,6 +15,7 @@ from supershelf.constants import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
+from tests.helpers import write_text as _write
 
 WORK_TOML = """\
 note = "keep"
@@ -32,11 +33,6 @@ HOME_YAML = """\
 config:
   profile: home
 """
-
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
 
 
 def _load(tmp_path: Path, **kwargs) -> ShelfConfigs:

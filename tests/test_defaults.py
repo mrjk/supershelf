@@ -1,17 +1,15 @@
 """Packaged defaults and the null-is-unset fallback."""
 
-import logging
 from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
-from supershelf.configs import ShelfConfig
-from supershelf.constants import LOGGER_NAME, VAR_DEFAULT_DATE_FORMAT
+from supershelf.constants import VAR_DEFAULT_DATE_FORMAT
 from supershelf.defaults import PACKAGED, load_packaged
 from supershelf.errors import SupershelfError, VarConfigError
-from supershelf.profile import ShelfProfile
 from supershelf.vars import KindCsvSep, KindDateFormat, KindFiles, KindOverrideMode
+from tests.helpers import load_profile as _profile
 
 
 def _shipped_text() -> str:
@@ -22,13 +20,6 @@ def _write_packaged(tmp_path: Path, text: str) -> Path:
     path = tmp_path / "default.toml"
     path.write_text(text, encoding="utf-8")
     return path
-
-
-def _profile(tmp_path: Path, body: str, suffix: str = ".toml") -> ShelfProfile:
-    path = tmp_path / f"profile.work{suffix}"
-    path.write_text(body, encoding="utf-8")
-    loaded = ShelfConfig.from_path(path, logging.getLogger(LOGGER_NAME))
-    return ShelfProfile.from_config(loaded)
 
 
 def _inbox(tmp_path: Path) -> None:

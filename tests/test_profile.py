@@ -1,22 +1,12 @@
 """Rendered profile paths."""
 
-import logging
 from pathlib import Path
 
 import pytest
 
-from supershelf.configs import ShelfConfig
-from supershelf.constants import LOGGER_NAME
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
-from supershelf.profile import ShelfProfile
-
-
-def _profile(tmp_path: Path, body: str, name: str = "work") -> ShelfProfile:
-    path = tmp_path / f"profile.{name}.toml"
-    path.write_text(body, encoding="utf-8")
-    loaded = ShelfConfig.from_path(path, logging.getLogger(LOGGER_NAME))
-    return ShelfProfile.from_config(loaded)
+from tests.helpers import load_profile as _profile
 
 
 def test_omitted_paths_use_the_config_directory(tmp_path: Path) -> None:

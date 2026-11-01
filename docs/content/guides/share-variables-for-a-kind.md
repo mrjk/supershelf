@@ -1,6 +1,6 @@
 # Set a value in the kind file
 
-A kind file stores one row for a path. `scan vars` applies that row after the winning rule's `vars` and before `overrides`. The cell replaces the value the rule stored. The lookup and the modes are in [Kind files](../concepts/kind-files.md). The file shape is in [Kind file](../reference/kind-file.md).
+A kind file stores one row for a path. `scan vars` applies that row after the winning rule's `vars`. This is the last assignment layer. The cell replaces the value the rule stored. The lookup and the modes are in [Kind files](../concepts/kind-files.md). The file shape is in [Kind file](../reference/kind-file.md).
 
 For profile `books` and kind `invoice`, the first default path is `profile.books.invoice.csv` under the profile root.
 
@@ -42,6 +42,6 @@ The default mode is `auto`. When the CSV already exists, invoice paths that are 
 
 `manual` reads the file and does not append. `always` creates `profile.books.invoice.csv` when no candidate exists. `disabled` ignores kind files. `--kind-overrides-mode` sets the mode for this command. `--dry-run` reads and does not write. `-v` shows the dry-run message when a file would change.
 
-The kind in the filename is the kind from the match rule. An override that changes `__kind__` does not switch files.
+The kind in the filename is the kind from the match rule.
 
 The next page loads more than one profile: [Use several profiles](use-several-profiles.md).

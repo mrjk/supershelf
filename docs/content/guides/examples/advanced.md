@@ -206,13 +206,6 @@ inbox/
     [match_rules.vars]
     vendor = "Metro Phone"
     amount = ["{{ amount }}"]
-
-    [[overrides]]
-    path = "home/northline/INV00000001_TR00000001_08292025.pdf"
-
-    [overrides.vars]
-    __date__ = "2025-08-29"
-    vendor = "Northline Telecom"
     ```
 
 === "YAML"
@@ -241,15 +234,9 @@ inbox/
           vendor: Metro Phone
           amount:
             - "{{ amount }}"
-
-    overrides:
-      - path: home/northline/INV00000001_TR00000001_08292025.pdf
-        vars:
-          __date__: "2025-08-29"
-          vendor: Northline Telecom
     ```
 
-`{{ amount }}` reads the group from the Metro Phone filename, `64.33`. The override is the last layer. It applies only to that Northline path.
+`{{ amount }}` reads the group from the Metro Phone filename, `64.33`.
 
 ## A value stored for one path
 

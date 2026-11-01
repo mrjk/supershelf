@@ -12,11 +12,13 @@ import yaml
 
 from supershelf.constants import (
     APP_NAME,
+    CONFIG_SECTION,
     CONFIG_SUFFIXES,
     FILE_TYPE_TOML,
     SUFFIX_TYPES,
 )
 from supershelf.errors import SupershelfError
+from supershelf.template import Template
 
 
 def user_config_dir(environ: Mapping[str, str]) -> Path:
@@ -33,6 +35,50 @@ def resolve_user_path(value: str, base: Path) -> Path:
     if not path.is_absolute():
         path = base / path
     return path
+
+
+def render_user_path(
+    template: str,
+    scope: Mapping[str, Any],
+    base: Path,
+    *,
+    empty_message: str,
+    error: type[SupershelfError] = SupershelfError,
+    advice: str | None = None,
+    resolve: bool = False,
+) -> Path:
+    """Render a path template, reject a blank result, and resolve it from `base`."""
+    try:
+        rendered = Template(scope).render(template).strip()
+    except SupershelfError as exc:
+        if error is SupershelfError:
+            raise
+        raise error(str(exc), advice=exc.advice) from exc
+    if not rendered:
+        if advice is None:
+            raise error(empty_message)
+        raise error(empty_message, advice=advice)
+    path = resolve_user_path(rendered, base)
+    if resolve:
+        return path.resolve()
+    return path
+
+
+def config_section(
+    document: Mapping[str, Any],
+    *,
+    error: type[SupershelfError] = SupershelfError,
+    advice: str | None = None,
+) -> dict[str, Any]:
+    """The `config` mapping. A missing key is an empty mapping."""
+    section = document.get(CONFIG_SECTION)
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        if advice is None:
+            raise error("config must be a mapping")
+        raise error("config must be a mapping", advice=advice)
+    return section
 
 
 def cli_or_env(

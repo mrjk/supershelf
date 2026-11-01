@@ -18,12 +18,11 @@ from pydantic import (
     model_validator,
 )
 
-from supershelf.common import resolve_user_path
+from supershelf.common import render_user_path
 from supershelf.constants import KEY_INPUTS, LOGGER_NAME
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 from supershelf.profile import ShelfProfile
-from supershelf.template import Template
 
 _HASH_CHUNK_SIZE = 1024 * 1024
 _Ancestor = tuple[int, int]
@@ -109,6 +108,13 @@ class InputFile:
     mtime: str | None = None
     ctime: str | None = None
     sha256: str | None = None
+
+    @property
+    def extension(self) -> str:
+        """Last suffix without the leading dot. Empty when there is no suffix."""
+        if self.suffix.startswith("."):
+            return self.suffix[1:]
+        return self.suffix
 
     @classmethod
     def from_relative(cls, relative: str, absolute: Path) -> InputFile:
@@ -275,10 +281,12 @@ class InputScanner:
             ) from exc
 
     def _resolve_input(self, spec: InputSpec) -> ResolvedInput | None:
-        rendered = Template(self.profile.scope).render(spec.path).strip()
-        if not rendered:
-            raise SupershelfError("inputs.path is empty")
-        candidate = resolve_user_path(rendered, self.profile.root_dir)
+        candidate = render_user_path(
+            spec.path,
+            self.profile.scope,
+            self.profile.root_dir,
+            empty_message="inputs.path is empty",
+        )
         if candidate.is_symlink() or candidate.exists():
             if not candidate.is_dir():
                 raise SupershelfError(f"Input path is not a directory: {candidate}")

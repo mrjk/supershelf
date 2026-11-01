@@ -1,6 +1,6 @@
 # Kind files
 
-A kind file stores one row per path for one kind. `scan vars` reads that row after the winning rule's `vars` and before `overrides`. Each cell is one literal string, then cast to the name's type. It replaces a value the rule already stored. It does not change what the rule template already read. A later override template does read the cell. A cell that cannot cast stops the file. It has no next candidate.
+A kind file stores one row per path for one kind. `scan vars` reads that row after the winning rule's `vars`. This is the last assignment layer. Each cell is one literal string, then cast to the name's type. It replaces a value the rule already stored. It does not change what the rule template already read. A cell that cannot cast stops the file. It has no next candidate.
 
 `scan files` and `scan kinds` do not read or write kind files. The file shape is in [Kind file](../reference/kind-file.md).
 
@@ -19,7 +19,7 @@ An empty list means no kind files. Nothing is created or appended.
 
 Each path is rendered with the profile scope, `__kind__` set to the rule kind, and `__input__.path` set to the absolute input directory. A relative result is resolved from `__root_dir__`. The first path that exists and is a file wins. A missing path tries the next. None found means no row, unless the mode is `always`. A path that exists and is not a file stops the command. A symlink to a file is that file. A bad suffix, or content that does not parse, stops the command. The next path is not tried.
 
-The rule kind picks the file. An override that changes `__kind__` does not switch files and does not change which row is read.
+The rule kind picks the file.
 
 The row key is the path relative to the input, with `/` separators. It is an exact match. Case is not folded. Two inputs that share one kind file treat the same relative path as one row. Put `{{ __input__.path }}` in a template when those inputs must not share rows.
 
@@ -60,7 +60,7 @@ A cell is one stored string. It is not a candidate list, and it is not compiled 
 
 A cell that sets an existing key keeps that key's first position and replaces the stored string. A new key is appended. CSV uses column order. TOML and YAML use key order inside `vars`.
 
-A row must not set an internal name. `__date__` is allowed. `__kind__` is not. Only `overrides` may set `__kind__`.
+A row must not set an internal name. `__date__` is allowed. `__kind__` stays the kind from the match rule.
 
 Unmatched files have no kind, so they get no row. Files the walk skipped get no row.
 
@@ -70,6 +70,6 @@ A kind-file `__date__` cell is parsed. The format is `config.kind_overrides_date
 
 The cell is stripped, then the whole string is parsed. The stored value is `YYYY-MM-DD`. A parsed time is dropped. A value that does not match stops the command. The message names the file, the profile, the input, the path, the cell text, and the format. There is no next candidate. A blank `__date__` cell is absent, and the command does not stop.
 
-This format applies to `__date__` only. In TOML and YAML, another key, including `date`, stays raw text. An override's `__date__` is already `YYYY-MM-DD`. It is not parsed with this format.
+This format applies to `__date__` only. In TOML and YAML, another key, including `date`, stays raw text.
 
 `config.kind_overrides_sep` is checked before the walk, at the same time as the date format. The separator rules are in [Kind file](../reference/kind-file.md).

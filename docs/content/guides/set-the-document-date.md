@@ -57,6 +57,6 @@ Put the fallback list on `default_vars`, then let a rule try its own captured da
 
 A `__date__` candidate that renders to anything else fails, and the next candidate is tried. If every candidate in that layer misses, the earlier value stays. When no layer sets `__date__`, it is omitted and the command continues. The same rule applies to every other variable. The filename does not set `__date__`. `mandatory: true` stops the file when the value is still unset after the last layer.
 
-`__date__` is type `date`. `vars_schema.__date__` may set `desc`, `unit`, `mandatory`, `default`, and `validation`. It cannot change the type. Quote date scalars in `default_vars`, rule `vars`, overrides, and kind files. An unquoted date is not a string, and those layers take a string or a list of strings.
+`__date__` is type `date`. `vars_schema.__date__` may set `desc`, `unit`, `mandatory`, `default`, and `validation`. It cannot change the type. Quote date scalars in `default_vars`, rule `vars`, and kind files. An unquoted date is not a string, and those layers take a string or a list of strings.
 
-The next page changes one file after these layers: [Override one file](override-one-file.md).
+The next page stores one path in a kind file: [Set a value in the kind file](share-variables-for-a-kind.md).

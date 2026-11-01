@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from supershelf.cli import App
-from supershelf.constants import ENV_RECORD_IDENTITY
 from supershelf.database import ShelfDatabase
+from tests.helpers import isolate_env as _isolate
 
 _PROFILE = """\
 [default_vars]
@@ -24,16 +24,6 @@ path = "inbox"
 name = "bill"
 glob = "**"
 """
-
-
-def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("SUPERSHELF_CONFIG", raising=False)
-    monkeypatch.delenv("SUPERSHELF_PROFILES", raising=False)
-    monkeypatch.delenv("SUPERSHELF_KIND_OVERRIDES_MODE", raising=False)
-    monkeypatch.delenv(ENV_RECORD_IDENTITY, raising=False)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-
 
 def _profile(tmp_path: Path) -> Path:
     inbox = tmp_path / "inbox"

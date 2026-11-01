@@ -33,8 +33,7 @@ class MetadataFile:
     @classmethod
     def from_input(cls, file: InputFile) -> MetadataFile:
         """Copy the strings the walk already stored."""
-        suffix = file.suffix
-        extension = suffix[1:] if suffix.startswith(".") else suffix
+        extension = file.extension
         return cls(
             absolute=file.absolute,
             relative=file.path,

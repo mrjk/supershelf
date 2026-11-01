@@ -12,14 +12,13 @@ import re
 import tomllib
 from collections.abc import Mapping
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, NamedTuple
 
 import yaml
 
-from supershelf.common import WordChoice, resolve_user_path
+from supershelf.common import WordChoice, config_section, render_user_path
 from supershelf.constants import (
-    CONFIG_SECTION,
     DATE_TEXT,
     ENV_KIND_OVERRIDES_MODE,
     INTERNAL_NAMES,
@@ -36,14 +35,11 @@ from supershelf.constants import (
     KIND_MODE_DISABLED,
     KIND_OVERRIDE_MODES,
     LOGGER_NAME,
-    KEY_OVERRIDE_PATH,
-    KEY_OVERRIDES,
     KEY_RULE_VARS,
     KEY_VAR_MODULES,
     SOURCE_DEFAULT,
     SOURCE_FACT,
     SOURCE_KIND,
-    SOURCE_OVERRIDE,
     SOURCE_RULE,
     VAR_CTIME,
     VAR_DATABASE_FILE,
@@ -64,14 +60,13 @@ from supershelf.constants import (
     VAR_RULE_NAME,
 )
 from supershelf.defaults import PACKAGED
-from supershelf.errors import SupershelfError, VarCandidateError, VarConfigError, VarResolveError
+from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
 from supershelf.match import FileMatch, Matcher
 from supershelf.metadata.driver import MetadataFile
 from supershelf.metadata.process import ProcessRunner
 from supershelf.metadata.registry import MetadataRegistry
 from supershelf.metadata.session import MetadataSession
 from supershelf.scan import InputFile
-from supershelf.template import Template
 from supershelf.var_commands import FileBinding
 from supershelf.var_schema import (
     CastMiss,
@@ -79,6 +74,7 @@ from supershelf.var_schema import (
     VarCatalog,
     VarState,
     cast_value,
+    check_var_name,
     layer_source,
 )
 from supershelf.var_template import VarEnvironment, is_template
@@ -141,8 +137,7 @@ class FileVars:
 class VarTable:
     """Ordered variable definitions. Each value is one or more candidates."""
 
-    _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-    _LOCKED = tuple(name for name in INTERNAL_NAMES if name != VAR_KIND)
+    _LOCKED = INTERNAL_NAMES
 
     def __init__(self, keys: tuple[str, ...], candidates: dict[str, tuple[str, ...]]) -> None:
         self.keys = keys
@@ -159,7 +154,6 @@ class VarTable:
         raw: object,
         *,
         label: str,
-        allows_kind: bool,
         environment: VarEnvironment,
     ) -> VarTable:
         """Parse a mapping of strings or string lists and compile every candidate."""
@@ -173,7 +167,7 @@ class VarTable:
         keys: list[str] = []
         candidates: dict[str, tuple[str, ...]] = {}
         for key, value in raw.items():
-            cls._check_key(key, label, allows_kind)
+            cls._check_key(key, label)
             items = cls._candidates(value, label, str(key))
             for item in items:
                 environment.compile_source(item)
@@ -182,16 +176,12 @@ class VarTable:
         return cls(tuple(keys), candidates)
 
     @classmethod
-    def _check_key(cls, key: object, label: str, allows_kind: bool) -> None:
-        if not isinstance(key, str) or cls._IDENT.fullmatch(key) is None:
-            raise VarConfigError(
-                f"{label} key {key!r} is not a variable name",
-                advice="Start with a letter or underscore, then use letters, digits, and underscores.",
-            )
-        if key in cls._LOCKED or (key == VAR_KIND and not allows_kind):
+    def _check_key(cls, key: object, label: str) -> None:
+        check_var_name(key, f"{label} key {key!r}")
+        if isinstance(key, str) and key in cls._LOCKED:
             raise VarConfigError(
                 f"{label} cannot set {key}",
-                advice="Only an override may set __kind__. Other internal names are fixed.",
+                advice="__kind__ stays the kind from the match rule. Other internal names are fixed.",
             )
 
     @classmethod
@@ -210,18 +200,6 @@ class VarTable:
             f"{label} key {key} must be a string or a list of strings",
             advice="Quote scalars such as dates so they stay strings.",
         )
-
-
-class OverrideRule:
-    """One per-file override. The first matching path wins."""
-
-    def __init__(self, pattern: str, table: VarTable) -> None:
-        self.pattern = pattern
-        self.table = table
-
-    def matches(self, relative: str) -> bool:
-        """Full-match the path relative to the input directory."""
-        return PurePosixPath(relative).full_match(self.pattern)
 
 
 class KindOverrideMode(WordChoice):
@@ -542,7 +520,7 @@ class KindTable:
         if name == VAR_DATE:
             return True
         try:
-            VarTable._check_key(name, "kind file", False)
+            VarTable._check_key(name, "kind file")
         except VarConfigError:
             return False
         return True
@@ -695,7 +673,7 @@ class KindTable:
                     advice=advice,
                 )
             if name != VAR_DATE:
-                VarTable._check_key(name, str(path), False)
+                VarTable._check_key(name, str(path))
 
     @classmethod
     def _header_advice(cls, sep: str, columns: tuple[str, ...]) -> str:
@@ -817,7 +795,7 @@ class KindTable:
         cells: dict[str, str] = {}
         label = f"{path} item {index} vars"
         for key, value in raw.items():
-            VarTable._check_key(key, label, False)
+            VarTable._check_key(key, label)
             text = cls._typed(value, label, str(key))
             if text is not None:
                 cells[str(key)] = text
@@ -1030,27 +1008,24 @@ class KindFiles:
         return parsed
 
     def _render_path(self, template: str, scope: Mapping[str, Any]) -> Path:
-        try:
-            rendered = Template(scope).render(template).strip()
-        except SupershelfError as exc:
-            raise VarConfigError(str(exc), advice=exc.advice) from exc
-        if not rendered:
-            raise VarConfigError(
-                "A kind_overrides_config path rendered empty",
-                advice="The path template must render to a file path.",
-            )
-        return resolve_user_path(rendered, self._root)
+        return render_user_path(
+            template,
+            scope,
+            self._root,
+            empty_message="A kind_overrides_config path rendered empty",
+            error=VarConfigError,
+            advice="The path template must render to a file path.",
+        )
 
 
 class VarPlan:
-    """Facts, then default, rule, kind row, and override assignments."""
+    """Facts, then default, rule, and kind row assignments."""
 
     def __init__(
         self,
         environment: VarEnvironment,
         catalog: VarCatalog,
         rules: dict[str, VarTable],
-        overrides: tuple[OverrideRule, ...],
         kinds: KindFiles,
         profile_scope: Mapping[str, Any],
         session: MetadataSession,
@@ -1058,7 +1033,6 @@ class VarPlan:
         self._environment = environment
         self._catalog = catalog
         self._rules = rules
-        self._overrides = overrides
         self._kinds = kinds
         self._profile_scope = dict(profile_scope)
         self._session = session
@@ -1079,6 +1053,7 @@ class VarPlan:
         runner: ProcessRunner | None = None,
     ) -> VarPlan:
         """Load modules and var tables before any walk."""
+        cls._reject_overrides(document)
         environment = VarEnvironment()
         section = cls._section(document)
         cls._reject_metadata_in_config(section)
@@ -1096,11 +1071,9 @@ class VarPlan:
         defaults = VarTable.parse(
             document.get(KEY_DEFAULT_VARS),
             label="default_vars",
-            allows_kind=False,
             environment=environment,
         )
         rules, rule_kinds = cls._rule_tables(matcher, environment)
-        overrides = cls._override_tables(document, environment)
         kinds = KindFiles.from_section(
             section,
             root_dir,
@@ -1112,8 +1085,6 @@ class VarPlan:
         names: list[str] = list(defaults.keys)
         for table in rules.values():
             names.extend(table.keys)
-        for rule in overrides:
-            names.extend(rule.table.keys)
         names.extend(matcher.named_groups())
         catalog = VarCatalog.load(
             document,
@@ -1128,12 +1099,10 @@ class VarPlan:
                 f"match rule {rule_name} vars",
                 rule_kinds[rule_name],
             )
-        for index, rule in enumerate(overrides, start=1):
-            cls._check_literals(catalog, rule.table, f"overrides item {index} vars", "")
-        return cls(environment, catalog, rules, overrides, kinds, profile_scope, session)
+        return cls(environment, catalog, rules, kinds, profile_scope, session)
 
     def resolve(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
-        """Resolve one matched file. Kind files use the rule kind, not an override."""
+        """Resolve one matched file."""
         self._require_metadata(file, match)
         token = self._session.bind(MetadataFile.from_input(file))
         try:
@@ -1166,17 +1135,6 @@ class VarPlan:
             match,
             file.path,
         )
-        override = self._override_for(file.path)
-        if override is not None:
-            self._apply(
-                override.table,
-                layer_source(SOURCE_OVERRIDE, override.pattern),
-                scope,
-                states,
-                order,
-                binding,
-                match.kind,
-            )
         self._require_mandatory(states, match, file.path)
         chosen = tuple(
             (key, states[key])
@@ -1364,14 +1322,8 @@ class VarPlan:
             advice=advice,
         )
 
-    def _override_for(self, relative: str) -> OverrideRule | None:
-        for rule in self._overrides:
-            if rule.matches(relative):
-                return rule
-        return None
-
     def _fact_rows(self, file: InputFile, match: FileMatch) -> list[tuple[str, str, str]]:
-        ext = file.suffix[1:] if file.suffix.startswith(".") else file.suffix
+        ext = file.extension
         values = {
             VAR_KIND: match.kind,
             VAR_RULE_NAME: match.rule,
@@ -1471,15 +1423,11 @@ class VarPlan:
 
     @classmethod
     def _section(cls, document: Mapping[str, Any]) -> Mapping[str, Any]:
-        section = document.get(CONFIG_SECTION)
-        if section is None:
-            return {}
-        if not isinstance(section, dict):
-            raise VarConfigError(
-                "config must be a mapping",
-                advice="Put profile settings under config:.",
-            )
-        return section
+        return config_section(
+            document,
+            error=VarConfigError,
+            advice="Put profile settings under config:.",
+        )
 
     @classmethod
     def _load_modules(cls, environment: VarEnvironment, section: Mapping[str, Any]) -> None:
@@ -1541,53 +1489,15 @@ class VarPlan:
             tables[name] = VarTable.parse(
                 raw,
                 label=f"match rule {name} vars",
-                allows_kind=False,
                 environment=environment,
             )
             kinds[name] = kind
         return tables, kinds
 
     @classmethod
-    def _override_tables(
-        cls,
-        document: Mapping[str, Any],
-        environment: VarEnvironment,
-    ) -> tuple[OverrideRule, ...]:
-        raw = document.get(KEY_OVERRIDES)
-        if raw is None:
-            return ()
-        if not isinstance(raw, list):
+    def _reject_overrides(cls, document: Mapping[str, Any]) -> None:
+        if "overrides" in document:
             raise VarConfigError(
-                "overrides must be a list",
-                advice="Each item has a path and a vars mapping.",
+                "overrides is not a profile key",
+                advice="Per-file values belong in the kind file.",
             )
-        rules: list[OverrideRule] = []
-        for index, item in enumerate(raw, start=1):
-            rules.append(cls._one_override(item, index, environment))
-        return tuple(rules)
-
-    @classmethod
-    def _one_override(cls, item: object, index: int, environment: VarEnvironment) -> OverrideRule:
-        if not isinstance(item, dict):
-            raise VarConfigError(
-                f"overrides item {index} must be a mapping",
-                advice="Set path and vars.",
-            )
-        path = item.get(KEY_OVERRIDE_PATH)
-        if not isinstance(path, str) or not path.strip():
-            raise VarConfigError(
-                f"overrides item {index} needs a path",
-                advice="Path is a glob matched against the path relative to the input.",
-            )
-        if KEY_RULE_VARS not in item:
-            raise VarConfigError(
-                f"overrides item {index} needs vars",
-                advice="Set vars to a mapping. An empty mapping changes nothing.",
-            )
-        table = VarTable.parse(
-            item.get(KEY_RULE_VARS),
-            label=f"overrides item {index} vars",
-            allows_kind=True,
-            environment=environment,
-        )
-        return OverrideRule(path, table)

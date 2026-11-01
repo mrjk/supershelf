@@ -6,12 +6,12 @@ Built-in facts below are type `text`. `__date__` is type `date`. A user name wit
 
 ## Printed facts
 
-These are set from the file and the match. Assignments cannot replace them, except `__kind__`, which only `overrides` may set. `scan vars` prints them only with `--all`.
+These are set from the file and the match. Assignments cannot replace them. `__kind__` stays the kind from the match rule. `scan vars` prints them only with `--all`.
 
 | Name | Value |
 | --- | --- |
-| `__kind__` | Kind from the winning rule, then an override if one sets it. |
-| `__rule_name__` | Winning rule name. An override does not change it. |
+| `__kind__` | Kind from the winning rule. |
+| `__rule_name__` | Winning rule name. |
 | `__ctime__` | Stored UTC ISO-8601 ctime. |
 | `__mtime__` | Stored UTC ISO-8601 mtime. |
 | `__file_hash__` | Lowercase sha256 of the file bytes. |
@@ -27,9 +27,9 @@ Named regex groups are stored in pattern order and printed with the other names.
 
 | Name | Who may set it | Value |
 | --- | --- | --- |
-| `__date__` | `default_vars`, rule `vars`, kind file, `overrides` | Type `date`. Stored as `YYYY-MM-DD`. |
+| `__date__` | `default_vars`, rule `vars`, kind file | Type `date`. Stored as `YYYY-MM-DD`. |
 
-`__date__` is not an internal. The filename does not set it. In `default_vars`, rule `vars`, and `overrides`, an empty string does not count as success. A candidate list that misses leaves an earlier value in place. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
+`__date__` is not an internal. The filename does not set it. In `default_vars` and rule `vars`, an empty string does not count as success. A candidate list that misses leaves an earlier value in place. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
 
 ## Profile scope
 
@@ -53,19 +53,19 @@ Kind-file path templates also see:
 
 | Name | Value |
 | --- | --- |
-| `__kind__` | The rule kind, before an override changes the printed kind. |
+| `__kind__` | The rule kind. |
 | `__input__.path` | Absolute path of that input directory. |
 
 `__kind__` and `__input__.path` are not in the general profile scope. An `inputs` path cannot read them.
 
 ## Who may assign a name
 
-| Name | `default_vars` | Rule `vars` | Kind file | `overrides` |
-| --- | --- | --- | --- | --- |
-| `__kind__` | no | no | no | yes |
-| other internals | no | no | no | no |
-| `__date__` | yes | yes | yes | yes |
-| a name that does not start with `__` | yes | yes | yes | yes |
-| any other name that starts with `__` | no | no | no | no |
+| Name | `default_vars` | Rule `vars` | Kind file |
+| --- | --- | --- | --- |
+| `__kind__` | no | no | no |
+| other internals | no | no | no |
+| `__date__` | yes | yes | yes |
+| a name that does not start with `__` | yes | yes | yes |
+| any other name that starts with `__` | no | no | no |
 
 A variable name matches `[A-Za-z_][A-Za-z0-9_]*`.
