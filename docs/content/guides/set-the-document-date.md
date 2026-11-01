@@ -57,6 +57,6 @@ Put the fallback list on `default_vars`, then let a rule try its own captured da
 
 A `__date__` candidate that renders to anything else fails, and the next candidate is tried. If every candidate fails, `__date__` is omitted and the command continues. Any other variable whose candidates all fail stops the command. The error names the profile, the input, the path, and the variable.
 
-Quote date scalars in YAML. An unquoted date is not a string, and a variable value must be a string or a list of strings.
+`__date__` is type `date`. `vars_schema.__date__` may set `desc`, `unit`, `mandatory`, `default`, and `validation`. It cannot change the type. Quote date scalars in `default_vars`, rule `vars`, overrides, and kind files. An unquoted date is not a string, and those layers take a string or a list of strings.
 
 The next page changes one file after these layers: [Override one file](override-one-file.md).

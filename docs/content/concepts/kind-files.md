@@ -1,6 +1,6 @@
 # Kind files
 
-A kind file stores one row per path for one kind. `scan vars` reads that row after the winning rule's `vars` and before `overrides`. Each cell is a literal string. It replaces a value the rule already stored. It does not change what the rule template already read. A later override template does read the cell.
+A kind file stores one row per path for one kind. `scan vars` reads that row after the winning rule's `vars` and before `overrides`. Each cell is one literal string, then cast to the name's type. It replaces a value the rule already stored. It does not change what the rule template already read. A later override template does read the cell. A cell that cannot cast stops the file. It has no next candidate.
 
 `scan files` and `scan kinds` do not read or write kind files. The file shape is in [Kind file](../reference/kind-file.md).
 

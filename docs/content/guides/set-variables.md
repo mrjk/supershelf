@@ -62,16 +62,57 @@ Example `vars` cell, with the file facts shortened:
 
 ```text
 __kind__: invoice
+sources: fact
 __rule_name__: bank2000_statement
+sources: fact
 __file_name__: REL_20260425_ab12cd34.pdf
+sources: fact
 date: 20260425
+sources: fact
 receipt_id: ab12cd34
+sources: fact
 vendor: Bank2000
+sources: default, rule:bank2000_statement
 owner: sample
+sources: default
 receipt: ab12cd34
+sources: rule:bank2000_statement
 ```
 
-The printed order is the internal facts, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in the order they were first stored. `vendor` was set in `default_vars` and replaced by the rule, so it keeps the earlier position. `owner` stays `sample` because the rule does not set it.
+Each name is two lines. The cell above leaves out the other file facts. The printed order is the internal facts, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in the order they were first stored. `vendor` was set in `default_vars` and replaced by the rule, so it keeps the earlier position, and both layers stay in `sources`. `owner` stays `sample` because the rule does not set it.
+
+## Declare a type
+
+`vars_schema` sets the type of a name. A filename group with that name is cast when the match stores it. The rules are in [Variables](../concepts/variables.md).
+
+=== "TOML"
+
+    ```toml title="profile.books.toml"
+    [vars_schema.amount]
+    type = "float"
+    unit = "EUR"
+
+    [[match_rules]]
+    name = "bank2000_amount"
+    kind = "invoice"
+    filename_regex = 'REL_(?P<amount>[0-9]+[.][0-9]{2})\.pdf'
+    ```
+
+=== "YAML"
+
+    ```yaml title="profile.books.yaml"
+    vars_schema:
+      amount:
+        type: float
+        unit: EUR
+
+    match_rules:
+      - name: bank2000_amount
+        kind: invoice
+        filename_regex: 'REL_(?P<amount>[0-9]+[.][0-9]{2})\.pdf'
+    ```
+
+For `REL_12.50.pdf`, `amount` prints as `12.50` and the JSON value is `12.5`. Templates still read the string `12.50`. `EUR12.50` stops the file, because a regex group has no next candidate.
 
 There is no `--quick` on this command. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. An exact file path lists that file in every input that has it. Any other value lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
 

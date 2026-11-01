@@ -566,7 +566,7 @@ inputs:
 #  tif: tiff
 #  yml: yaml
 
-# Variable types. Not implemented yet. See ARCHITECTURE.md.
+# Variable types. See docs/content/concepts/variables.md.
 # A name listed here without default keeps the default_vars value as its default.
 # doc_type is not listed, so its default_vars template is the whole default.
 vars_schema:

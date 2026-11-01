@@ -1,6 +1,8 @@
 # Variable names
 
-Printed names come from the file, the winning regex, and the assignment layers. Profile names are available while a template renders and are not printed on their own. The layer order is in [Variables](../concepts/variables.md).
+Printed names come from the file, the winning regex, and the assignment layers. Profile names are available while a template renders and are not printed on their own. The layer order and the types are in [Variables](../concepts/variables.md).
+
+Built-in facts below are type `text`. `__date__` is type `date`. A user name with no `vars_schema` entry is `text`.
 
 ## Printed facts
 
@@ -30,7 +32,7 @@ Named regex groups are printed after these, in pattern order. A group name that 
 
 | Name | Who may set it | Value |
 | --- | --- | --- |
-| `__date__` | `default_vars`, rule `vars`, kind file, `overrides` | Stored as `YYYY-MM-DD`. |
+| `__date__` | `default_vars`, rule `vars`, kind file, `overrides` | Type `date`. Stored as `YYYY-MM-DD`. |
 
 `__date__` is not an internal. In `default_vars`, rule `vars`, and `overrides`, an empty string does not count as success, and a failed candidate list omits the name. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
 

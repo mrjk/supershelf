@@ -142,7 +142,7 @@ Labels:
 - `kind:<kind file path>`
 - `override:<path pattern>`
 
-Resolver order in `VarPlan.resolve`: facts, then `default_vars`, then match-rule `vars`, then the kind file, then overrides. The concept docs describe the kind file before rule vars. This spec follows the code. Aligning those pages is a separate doc fix. This spec does not reorder layers.
+Resolver order in `VarPlan.resolve`: facts, then `default_vars`, then match-rule `vars`, then the kind file, then overrides. The concept pages use that same order.
 
 ## kind_schema
 
