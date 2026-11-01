@@ -23,7 +23,6 @@ from supershelf.common import (
 from supershelf.constants import (
     CONFIG_SECTION,
     CONFIG_SUFFIXES,
-    DEFAULT_PROFILE,
     ENV_CONFIG,
     ENV_PROFILES,
     LOGGER_NAME,
@@ -31,6 +30,7 @@ from supershelf.constants import (
     PROFILE_PREFIX,
     SINGLETON_STEM,
 )
+from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 
 _NO_CONFIG_ADVICE = (
@@ -119,7 +119,7 @@ class ShelfConfig:
             return name_from_file
         if file_profile is not None:
             return file_profile
-        return DEFAULT_PROFILE
+        return PACKAGED.profile
 
     @staticmethod
     def _assign_profile(document: dict[str, Any], profile: str) -> None:

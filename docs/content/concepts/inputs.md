@@ -1,6 +1,6 @@
 # Inputs
 
-`inputs` is a top-level list. A profile with no inputs, an empty list, or a value that is not a list stops the command when a scan runs. `supershelf profiles` does not check this.
+`inputs` is a top-level list. A missing list or a YAML null stops a scan with the "no inputs" error. `inputs: []` stops with "inputs is empty". A value that is not a list also stops. `supershelf profiles` does not check this.
 
 Each item is a mapping. Unknown keys stop the command. The fields are `path`, `include`, `exclude`, `depth`, and `follow_symlinks`.
 

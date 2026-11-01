@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from supershelf.configs import ShelfConfig
-from supershelf.constants import DEFAULT_DATE_FORMAT, LOGGER_NAME
+from supershelf.constants import LOGGER_NAME
+from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 from supershelf.profile import ShelfProfile
 
@@ -27,7 +28,7 @@ def test_omitted_paths_use_the_config_directory(tmp_path: Path) -> None:
     assert profile.scope["__profile_name__"] == "work"
     assert profile.scope["__profile_dir__"] == str(root)
     assert profile.scope["__profile_file__"] == "profile.work.toml"
-    assert profile.default_date_format == DEFAULT_DATE_FORMAT
+    assert profile.default_date_format == PACKAGED.default_date_format
     assert profile.root_dir == root
     assert profile.database_file == root / "profile.work.sqlite"
     assert profile.cache_file == root / "profile.work.cache"

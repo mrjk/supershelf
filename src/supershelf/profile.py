@@ -12,10 +12,6 @@ from supershelf.common import resolve_user_path
 from supershelf.configs import ShelfConfig
 from supershelf.constants import (
     CONFIG_SECTION,
-    DEFAULT_CACHE_FILE_TEMPLATE,
-    DEFAULT_DATABASE_FILE_TEMPLATE,
-    DEFAULT_DATE_FORMAT,
-    DEFAULT_ROOT_DIR_TEMPLATE,
     KEY_CACHE_FILE,
     KEY_DATABASE_FILE,
     KEY_DEFAULT_DATE_FORMAT,
@@ -32,6 +28,7 @@ from supershelf.constants import (
     VAR_PROFILE_TYPE,
     VAR_ROOT_DIR,
 )
+from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 from supershelf.template import Template
 
@@ -39,9 +36,9 @@ if TYPE_CHECKING:
     from supershelf.scan import InputScanResult
 
 _PATH_STEPS = (
-    (KEY_ROOT_DIR, VAR_ROOT_DIR, DEFAULT_ROOT_DIR_TEMPLATE),
-    (KEY_DATABASE_FILE, VAR_DATABASE_FILE, DEFAULT_DATABASE_FILE_TEMPLATE),
-    (KEY_CACHE_FILE, VAR_CACHE_FILE, DEFAULT_CACHE_FILE_TEMPLATE),
+    (KEY_ROOT_DIR, VAR_ROOT_DIR),
+    (KEY_DATABASE_FILE, VAR_DATABASE_FILE),
+    (KEY_CACHE_FILE, VAR_CACHE_FILE),
 )
 
 
@@ -78,9 +75,9 @@ class ShelfProfile:
             VAR_CONFIG_DATA: document,
         }
         rendered: dict[str, Path] = {}
-        for config_key, scope_key, default_template in _PATH_STEPS:
+        for config_key, scope_key in _PATH_STEPS:
             path = cls._render_path(
-                cls._path_template(section, config_key, default_template),
+                cls._path_template(section, config_key),
                 scope,
                 directory,
                 label=f"config.{config_key}",
@@ -142,9 +139,9 @@ class ShelfProfile:
 
     @staticmethod
     def _date_format(section: Mapping[str, Any]) -> str:
-        if KEY_DEFAULT_DATE_FORMAT not in section:
-            return DEFAULT_DATE_FORMAT
-        value = section[KEY_DEFAULT_DATE_FORMAT]
+        value = section.get(KEY_DEFAULT_DATE_FORMAT)
+        if value is None:
+            return PACKAGED.default_date_format
         if not isinstance(value, str) or not value.strip():
             raise SupershelfError(
                 "config.default_date_format must be a non-empty string"
@@ -152,14 +149,10 @@ class ShelfProfile:
         return value
 
     @staticmethod
-    def _path_template(
-        section: Mapping[str, Any],
-        key: str,
-        default_template: str,
-    ) -> str:
-        if key not in section:
-            return default_template
-        value = section[key]
+    def _path_template(section: Mapping[str, Any], key: str) -> str:
+        value = section.get(key)
+        if value is None:
+            return getattr(PACKAGED, key)
         if not isinstance(value, str):
             raise SupershelfError(f"config.{key} must be a string")
         return value

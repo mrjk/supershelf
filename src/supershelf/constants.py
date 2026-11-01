@@ -9,18 +9,6 @@ ENV_KIND_OVERRIDES_MODE = "SUPERSHELF_KIND_OVERRIDES_MODE"
 
 CONFIG_SECTION = "config"
 PROFILE_KEY = "profile"
-DEFAULT_PROFILE = "default"
-DEFAULT_ROOT_DIR_TEMPLATE = "{{ __profile_dir__ }}"
-DEFAULT_DATABASE_FILE_TEMPLATE = (
-    "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
-)
-DEFAULT_CACHE_FILE_TEMPLATE = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
-DEFAULT_KIND_OVERRIDES_TEMPLATES = (
-    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv",
-    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml",
-    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml",
-    "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml",
-)
 
 KEY_DEFAULT_DATE_FORMAT = "default_date_format"
 KEY_ROOT_DIR = "root_dir"
@@ -33,7 +21,6 @@ KEY_KIND_OVERRIDES = "kind_overrides_config"
 KEY_KIND_OVERRIDES_MODE = "kind_overrides_mode"
 KEY_KIND_OVERRIDES_DATE_FORMAT = "kind_overrides_date_format"
 KEY_KIND_OVERRIDES_SEP = "kind_overrides_sep"
-DEFAULT_KIND_OVERRIDES_SEP = ","
 KIND_CSV_PATH = "PATH"
 KIND_MODE_AUTO = "auto"
 KIND_MODE_MANUAL = "manual"
@@ -105,9 +92,8 @@ INTERNAL_NAMES = (
     VAR_FILE_DIR,
 )
 ALIAS_NAMES = (VAR_FILE_CTIME, VAR_FILE_MTIME)
-# Stored dates are YYYY-MM-DD. The display default matches that until config overrides it.
+# Stored dates are YYYY-MM-DD. Display uses the packaged or configured format.
 DATE_TEXT = "%Y-%m-%d"
-DEFAULT_DATE_FORMAT = DATE_TEXT
 
 VAR_GLOBALS = "GLOBALS"
 VAR_FILTERS = "FILTERS"

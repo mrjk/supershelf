@@ -10,10 +10,17 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from supershelf.common import resolve_user_path
 from supershelf.constants import KEY_INPUTS, LOGGER_NAME
+from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 from supershelf.profile import ShelfProfile
 from supershelf.template import Template
@@ -30,8 +37,8 @@ class InputSpec(BaseModel):
     path: str
     include: list[str] | None = None
     exclude: list[str] | None = None
-    depth: int = 0
-    follow_symlinks: bool = True
+    depth: int | None = None
+    follow_symlinks: bool | None = None
 
     @field_validator("path")
     @classmethod
@@ -42,10 +49,28 @@ class InputSpec(BaseModel):
 
     @field_validator("depth")
     @classmethod
-    def depth_is_zero_or_more(cls, value: int) -> int:
+    def depth_is_zero_or_more(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
         if value < 0:
             raise ValueError("depth must be 0 or greater")
         return value
+
+    @model_validator(mode="after")
+    def fill_packaged(self) -> InputSpec:
+        """Omitted and null depth or follow_symlinks use the packaged values."""
+        if self.depth is not None and self.follow_symlinks is not None:
+            return self
+        return self.model_copy(
+            update={
+                "depth": PACKAGED.input_depth if self.depth is None else self.depth,
+                "follow_symlinks": (
+                    PACKAGED.input_follow_symlinks
+                    if self.follow_symlinks is None
+                    else self.follow_symlinks
+                ),
+            }
+        )
 
 
 @dataclass(frozen=True)
@@ -205,12 +230,12 @@ class InputScanner:
 
     def _raw_inputs(self) -> list:
         document = self.profile.document
-        if KEY_INPUTS not in document:
+        raw = document.get(KEY_INPUTS)
+        if raw is None:
             raise SupershelfError(
                 f"Profile {self.profile.name} has no inputs",
                 advice=f"Add an inputs list to {self.profile.path}.",
             )
-        raw = document[KEY_INPUTS]
         if not isinstance(raw, list):
             raise SupershelfError(f"Profile {self.profile.name} inputs must be a list")
         if not raw:

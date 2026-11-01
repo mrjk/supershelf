@@ -21,9 +21,6 @@ from supershelf.constants import (
     ALIAS_NAMES,
     CONFIG_SECTION,
     DATE_TEXT,
-    DEFAULT_DATE_FORMAT,
-    DEFAULT_KIND_OVERRIDES_SEP,
-    DEFAULT_KIND_OVERRIDES_TEMPLATES,
     ENV_KIND_OVERRIDES_MODE,
     INTERNAL_NAMES,
     KEY_DEFAULT_DATE_FORMAT,
@@ -66,6 +63,7 @@ from supershelf.constants import (
     VAR_MTIME,
     VAR_RULE_NAME,
 )
+from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError, VarCandidateError, VarConfigError, VarResolveError
 from supershelf.match import FileMatch, Matcher
 from supershelf.scan import InputFile
@@ -220,12 +218,10 @@ class KindOverrideMode:
                 environ[ENV_KIND_OVERRIDES_MODE],
                 ENV_KIND_OVERRIDES_MODE,
             )
-        if KEY_KIND_OVERRIDES_MODE in section:
-            return KindOverrideMode._one(
-                section[KEY_KIND_OVERRIDES_MODE],
-                "config.kind_overrides_mode",
-            )
-        return KIND_MODE_AUTO
+        raw = section.get(KEY_KIND_OVERRIDES_MODE)
+        if raw is not None:
+            return KindOverrideMode._one(raw, "config.kind_overrides_mode")
+        return PACKAGED.kind_overrides_mode
 
     @staticmethod
     def check(value: object, label: str) -> str:
@@ -259,15 +255,19 @@ class KindDateFormat:
         profile_scope: Mapping[str, Any],
     ) -> KindDateFormat:
         """Check the format before the walk. Omitted uses default_date_format."""
-        if KEY_KIND_OVERRIDES_DATE_FORMAT in section:
-            raw = section[KEY_KIND_OVERRIDES_DATE_FORMAT]
+        kind_raw = section.get(KEY_KIND_OVERRIDES_DATE_FORMAT)
+        if kind_raw is not None:
+            raw = kind_raw
             label = "config.kind_overrides_date_format"
-        elif KEY_DEFAULT_DATE_FORMAT in section:
-            raw = section[KEY_DEFAULT_DATE_FORMAT]
-            label = "config.default_date_format"
         else:
-            raw = profile_scope.get(VAR_DEFAULT_DATE_FORMAT, DEFAULT_DATE_FORMAT)
-            label = "config.default_date_format"
+            user_raw = section.get(KEY_DEFAULT_DATE_FORMAT)
+            if user_raw is not None:
+                raw = user_raw
+                label = "config.default_date_format"
+            else:
+                scoped = profile_scope.get(VAR_DEFAULT_DATE_FORMAT)
+                raw = PACKAGED.default_date_format if scoped is None else scoped
+                label = "config.default_date_format"
         if not isinstance(raw, str) or not raw.strip():
             raise VarConfigError(
                 f"{label} must be a non-empty string",
@@ -280,7 +280,7 @@ class KindDateFormat:
     @classmethod
     def for_filename(cls, profile_scope: Mapping[str, Any]) -> KindDateFormat | None:
         """Date format for a filename stem. A format that is not a calendar date is ignored."""
-        raw = profile_scope.get(VAR_DEFAULT_DATE_FORMAT, DEFAULT_DATE_FORMAT)
+        raw = profile_scope.get(VAR_DEFAULT_DATE_FORMAT, PACKAGED.default_date_format)
         if not isinstance(raw, str) or not raw.strip():
             return None
         fmt = cls(raw)
@@ -330,9 +330,9 @@ class KindCsvSep:
     @classmethod
     def from_section(cls, section: Mapping[str, Any]) -> KindCsvSep:
         """Check the separator before the walk. Omitted uses a comma."""
-        if KEY_KIND_OVERRIDES_SEP not in section:
-            return cls(DEFAULT_KIND_OVERRIDES_SEP)
-        raw = section[KEY_KIND_OVERRIDES_SEP]
+        raw = section.get(KEY_KIND_OVERRIDES_SEP)
+        if raw is None:
+            return cls(PACKAGED.kind_overrides_sep)
         label = "config.kind_overrides_sep"
         if not isinstance(raw, str) or len(raw) != 1:
             raise VarConfigError(
@@ -790,7 +790,7 @@ class KindFiles:
         sep = KindCsvSep.from_section(section).text
         raw = section.get(KEY_KIND_OVERRIDES)
         if raw is None:
-            templates = DEFAULT_KIND_OVERRIDES_TEMPLATES
+            templates = tuple(PACKAGED.kind_overrides_config)
         elif raw == []:
             templates = ()
         elif not isinstance(raw, list) or not all(isinstance(item, str) and item.strip() for item in raw):

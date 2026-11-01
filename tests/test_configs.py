@@ -8,12 +8,12 @@ import pytest
 from supershelf.configs import ShelfConfig, ShelfConfigs, ShelfDocument
 from supershelf.constants import (
     CONFIG_SECTION,
-    DEFAULT_PROFILE,
     ENV_CONFIG,
     ENV_PROFILES,
     LOGGER_NAME,
     PROFILE_KEY,
 )
+from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 
 WORK_TOML = """\
@@ -107,9 +107,9 @@ def test_missing_profile_key_becomes_default(tmp_path: Path) -> None:
     loaded = _load(tmp_path)
 
     item = loaded.config_list[0]
-    assert item.profile == DEFAULT_PROFILE
+    assert item.profile == PACKAGED.profile
     assert item.config["note"] == "x"
-    assert item.config[CONFIG_SECTION][PROFILE_KEY] == DEFAULT_PROFILE
+    assert item.config[CONFIG_SECTION][PROFILE_KEY] == PACKAGED.profile
 
 
 def test_filename_wins_and_mismatch_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

@@ -66,7 +66,7 @@ Unmatched files have no kind, so they get no row. Files the walk skipped get no 
 
 ## Document date
 
-A kind-file `__date__` cell is parsed. The format is `config.kind_overrides_date_format`. When that key is omitted, the format is `config.default_date_format`, which defaults to `%Y-%m-%d`. The format is checked before the walk. It must be a non-empty string, valid for `strptime`, and it must include a year, a month, and a day. A time portion is allowed.
+A kind-file `__date__` cell is parsed. The format is `config.kind_overrides_date_format`. When that key is omitted or null, the format is `config.default_date_format`, which defaults to `%Y-%m-%d`. The format is checked before the walk. It must be a non-empty string, valid for `strptime`, and it must include a year, a month, and a day. A time portion is allowed.
 
 The cell is stripped, then the whole string is parsed. The stored value is `YYYY-MM-DD`. A parsed time is dropped. A value that does not match stops the command. The message names the file, the profile, the input, the path, the cell text, and the format. There is no next candidate. A blank `__date__` cell is absent, and the command does not stop.
 

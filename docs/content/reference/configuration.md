@@ -9,7 +9,7 @@ Which file is loaded, and which profiles run:
 3. Discovery in the current directory, then the user config directory
 4. Built-in defaults for omitted keys inside the file
 
-There is no environment variable for `root_dir` or the other keys below. An omitted key uses its default. A command that reads a key stops if that key has the wrong type. `supershelf profiles` checks that the file is a mapping and that `config.profile`, when set, is a string. It does not render paths.
+There is no environment variable for `root_dir` or the other keys below. An omitted key uses its default. A YAML null is the same as omitting the key. An empty string and an empty list stay set. A command that reads a key stops if that key has the wrong type. `supershelf profiles` checks that the file is a mapping and that `config.profile`, when set, is a string. It does not render paths.
 
 ## config
 
