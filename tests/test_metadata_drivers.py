@@ -8,46 +8,11 @@ import pytest
 from pypdf import PdfWriter
 
 from supershelf.constants import LOGGER_NAME
-from supershelf.errors import VarCandidateError, VarConfigError
-from supershelf.match import FileMatch, Matcher
-from supershelf.metadata.process import ProcessRunner
+from supershelf.errors import VarConfigError
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
-
-
-class FakeRunner(ProcessRunner):
-    """Records argv. Does not spawn the named program."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls: list[list[str]] = []
-        self.which_calls: list[str] = []
-        self.available: set[str] = set()
-        self.output: dict[str, str] = {}
-        self.codes: dict[str, int] = {}
-
-    def which(self, name: str) -> str | None:
-        self.which_calls.append(name)
-        if name in self.available or name in self.output:
-            return name
-        return None
-
-    def run(self, argv: list[str], timeout: float) -> str:
-        del timeout
-        self.calls.append(list(argv))
-        program = argv[0]
-        code = self.codes.get(program, 0)
-        if code != 0:
-            raise VarCandidateError(f"{program} exited {code}")
-        return self.output.get(program, "")
-
-
-def _file(relative: str, absolute: Path, digest: str = "abc") -> InputFile:
-    item = InputFile.from_relative(relative, absolute)
-    item.mtime = "2026-01-01T00:00:00+00:00"
-    item.ctime = "2026-01-02T00:00:00+00:00"
-    item.sha256 = digest
-    return item
+from tests.metadata_helpers import FakeRunner, input_file as _file
+from tests.metadata_helpers import resolve_values, var_plan
 
 
 def _write_pdf(path: Path, author: str = "Ada") -> None:
@@ -60,19 +25,11 @@ def _write_pdf(path: Path, author: str = "Ada") -> None:
 
 
 def _plan(document: dict[str, object], root: Path, runner: FakeRunner) -> VarPlan:
-    matcher = Matcher.from_document(document, "work")
-    scope = {
-        "__root_dir__": str(root),
-        "__profile__": "work",
-        "__profile_dir__": str(root),
-        "__database_file__": str(root / "profile.work.sqlite"),
-    }
-    return VarPlan.from_document(document, "work", matcher, root, scope, runner=runner)
+    return var_plan(document, root, runner, database=True)
 
 
 def _values(plan: VarPlan, file: InputFile) -> dict[str, str]:
-    match = FileMatch("work", 1, file.path, "note", "notes", {})
-    return dict(plan.resolve(file, match, Path("/in")).items)
+    return resolve_values(plan, file, use_file_path=True)
 
 
 def _file_calls(runner: FakeRunner) -> list[list[str]]:

@@ -8,7 +8,7 @@ from importlib.metadata import PackageNotFoundError, version as package_version
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
-from supershelf.constants import APP_NAME, LOGGER_NAME
+from supershelf.constants import APP_NAME, INTERNAL_NAMES, LOGGER_NAME
 from supershelf.domain_schema import DomainSchema
 from supershelf.match import (
     DETAIL_NO_PATTERNS,
@@ -22,8 +22,9 @@ from supershelf.match import (
 from supershelf.record import RecordReader, RecordSession
 from supershelf.runs import ShelfRuns
 from supershelf.scan import InputFile
-from supershelf.var_template import VarEnvironment
 from supershelf.kind_file import KindOverrideMode
+from supershelf.var_template import VarEnvironment
+from supershelf.vars import FileVars
 
 
 def kept_path() -> Argument:
@@ -143,6 +144,36 @@ class ScanKindsCommand(ListViewMixin, Parser):
         return rows
 
 
+_STRUCTURED_FORMATS = frozenset({"json", "yaml"})
+
+
+def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
+    """Printed variables in table order: alphabetical by name."""
+    visible = resolved.items
+    if not show_all:
+        visible = tuple(
+            (name, value) for name, value in visible if name not in INTERNAL_NAMES
+        )
+    return tuple(sorted(visible))
+
+
+def present_vars(resolved: FileVars, fmt: str | None, *, show_all: bool = False) -> object:
+    """Table text, or the typed mapping for json and yaml."""
+    if fmt in _STRUCTURED_FORMATS:
+        return resolved.dump_vars(show_all=show_all)
+    return "\n".join(
+        f"{name}: {value}" for name, value in _table_pairs(resolved, show_all=show_all)
+    )
+
+
+def present_sources(resolved: FileVars, *, show_all: bool = False) -> str:
+    """Source labels for the table, one line per name in present_vars order."""
+    return "\n".join(
+        ", ".join(resolved.sources[name])
+        for name, _value in _table_pairs(resolved, show_all=show_all)
+    )
+
+
 class ScanVarsCommand(ListViewMixin, Parser):
     """List variables for each matched file."""
 
@@ -179,7 +210,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
         )
         rows = []
         for _shelf, _result, _found, matched, resolved, _plan in walk:
-            presented = resolved.present(fmt, show_all=bool(show_all))
+            presented = present_vars(resolved, fmt, show_all=bool(show_all))
             row = {
                 "profile": matched.profile,
                 "input": matched.index,
@@ -189,7 +220,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
                 "vars": presented,
             }
             if isinstance(presented, str):
-                row["sources"] = resolved.present_sources(show_all=bool(show_all))
+                row["sources"] = present_sources(resolved, show_all=bool(show_all))
             rows.append(row)
         for plan in walk.plans:
             plan.commit()

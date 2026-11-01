@@ -5,17 +5,11 @@ from pathlib import Path
 import pytest
 
 from supershelf.errors import VarConfigError
-from supershelf.match import FileMatch, Matcher
+from supershelf.match import FileMatch
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
-
-
-def _file(relative: str = "a.txt") -> InputFile:
-    item = InputFile.from_relative(relative, Path("/tmp") / relative)
-    item.mtime = "2026-01-01T00:00:00+00:00"
-    item.ctime = "2026-01-02T00:00:00+00:00"
-    item.sha256 = "abc"
-    return item
+from tests.metadata_helpers import input_file as _file
+from tests.metadata_helpers import resolve_values, var_plan
 
 
 def _match(
@@ -30,11 +24,7 @@ def _plan(
     root: Path,
     scope: dict[str, object] | None = None,
 ) -> VarPlan:
-    matcher = Matcher.from_document(document, "work")
-    full: dict[str, object] = {"__root_dir__": str(root), "__profile__": "work"}
-    if scope:
-        full.update(scope)
-    return VarPlan.from_document(document, "work", matcher, root, full)
+    return var_plan(document, root, scope=scope)
 
 
 def _values(plan: VarPlan, **kwargs: object) -> dict[str, str]:
@@ -42,8 +32,7 @@ def _values(plan: VarPlan, **kwargs: object) -> dict[str, str]:
     match = kwargs.get("match", _match())
     assert isinstance(file, InputFile)
     assert isinstance(match, FileMatch)
-    resolved = plan.resolve(file, match, Path("/in"))
-    return dict(resolved.items)
+    return resolve_values(plan, file, match)
 
 
 def _assert_builtin_defaults(plan: VarPlan) -> None:

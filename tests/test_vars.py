@@ -5,19 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from supershelf.cli import present_sources, present_vars
 from supershelf.constants import LOGGER_NAME
 from supershelf.errors import VarConfigError, VarResolveError
-from supershelf.match import FileMatch, Matcher
+from supershelf.match import FileMatch
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
-
-
-def _file(relative: str = "a.txt") -> InputFile:
-    item = InputFile.from_relative(relative, Path("/tmp") / relative)
-    item.mtime = "2026-01-01T00:00:00+00:00"
-    item.ctime = "2026-01-02T00:00:00+00:00"
-    item.sha256 = "abc"
-    return item
+from tests.metadata_helpers import input_file as _file
+from tests.metadata_helpers import resolve_values, var_plan
 
 
 def _match(
@@ -38,16 +33,10 @@ def _plan(
     dry_run: bool = False,
     environ: dict[str, str] | None = None,
 ) -> VarPlan:
-    matcher = Matcher.from_document(document, "work")
-    full: dict[str, object] = {"__root_dir__": str(root), "__profile__": "work"}
-    if scope:
-        full.update(scope)
-    return VarPlan.from_document(
+    return var_plan(
         document,
-        "work",
-        matcher,
         root,
-        full,
+        scope=scope,
         mode=mode,
         dry_run=dry_run,
         environ={} if environ is None else environ,
@@ -59,8 +48,7 @@ def _values(plan: VarPlan, **kwargs: object) -> dict[str, str]:
     match = kwargs.get("match", _match())
     assert isinstance(file, InputFile)
     assert isinstance(match, FileMatch)
-    resolved = plan.resolve(file, match, Path("/in"))
-    return dict(resolved.items)
+    return resolve_values(plan, file, match)
 
 
 def test_later_layer_replaces_and_keeps_first_position(tmp_path: Path) -> None:
@@ -989,13 +977,13 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
         f"kind:{kind}",
     )
     assert resolved.sources["__kind__"] == ("fact",)
-    text = str(resolved.present(None))
+    text = str(present_vars(resolved, None))
     assert "__kind__:" not in text
-    shown = str(resolved.present(None, show_all=True))
+    shown = str(present_vars(resolved, None, show_all=True))
     assert "__kind__:" in shown
     assert "file_ctime:" not in shown
     lines = text.splitlines()
-    source_lines = resolved.present_sources().splitlines()
+    source_lines = present_sources(resolved).splitlines()
     assert [line.split(":", 1)[0] for line in lines] == sorted(
         line.split(":", 1)[0] for line in lines
     )
@@ -1003,9 +991,9 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
     vendor_at = lines.index("vendor: KindCo")
     assert source_lines[vendor_at] == ", ".join(resolved.sources["vendor"])
     assert "sources:" not in text
-    assert "__kind__" not in resolved.present("json")
-    assert resolved.present("json")["vendor"]["value"] == "KindCo"
-    assert resolved.present("json", show_all=True)["__kind__"]["value"] == "note"
+    assert "__kind__" not in present_vars(resolved, "json")
+    assert present_vars(resolved, "json")["vendor"]["value"] == "KindCo"
+    assert present_vars(resolved, "json", show_all=True)["__kind__"]["value"] == "note"
 
 
 def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> None:

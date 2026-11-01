@@ -6,47 +6,12 @@ from pathlib import Path
 import pytest
 
 from supershelf.errors import VarCandidateError, VarConfigError
-from supershelf.match import FileMatch, Matcher
 from supershelf.metadata.parse import OutputParser
 from supershelf.metadata.process import ProcessRunner
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
-
-
-class FakeRunner(ProcessRunner):
-    """Records argv. Does not spawn the named program."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls: list[list[str]] = []
-        self.which_calls: list[str] = []
-        self.available: set[str] = set()
-        self.output: dict[str, str] = {}
-        self.codes: dict[str, int] = {}
-
-    def which(self, name: str) -> str | None:
-        self.which_calls.append(name)
-        if name in self.available or name in self.output:
-            return name
-        return None
-
-    def run(self, argv: list[str], timeout: float) -> str:
-        del timeout
-        self.calls.append(list(argv))
-        program = argv[0]
-        code = self.codes.get(program, 0)
-        if code != 0:
-            raise VarCandidateError(f"{program} exited {code}")
-        return self.output.get(program, "")
-
-
-def _file(relative: str = "a.txt", absolute: Path | None = None) -> InputFile:
-    path = Path("/tmp") / relative if absolute is None else absolute
-    item = InputFile.from_relative(relative, path)
-    item.mtime = "2026-01-01T00:00:00+00:00"
-    item.ctime = "2026-01-02T00:00:00+00:00"
-    item.sha256 = "abc"
-    return item
+from tests.metadata_helpers import FakeRunner, input_file as _file
+from tests.metadata_helpers import resolve_values, var_plan
 
 
 def _plan(
@@ -55,28 +20,11 @@ def _plan(
     runner: FakeRunner,
     scope: dict[str, object] | None = None,
 ) -> VarPlan:
-    matcher = Matcher.from_document(document, "work")
-    full: dict[str, object] = {
-        "__root_dir__": str(root),
-        "__profile__": "work",
-        "__profile_dir__": str(root),
-    }
-    if scope:
-        full.update(scope)
-    return VarPlan.from_document(
-        document,
-        "work",
-        matcher,
-        root,
-        full,
-        runner=runner,
-    )
+    return var_plan(document, root, runner, scope, profile_dir=True)
 
 
 def _values(plan: VarPlan, file: InputFile | None = None) -> dict[str, str]:
-    chosen = _file() if file is None else file
-    match = FileMatch("work", 1, chosen.path, "note", "notes", {})
-    return dict(plan.resolve(chosen, match, Path("/in")).items)
+    return resolve_values(plan, file, use_file_path=True)
 
 
 def test_parser_samples_from_the_spec() -> None:

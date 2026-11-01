@@ -55,9 +55,6 @@ from supershelf.var_schema import (
 from supershelf.var_template import VarEnvironment, is_template
 
 
-_STRUCTURED_FORMATS = frozenset({"json", "yaml"})
-
-
 class FileVars:
     """Resolved variables for one matched file."""
 
@@ -83,30 +80,6 @@ class FileVars:
             for name, state in self.states
             if show_all or name not in INTERNAL_NAMES
         }
-
-    def _table_pairs(self, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
-        """Printed variables in table order: alphabetical by name."""
-        visible = self.items
-        if not show_all:
-            visible = tuple(
-                (name, value) for name, value in visible if name not in INTERNAL_NAMES
-            )
-        return tuple(sorted(visible))
-
-    def present(self, fmt: str | None, *, show_all: bool = False) -> object:
-        """Table text, or the typed mapping for json and yaml."""
-        if fmt in _STRUCTURED_FORMATS:
-            return self.dump_vars(show_all=show_all)
-        return "\n".join(
-            f"{name}: {value}" for name, value in self._table_pairs(show_all=show_all)
-        )
-
-    def present_sources(self, *, show_all: bool = False) -> str:
-        """Source labels for the table, one line per name in present() order."""
-        return "\n".join(
-            ", ".join(self.sources[name])
-            for name, _value in self._table_pairs(show_all=show_all)
-        )
 
 
 class VarTable:
