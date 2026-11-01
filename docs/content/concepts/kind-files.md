@@ -60,7 +60,7 @@ A cell is one stored string. It is not a candidate list, and it is not compiled 
 
 A cell that sets an existing key keeps that key's first position and replaces the stored string. A new key is appended. CSV uses column order. TOML and YAML use key order inside `vars`.
 
-A row must not set an internal name, `file_ctime`, or `file_mtime`. `__date__` is allowed. `__kind__` is not. Only `overrides` may set `__kind__`.
+A row must not set an internal name. `__date__` is allowed. `__kind__` is not. Only `overrides` may set `__kind__`.
 
 Unmatched files have no kind, so they get no row. Files the walk skipped get no row.
 

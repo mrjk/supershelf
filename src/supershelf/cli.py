@@ -172,6 +172,11 @@ class ScanVarsCommand(ListViewMixin, Parser):
         "--kind-overrides-mode",
         help="Kind file mode: auto, manual, always, or disabled.",
     )
+    show_all = Argument(
+        "--all",
+        action="store_true",
+        help="Include internal variables in the vars column.",
+    )
 
     def cli_run(
         self,
@@ -180,6 +185,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
         path=None,
         dry_run=False,
         kind_overrides_mode=None,
+        show_all=False,
         ctx=None,
         **_,
     ):
@@ -215,7 +221,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
                         matched,
                         result.config.path,
                     )
-                    presented = resolved.present(fmt)
+                    presented = resolved.present(fmt, show_all=bool(show_all))
                     row = {
                         "profile": matched.profile,
                         "input": matched.index,
@@ -225,7 +231,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
                         "vars": presented,
                     }
                     if isinstance(presented, str):
-                        row["sources"] = resolved.present_sources()
+                        row["sources"] = resolved.present_sources(show_all=bool(show_all))
                     rows.append(row)
         for _shelf, _matcher, plan in prepared:
             plan.commit()

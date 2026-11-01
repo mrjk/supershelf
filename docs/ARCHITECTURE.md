@@ -44,7 +44,7 @@ amount:
   value_sources: []
 ```
 
-`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
+`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. Internal names are omitted unless `--all` is set. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
 
 ## Catalog
 
@@ -52,10 +52,9 @@ Built-in entries are prefilled. The user catalog is the top-level profile key `v
 
 Built-ins, all `internal: true`, `type: text`, `mandatory: true`, filled from the file and the match:
 
-- `__kind__`, `__rule_name__`, `__ctime__`, `__mtime__`, `__file_hash__`, `__file_name__`, `__file_stem__`, `__file_ext__`, `__file_path__`, `__file_dir__`
-- `file_ctime`, `file_mtime`. Internal is explicit, because these names have no `__` prefix. Empty `__file_ext__` or `__file_dir__` is `""`, which is set, so `mandatory` passes.
+- `__kind__`, `__rule_name__`, `__ctime__`, `__mtime__`, `__file_hash__`, `__file_name__`, `__file_stem__`, `__file_ext__`, `__file_path__`, `__file_dir__`. Empty `__file_ext__` or `__file_dir__` is `""`, which is set, so `mandatory` passes.
 
-`__date__` is in the catalog with `internal: false`, `type: date`, `mandatory: false`. The prefix rule does not mark it internal. `__ctime__` and `__mtime__` stay `text`: their stored form has fractional seconds and a UTC offset, which `datetime` rejects. `file_ctime` and `file_mtime` stay that same text.
+`__date__` is in the catalog with `internal: false`, `type: date`, `mandatory: false`. The prefix rule does not mark it internal. `__ctime__` and `__mtime__` stay `text`: their stored form has fractional seconds and a UTC offset, which `datetime` rejects.
 
 A name with no entry is an implicit user spec: `type: text`, `mandatory: false`, `internal` from the prefix rule.
 

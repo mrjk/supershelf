@@ -23,7 +23,6 @@ from pydantic import (
 )
 
 from supershelf.constants import (
-    ALIAS_NAMES,
     DATE_TEXT,
     INTERNAL_NAMES,
     KEY_DEFAULT_VARS,
@@ -54,7 +53,7 @@ _DATETIME_TEXT = re.compile(
 _BOOL_TRUE = frozenset({"true", "yes", "1"})
 _BOOL_FALSE = frozenset({"false", "no", "0"})
 _TIME_FORMATS = ("%H:%M:%S", "%H:%M")
-_LOCKED_BUILTINS = frozenset(INTERNAL_NAMES + ALIAS_NAMES)
+_LOCKED_BUILTINS = frozenset(INTERNAL_NAMES)
 _MANAGED = _LOCKED_BUILTINS | {VAR_DATE}
 _LOCKED_KEYS = frozenset({"type", "internal", "mandatory", "default", "validation"})
 _DATE_LOCKED_KEYS = frozenset({"type", "internal"})
@@ -899,8 +898,6 @@ class VarCatalog:
     def _builtins() -> dict[str, VarSpec]:
         specs: dict[str, VarSpec] = {}
         for name in INTERNAL_NAMES:
-            specs[name] = VarSpec(type=TYPE_TEXT, internal=True, mandatory=True)
-        for name in ALIAS_NAMES:
             specs[name] = VarSpec(type=TYPE_TEXT, internal=True, mandatory=True)
         specs[VAR_DATE] = VarSpec(type=TYPE_DATE, internal=False, mandatory=False)
         return specs

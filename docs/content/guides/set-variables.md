@@ -58,13 +58,10 @@ This profile sets a default owner, then replaces the vendor on the Bank2000 stat
 supershelf scan vars "Bank2000/REL_20260425_ab12cd34.pdf"
 ```
 
-Example `vars` and `sources` cells. The other internal facts, `file_ctime`, and `file_mtime` are omitted. Names are alphabetical, and each `sources` line matches the name on that line.
+Example `vars` and `sources` cells. Internal facts are omitted unless `--all` is set. Names are alphabetical, and each `sources` line matches the name on that line.
 
 ```text
 vars                                      sources
-__file_name__: REL_20260425_ab12cd34.pdf  fact
-__kind__: invoice                         fact
-__rule_name__: bank2000_statement         fact
 date: 20260425                            fact
 owner: sample                             default
 receipt: ab12cd34                         rule:bank2000_statement

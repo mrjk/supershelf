@@ -304,7 +304,7 @@ parent options:
 <!-- extract: help scan vars -->
 ```text
 usage: supershelf scan vars [-h] [--kind-overrides-mode KIND_OVERRIDES_MODE]
-                            [--expand-keys | --no-expand-keys]
+                            [--all] [--expand-keys | --no-expand-keys]
                             [--width {content,fit,terminal}]
                             [--columns COLUMNS] [--add-index | --no-add-index]
                             [--format {view,yaml,json,csv}]
@@ -326,6 +326,7 @@ options:
   --kind-overrides-mode KIND_OVERRIDES_MODE
                               Kind file mode: auto, manual, always, or
                               disabled. (default: None)
+  --all                       Include internal variables in the vars column. (default: False)
 
 Output options:
   --expand-keys, --no-expand-keys

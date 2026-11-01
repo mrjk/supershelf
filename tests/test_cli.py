@@ -362,10 +362,19 @@ def test_scan_vars_named_file_lists_only_that_path(
     assert "vendor: Bank2000" in plain
     assert "sources:" not in plain
     assert "| sources |" in plain
-    assert plain.index("__kind__:") < plain.index("file_ctime:")
-    assert plain.index("file_mtime:") < plain.index("vendor:")
+    assert "__kind__:" not in plain
+    assert "file_ctime:" not in plain
+    assert "file_mtime:" not in plain
     assert "b.txt" not in plain
     assert "No match_rule" not in captured.err
+
+    app = App(parse=False)
+    app.dispatch(["-v", "scan", "vars", "--all", "a.txt"])
+    shown = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+    assert "__kind__:" in shown
+    assert "vendor: Bank2000" in shown
+    assert "file_ctime:" not in shown
+    assert "file_mtime:" not in shown
 
 
 def test_scan_vars_named_file_lists_each_input(

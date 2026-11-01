@@ -6,6 +6,8 @@
 
 Source labels are `fact`, `default`, `rule:<rule name>`, `kind:<kind file path>`, and `override:<path pattern>`. A later write appends a label. It keeps the earlier ones. The last label is the winner. A layer that misses does not add a label and does not remove earlier ones.
 
+Internal names are left out of `vars` and `sources`, and out of the json and yaml objects, unless `--all` is set. `__date__`, schema names, regex groups, and other assigned names stay.
+
 The walk is the full walk. mtime, ctime, and sha256 are required. There is no `--quick`. The path argument is the same as `scan files`: omit it to list every matched file. If any kept path equals the selector, every input lists that exact path only. Otherwise the selector lists paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice. When a path is set, only the selected files are matched, so other files are not warned.
 
 Unmatched files log the same warning as `scan kinds`, once per file. They add no row.
@@ -18,7 +20,7 @@ Facts are the base scope. An assignment of the same name shadows that fact for l
 
 Profile scope from [Paths](paths.md) is available to templates. It is not printed.
 
-Internal facts are always printed:
+Internal facts stay in scope for templates. `scan vars` prints them only with `--all`:
 
 - `__kind__`: the kind from matching, until an override replaces it
 - `__rule_name__`: the match rule name
@@ -29,8 +31,6 @@ Internal facts are always printed:
 - `__file_ext__`: the last suffix without the leading dot. `archive.tar.gz` stores `gz`. A name with no suffix stores an empty string. A leading dot, as in `.gitignore`, is not a suffix, so the extension is empty and the stem is the whole name
 - `__file_path__`: the path relative to the input, with `/` separators
 - `__file_dir__`: the directory relative to the input. Empty when the file sits in the input directory
-
-`file_ctime` is `__ctime__`. `file_mtime` is `__mtime__`. Both are printed.
 
 Named groups from the winning regex are facts. They are stored in the order the pattern declared them. The table sorts every printed name alphabetically.
 
@@ -43,7 +43,7 @@ Assignments are the user layers. Later wins on the same key. Each layer is appli
 3. The kind-file row for that path. See [Kind files](kind-files.md).
 4. The first matching `overrides` item. This is the highest layer, and the only layer that may set `__kind__`.
 
-`default_vars` and rule `vars` must not set an internal name, `file_ctime`, or `file_mtime`. A kind-file row must not either. Only overrides may set `__kind__`. That changes the printed kind and the `__kind__` fact seen by later override templates. It does not change `rule`, and it does not load another kind file. Overrides must not set the other internal names, `file_ctime`, or `file_mtime`.
+`default_vars` and rule `vars` must not set an internal name. A kind-file row must not either. Only overrides may set `__kind__`. That changes the printed kind and the `__kind__` fact seen by later override templates. It does not change `rule`, and it does not load another kind file. Overrides must not set the other internal names.
 
 `__date__` is not an internal. Any of these layers may set it. The filename does not. A stem that is a date stays `__file_stem__`. To use it, write a candidate such as `{{ regex_time_var(__file_stem__, __default_date_format__) }}`. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
 

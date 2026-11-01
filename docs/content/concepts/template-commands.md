@@ -24,7 +24,7 @@ A miss raises `VarCandidateError`. That fails the current candidate only, so the
 
 ## file
 
-`file("ctime")` and `file("mtime")` return the same UTC ISO-8601 timestamps as `file_ctime` and `file_mtime`. Any other argument fails the candidate. The result includes the time. It is not rewritten to `YYYY-MM-DD`, so it does not satisfy `__date__` by itself.
+`file("ctime")` and `file("mtime")` return the same UTC ISO-8601 timestamps as `__ctime__` and `__mtime__`. Any other argument fails the candidate. The result includes the time. It is not rewritten to `YYYY-MM-DD`, so it does not satisfy `__date__` by itself.
 
 ## pdf_cdate and pdf_mdate
 

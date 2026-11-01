@@ -6,7 +6,7 @@ Built-in facts below are type `text`. `__date__` is type `date`. A user name wit
 
 ## Printed facts
 
-These are set from the file and the match. Assignments cannot replace them, except `__kind__`, which only `overrides` may set.
+These are set from the file and the match. Assignments cannot replace them, except `__kind__`, which only `overrides` may set. `scan vars` prints them only with `--all`.
 
 | Name | Value |
 | --- | --- |
@@ -21,12 +21,7 @@ These are set from the file and the match. Assignments cannot replace them, exce
 | `__file_path__` | Path relative to the input, with `/` separators. |
 | `__file_dir__` | Directory relative to the input. Empty in the input directory. |
 
-| Name | Value |
-| --- | --- |
-| `file_ctime` | Same string as `__ctime__`. |
-| `file_mtime` | Same string as `__mtime__`. |
-
-Named regex groups are stored in pattern order and printed with the other names. The table sorts every name alphabetically. A group name that starts with `__` stops the command before the walk. A group that reuses an internal name or an alias is dropped.
+Named regex groups are stored in pattern order and printed with the other names. The table sorts every name alphabetically. A group name that starts with `__` stops the command before the walk. A group that reuses an internal name is dropped.
 
 ## Document date
 
@@ -38,7 +33,7 @@ Named regex groups are stored in pattern order and printed with the other names.
 
 ## Profile scope
 
-These names are in scope for path templates and variable templates. They are not printed as their own rows. An assignment cannot reuse one of them. A name that starts with `__` and is not a managed variable stops the command with "is not a supershelf variable". The managed names are the internal facts, `file_ctime`, `file_mtime`, and `__date__`.
+These names are in scope for path templates and variable templates. They are not printed as their own rows. An assignment cannot reuse one of them. A name that starts with `__` and is not a managed variable stops the command with "is not a supershelf variable". The managed names are the internal facts and `__date__`.
 
 | Name | Value |
 | --- | --- |
@@ -68,7 +63,7 @@ Kind-file path templates also see:
 | Name | `default_vars` | Rule `vars` | Kind file | `overrides` |
 | --- | --- | --- | --- | --- |
 | `__kind__` | no | no | no | yes |
-| other internals, `file_ctime`, `file_mtime` | no | no | no | no |
+| other internals | no | no | no | no |
 | `__date__` | yes | yes | yes | yes |
 | a name that does not start with `__` | yes | yes | yes | yes |
 | any other name that starts with `__` | no | no | no | no |

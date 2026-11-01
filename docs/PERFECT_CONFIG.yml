@@ -215,8 +215,8 @@
         - kind is the final __kind__ after overrides. rule stays the match rule name.
         - vars is one cell. Each final key is one line: the name, ": ", then the value.
           File order follows the walk. Inside the cell, the lines are
-          internals in the order listed below, then file_ctime and file_mtime,
-          then regex groups in pattern order, then assignment keys in first-seen order.
+          regex groups in pattern order, then assignment keys in first-seen order.
+          Internal facts are omitted unless --all is set.
           A fact replaced by an assignment is printed once, with the final value, in its fact position.
         - Log the same unmatched-file warning as scan kinds, once per file. Do not log it again.
         - -vv logs each kind_overrides_config candidate the first time a kind and input try it.
@@ -236,7 +236,7 @@
       While a key is being rendered, a reference to itself still sees the previous layer, so the fact stays visible when no earlier assignment set that name.
     - Profile scope from step 2 is a fact. It is available to templates. It is not printed.
       Kind path templates below add __kind__ and __input__.path for that render only.
-    - Internals are facts. They are always printed, in this order:
+    - Internals are facts. They stay in scope for templates. scan vars prints them only with --all:
         - __kind__: the kind from step 2.2, until an override replaces it
         - __rule_name__: the match rule name
         - __ctime__ and __mtime__: the stored UTC ISO-8601 timestamps from the walk, not default_date_format
@@ -245,7 +245,6 @@
         - __file_ext__: InputFile.suffix without the leading dot. No suffix stores an empty string. archive.tar.gz stores gz.
         - __file_path__: path relative to the input, with / separators
         - __file_dir__: directory relative to the input. Empty when the file sits in the input directory
-    - file_ctime is __ctime__. file_mtime is __mtime__. Both are printed after the internals.
     - The filename does not set __date__. A stem that is a date stays __file_stem__.
       A profile that wants that date writes a candidate, such as
       {{ regex_time_var(__file_stem__, __default_date_format__) }}.
@@ -262,12 +261,12 @@
            One literal string per cell. It replaces a value the rule already stored.
            It does not change what the rule template already read.
         4. The first matching overrides[] entry. This is the highest layer, and the only layer that may set __kind__.
-    - default_vars and rule vars must not set an internal name, file_ctime, or file_mtime.
+    - default_vars and rule vars must not set an internal name.
       A per-file row must not either. Step 2.3.2.
       __date__ is not an internal.
     - Only overrides may set __kind__. That changes the printed kind and the __kind__ fact seen by later override templates.
       It does not load another kind file and does not change rule.
-      Overrides must not set the other internal names, file_ctime, or file_mtime.
+      Overrides must not set the other internal names.
     - A resolved var is always one string. A template can read facts and any assignment already rendered.
       It cannot read a key later in the same mapping. That name is not defined yet.
       The key being rendered sees the previous layer's string, not the candidate list being tried.
@@ -429,7 +428,7 @@
       A var value that is a number, boolean, date, list, or nested mapping is a config error. Quote scalars.
     - A cell that sets an existing key keeps that key's first position and replaces the stored string.
       A new key is appended. CSV uses column order. TOML and YAML use key order inside vars.
-    - A row must not set an internal name, file_ctime, or file_mtime.
+    - A row must not set an internal name.
       Other __ names, including __date__, are allowed.
       Only profile overrides may set __kind__.
 
@@ -604,8 +603,6 @@ default_vars:
     - '{{pdf_mdate()}}'
     - '{{file("ctime")}}'
     - '{{file("mtime")}}'
-    - '{{file_ctime}}'
-    - '{{file_mtime}}'
 
 
 # Match rules. Tried in list order. The first rule that matches wins.

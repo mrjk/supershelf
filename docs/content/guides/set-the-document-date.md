@@ -53,7 +53,7 @@ Put the fallback list on `default_vars`, then let a rule try its own captured da
 
 `pdf_cdate()` and `pdf_mdate()` read PDF info and also return `YYYY-MM-DD`. The file is opened only when a candidate calls one of them.
 
-`file("ctime")` returns the stored UTC timestamp, such as `2026-04-25T16:28:00+00:00`. That text is not `YYYY-MM-DD`, so the `__date__` check fails this candidate. In the list above it is the last `default_vars` candidate, so that layer ends. On its own it does not become `__date__`. `file("mtime")`, `file_ctime`, and `file_mtime` are the same kind of timestamp.
+`file("ctime")` returns the stored UTC timestamp, such as `2026-04-25T16:28:00+00:00`. That text is not `YYYY-MM-DD`, so the `__date__` check fails this candidate. In the list above it is the last `default_vars` candidate, so that layer ends. On its own it does not become `__date__`. `file("mtime")` is the same kind of timestamp.
 
 A `__date__` candidate that renders to anything else fails, and the next candidate is tried. If every candidate in that layer misses, the earlier value stays. When no layer sets `__date__`, it is omitted and the command continues. The same rule applies to every other variable. The filename does not set `__date__`. `mandatory: true` stops the file when the value is still unset after the last layer.
 

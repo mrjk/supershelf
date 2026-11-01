@@ -18,7 +18,6 @@ import yaml
 
 from supershelf.common import resolve_user_path
 from supershelf.constants import (
-    ALIAS_NAMES,
     CONFIG_SECTION,
     DATE_TEXT,
     ENV_KIND_OVERRIDES_MODE,
@@ -47,11 +46,9 @@ from supershelf.constants import (
     VAR_CTIME,
     VAR_DATE,
     VAR_DEFAULT_DATE_FORMAT,
-    VAR_FILE_CTIME,
     VAR_FILE_DIR,
     VAR_FILE_EXT,
     VAR_FILE_HASH,
-    VAR_FILE_MTIME,
     VAR_FILE_NAME,
     VAR_FILE_PATH,
     VAR_FILE_STEM,
@@ -100,24 +97,36 @@ class FileVars:
         """Source labels for each set variable, in the order layers wrote it."""
         return {name: tuple(state.value_sources) for name, state in self.states}
 
-    def dump_vars(self) -> dict[str, Any]:
+    def dump_vars(self, *, show_all: bool = False) -> dict[str, Any]:
         """JSON-ready values. Floats can differ from their display spelling."""
-        return {name: state.model_dump(mode="json") for name, state in self.states}
+        return {
+            name: state.model_dump(mode="json")
+            for name, state in self.states
+            if show_all or name not in INTERNAL_NAMES
+        }
 
-    def _table_pairs(self) -> tuple[tuple[str, str], ...]:
-        """Set variables in table order: alphabetical by name."""
-        return tuple(sorted(self.items))
+    def _table_pairs(self, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
+        """Printed variables in table order: alphabetical by name."""
+        visible = self.items
+        if not show_all:
+            visible = tuple(
+                (name, value) for name, value in visible if name not in INTERNAL_NAMES
+            )
+        return tuple(sorted(visible))
 
-    def present(self, fmt: str | None) -> object:
+    def present(self, fmt: str | None, *, show_all: bool = False) -> object:
         """Table text, or the typed mapping for json and yaml."""
         if fmt in _STRUCTURED_FORMATS:
-            return self.dump_vars()
-        return "\n".join(f"{name}: {value}" for name, value in self._table_pairs())
+            return self.dump_vars(show_all=show_all)
+        return "\n".join(
+            f"{name}: {value}" for name, value in self._table_pairs(show_all=show_all)
+        )
 
-    def present_sources(self) -> str:
+    def present_sources(self, *, show_all: bool = False) -> str:
         """Source labels for the table, one line per name in present() order."""
         return "\n".join(
-            ", ".join(self.sources[name]) for name, _value in self._table_pairs()
+            ", ".join(self.sources[name])
+            for name, _value in self._table_pairs(show_all=show_all)
         )
 
 
@@ -125,7 +134,7 @@ class VarTable:
     """Ordered variable definitions. Each value is one or more candidates."""
 
     _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-    _LOCKED = tuple(name for name in INTERNAL_NAMES if name != VAR_KIND) + ALIAS_NAMES
+    _LOCKED = tuple(name for name in INTERNAL_NAMES if name != VAR_KIND)
 
     def __init__(self, keys: tuple[str, ...], candidates: dict[str, tuple[str, ...]]) -> None:
         self.keys = keys
@@ -1201,8 +1210,6 @@ class VarPlan:
             VAR_FILE_DIR: file.directory,
         }
         rows = [(name, values[name], SOURCE_FACT) for name in INTERNAL_NAMES]
-        rows.append((VAR_FILE_CTIME, values[VAR_CTIME], SOURCE_FACT))
-        rows.append((VAR_FILE_MTIME, values[VAR_MTIME], SOURCE_FACT))
         seen = {name for name, _value, _label in rows}
         for name, value in match.groups.items():
             if name in seen:

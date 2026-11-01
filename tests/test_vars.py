@@ -774,6 +774,10 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
     )
     assert resolved.sources["__kind__"] == ("fact",)
     text = str(resolved.present(None))
+    assert "__kind__:" not in text
+    shown = str(resolved.present(None, show_all=True))
+    assert "__kind__:" in shown
+    assert "file_ctime:" not in shown
     lines = text.splitlines()
     source_lines = resolved.present_sources().splitlines()
     assert [line.split(":", 1)[0] for line in lines] == sorted(
@@ -783,7 +787,9 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
     vendor_at = lines.index("vendor: Final")
     assert source_lines[vendor_at] == ", ".join(resolved.sources["vendor"])
     assert "sources:" not in text
+    assert "__kind__" not in resolved.present("json")
     assert resolved.present("json")["vendor"]["value"] == "Final"
+    assert resolved.present("json", show_all=True)["__kind__"]["value"] == "note"
 
 
 def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> None:

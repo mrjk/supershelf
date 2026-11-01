@@ -74,8 +74,6 @@ VAR_FILE_STEM = "__file_stem__"
 VAR_FILE_EXT = "__file_ext__"
 VAR_FILE_PATH = "__file_path__"
 VAR_FILE_DIR = "__file_dir__"
-VAR_FILE_CTIME = "file_ctime"
-VAR_FILE_MTIME = "file_mtime"
 VAR_DATE = "__date__"
 VAR_INPUT = "__input__"
 
@@ -91,7 +89,6 @@ INTERNAL_NAMES = (
     VAR_FILE_PATH,
     VAR_FILE_DIR,
 )
-ALIAS_NAMES = (VAR_FILE_CTIME, VAR_FILE_MTIME)
 # Stored dates are YYYY-MM-DD. Display uses the packaged or configured format.
 DATE_TEXT = "%Y-%m-%d"
 

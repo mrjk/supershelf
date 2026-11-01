@@ -34,7 +34,7 @@ Regex is anchored to the whole candidate. The engine full-matches. Authors do no
 
 Globs full-match the whole candidate, with the same `*` and `**` rules as include and exclude. `**` also matches a file sitting in the input directory, so `glob = "**"` claims every kept file. A glob does not capture groups. `*` consumes the extension, so `filename_glob = "REL*"` matches `REL_1.pdf`.
 
-Named groups from the winning regex are kept. Unnamed groups are ignored. Groups are not merged across fields or rules. A group name that starts with `__` is a config error, checked before the walk. A group whose name repeats an internal fact or `file_ctime` or `file_mtime` is dropped, because those facts are already set.
+Named groups from the winning regex are kept. Unnamed groups are ignored. Groups are not merged across fields or rules. A group name that starts with `__` is a config error, checked before the walk. A group whose name repeats an internal fact is dropped, because those facts are already set.
 
 Patterns are compiled once per profile, before the walk. A bad pattern stops the command before that walk.
 

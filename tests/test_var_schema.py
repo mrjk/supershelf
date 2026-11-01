@@ -63,7 +63,6 @@ def test_builtin_text_is_locked_and_date_can_take_a_default() -> None:
     assert dated.internal is False
     assert dated.mandatory is True
     assert dated.candidates == ("2026-04-25",)
-    assert catalog.spec("file_ctime").internal is True
 
 
 @pytest.mark.parametrize(
