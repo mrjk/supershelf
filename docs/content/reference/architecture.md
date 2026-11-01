@@ -6,8 +6,8 @@ A command loads profiles, renders paths, walks inputs, matches rules, and resolv
 2. `ShelfProfile` renders `root_dir`, `database_file`, and `cache_file` for one loaded file.
 3. `InputScanner` walks that profile's `inputs` and returns the kept files.
 4. `Matcher` compiles `match_rules` once and claims a kind for each kept file.
-5. `VarPlan` resolves facts, then `default_vars`, then the winning rule's `vars`, then the kind-file row for that path, then the first matching override. Each written name is cast to its `vars_schema` type. A name with no entry stays `text`. See [Variables](../concepts/variables.md).
+5. `VarPlan` resolves facts, then `default_vars`, then the winning rule's `vars`, then the kind-file row for that path, then the first matching override. Each written name is cast to its `vars_schema` type. When that kind has a `kind_schema` entry, the names it lists use the overlaid spec. A name with no entry stays `text`. See [Variables](../concepts/variables.md).
 
-`scan files` runs steps 1 to 3. `scan kinds` and `scan inspect` run steps 1 to 4. `scan vars` runs all five, and may create or append a kind file after the run succeeds. None of these commands create the database file, the cache file, or an output tree.
+`scan files` runs steps 1 to 3. `scan kinds` and `scan inspect` run steps 1 to 4. `scan vars` runs all five, and may create or append a kind file after the run succeeds. `schema` loads the profile and prints JSON Schema. It does not walk inputs or write a kind file. None of these commands create the database file, the cache file, or an output tree.
 
 Var modules are the extension point. A module listed in `config.var_modules` may export `GLOBALS` and `FILTERS`. Those callables are available inside variable templates. See [Modules](../concepts/modules.md).

@@ -1,10 +1,13 @@
 """Catalog load and cast rules for variable types."""
 
+import json
+
 import pytest
 
 from supershelf.errors import VarConfigError
 from supershelf.var_schema import (
     CastMiss,
+    KindSchemaSpec,
     VarCatalog,
     VarSpec,
     VarState,
@@ -276,6 +279,231 @@ def test_typed_literal_must_match_and_dumps_json() -> None:
 
     with pytest.raises(VarConfigError, match="does not match type float"):
         _spec({"type": "float", "default": 12})
+
+
+def test_spec_dump_includes_default_and_validation() -> None:
+    spec = _spec({"type": "int", "default": 12, "validation": {"ge": 0, "le": 20}})
+    dumped = spec.model_dump()
+
+    assert dumped["default"] == 12
+    assert dumped["validation"]["ge"] == 0
+    assert dumped["validation"]["le"] == 20
+
+
+def test_kind_schema_rejects_type_and_unknown_refs() -> None:
+    with pytest.raises(VarConfigError, match="cannot set type"):
+        _catalog(
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {
+                    "invoice": {"vars_schema": {"amount": {"schema": "amount", "type": "text"}}}
+                },
+            }
+        )
+    with pytest.raises(VarConfigError, match="not declared"):
+        _catalog(
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {
+                    "invoice": {"vars_schema": {"company": {"schema": "company_name"}}}
+                },
+            }
+        )
+
+
+def test_kind_var_shorthand_resolves_catalog_names() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {
+                "provider": {"type": "text", "desc": "Who issued the document"},
+                "amount": {"type": "float", "unit": "EUR"},
+                "currency": {"type": "text"},
+                "tax": {"type": "float"},
+                "paid": {"type": "bool"},
+            },
+            "kind_schema": {
+                "receipt": {
+                    "desc": "Proof of a purchase that was already paid",
+                    "vars_schema": {
+                        "__date__": None,
+                        "provider": "provider",
+                        "my_amount": "amount",
+                        "my_currency": "currency",
+                        "tax": {"schema": "tax"},
+                        "paid": {"mandatory": True},
+                    },
+                }
+            },
+        }
+    )
+    receipt = catalog.kind_schemas()[0]
+
+    assert receipt.desc == "Proof of a purchase that was already paid"
+    assert receipt.vars["__date__"].type == "date"
+    assert receipt.vars["provider"].type == "text"
+    assert receipt.vars["provider"].desc == "Who issued the document"
+    assert receipt.vars["my_amount"].type == "float"
+    assert receipt.vars["my_amount"].unit == "EUR"
+    assert receipt.vars["my_currency"].type == "text"
+    assert receipt.vars["tax"].type == "float"
+    assert receipt.vars["paid"].type == "bool"
+    assert receipt.vars["paid"].mandatory is True
+
+
+def test_blank_kind_var_uses_the_local_name() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {"amount": {"type": "int", "desc": "Money", "mandatory": True}},
+            "kind_schema": {
+                "invoice": {
+                    "vars_schema": {
+                        "amount": "   ",
+                        "__date__": "",
+                    }
+                },
+                "bill": {
+                    "vars_schema": {"amount": {"schema": "", "mandatory": False}},
+                },
+                "note": {
+                    "vars_schema": {"cost": " amount "},
+                },
+            },
+        }
+    )
+    invoice, bill, note = catalog.kind_schemas()
+
+    assert invoice.vars["amount"].type == "int"
+    assert invoice.vars["amount"].desc == "Money"
+    assert invoice.vars["amount"].mandatory is True
+    assert invoice.vars["__date__"].type == "date"
+    assert bill.vars["amount"].type == "int"
+    assert bill.vars["amount"].desc == "Money"
+    assert bill.vars["amount"].mandatory is False
+    assert note.vars["cost"].type == "int"
+    assert note.vars["cost"].desc == "Money"
+
+
+@pytest.mark.parametrize("value", [True, 12, ["amount"]])
+def test_kind_var_rejects_a_non_reference(value: object) -> None:
+    with pytest.raises(VarConfigError, match="schema name, empty, or a mapping"):
+        _catalog(
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {"invoice": {"vars_schema": {"amount": value}}},
+            }
+        )
+
+
+def test_kind_var_schema_must_be_a_string() -> None:
+    with pytest.raises(VarConfigError, match="must be a string"):
+        _catalog(
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {"invoice": {"vars_schema": {"amount": {"schema": 1}}}},
+            }
+        )
+
+
+def test_kind_schema_spec_json_schema_lists_shorthand() -> None:
+    schema = KindSchemaSpec.model_json_schema()
+    members = schema["properties"]["vars_schema"]["additionalProperties"]["anyOf"]
+
+    assert {"type": "string"} in members
+    assert {"type": "null"} in members
+    assert {"$ref": "#/$defs/KindVarRef"} in members
+    assert "blank string" in schema["properties"]["vars_schema"]["description"]
+    body = schema["$defs"]["KindVarRef"]
+    assert "schema" not in body.get("required", [])
+    assert "local name" in body["properties"]["schema"]["description"]
+
+
+def test_domain_schema_accepts_kind_var_shorthand() -> None:
+    from supershelf.domain_schema import DomainSchema
+
+    document = DomainSchema.load(
+        {
+            "vars_schema": {"amount": {"type": "float", "unit": "EUR"}},
+            "kind_schema": {
+                "receipt": {
+                    "vars_schema": {
+                        "__date__": None,
+                        "my_amount": "amount",
+                    }
+                }
+            },
+        }
+    ).document()
+    receipt = document["$defs"]["receipt"]
+
+    assert receipt["properties"]["__date__"]["type"] == "string"
+    assert receipt["properties"]["my_amount"]["type"] == "number"
+    assert receipt["properties"]["my_amount"]["x-unit"] == "EUR"
+
+
+def test_domain_schema_uses_kind_properties() -> None:
+    from supershelf.domain_schema import DomainSchema
+
+    document = DomainSchema.load(
+        {
+            "vars_schema": {
+                "company_name": {"type": "text", "desc": "Payer"},
+                "amount": {
+                    "type": "float",
+                    "unit": "EUR",
+                    "default": 1.5,
+                    "validation": {"ge": 0, "allowed": [1.5, 2.5]},
+                },
+                "__kind__": {"desc": "Matched kind"},
+            },
+            "kind_schema": {
+                "invoice": {
+                    "desc": "A vendor bill",
+                    "vars_schema": {
+                        "company": {"schema": "company_name", "mandatory": True},
+                        "amount": {"schema": "amount"},
+                    },
+                }
+            },
+        }
+    ).document()
+    invoice = document["$defs"]["invoice"]
+
+    assert invoice["description"] == "A vendor bill"
+    assert invoice["additionalProperties"] is False
+    assert invoice["required"] == ["company"]
+    assert invoice["properties"]["company"]["description"] == "Payer"
+    assert invoice["properties"]["company"]["type"] == "string"
+    amount = invoice["properties"]["amount"]
+    assert amount["type"] == "number"
+    assert amount["x-unit"] == "EUR"
+    assert amount["enum"] == [1.5, 2.5]
+    assert amount["minimum"] == 0
+    assert amount["default"] == 1.5
+    assert "null" not in json.dumps(invoice)
+
+
+def test_domain_schema_without_kinds_lists_declared_names() -> None:
+    from supershelf.domain_schema import DomainSchema
+
+    document = DomainSchema.load(
+        {
+            "vars_schema": {
+                "vendor": {"type": "text"},
+                "__date__": {"desc": "Document date"},
+                "__kind__": {"desc": "Matched kind"},
+            }
+        }
+    ).document()
+
+    assert set(document["properties"]) == {"vendor", "__date__"}
+    assert document["properties"]["__date__"]["pattern"].startswith("^[0-9]{4}")
+
+
+def test_domain_schema_requires_a_declared_schema() -> None:
+    from supershelf.domain_schema import DomainSchema
+
+    with pytest.raises(VarConfigError, match="vars_schema or kind_schema"):
+        DomainSchema.load({})
 
 
 def test_state_clear_drops_sources() -> None:

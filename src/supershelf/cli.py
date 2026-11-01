@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from importlib.metadata import PackageNotFoundError, version as package_version
 
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
 
 from supershelf.configs import ShelfConfigs
 from supershelf.constants import APP_NAME, LOGGER_NAME
+from supershelf.domain_schema import DomainSchema
 from supershelf.match import (
     DETAIL_NO_PATTERNS,
     STATUS_HIT,
@@ -20,6 +22,7 @@ from supershelf.match import (
 )
 from supershelf.profile import ShelfProfile
 from supershelf.scan import InputFile, filter_kept
+from supershelf.var_template import VarEnvironment
 from supershelf.vars import KindOverrideMode, VarPlan
 
 
@@ -212,16 +215,18 @@ class ScanVarsCommand(ListViewMixin, Parser):
                         matched,
                         result.config.path,
                     )
-                    rows.append(
-                        {
-                            "profile": matched.profile,
-                            "input": matched.index,
-                            "path": matched.path,
-                            "kind": resolved.kind,
-                            "rule": matched.rule,
-                            "vars": resolved.present(fmt),
-                        }
-                    )
+                    presented = resolved.present(fmt)
+                    row = {
+                        "profile": matched.profile,
+                        "input": matched.index,
+                        "path": matched.path,
+                        "kind": resolved.kind,
+                        "rule": matched.rule,
+                        "vars": presented,
+                    }
+                    if isinstance(presented, str):
+                        row["sources"] = resolved.present_sources()
+                    rows.append(row)
         for _shelf, _matcher, plan in prepared:
             plan.commit()
         return rows
@@ -331,6 +336,21 @@ class ScanInspectCommand(Parser):
         print(line)
 
 
+class SchemaCommand(Parser):
+    """Print JSON Schema for declared variables and kinds."""
+
+    def cli_run(self, config=None, profile=None, **_):
+        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
+        body = {}
+        for item in loaded.config_list:
+            environment = VarEnvironment()
+            body[item.profile] = DomainSchema.load(
+                item.config,
+                compile_source=environment.compile_source,
+            ).document()
+        print(json.dumps(body, indent=2))
+
+
 class ScanCommand(Parser):
     """Scan profile inputs."""
 
@@ -361,6 +381,10 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
         ]
 
     profiles = Command(ProfilesCommand, help="List profile names and config paths")
+    schema = Command(
+        SchemaCommand,
+        help="Print JSON Schema for declared variables and kinds",
+    )
     scan = Command(ScanCommand, help="Scan profile inputs")
 
 

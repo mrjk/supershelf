@@ -2,11 +2,11 @@
 
 Behind the scenes: models, pipelines, cast rules, and edge cases. Use cases live in [PERFECT_CONFIG.yml](PERFECT_CONFIG.yml). The short command pipeline on the doc site is `docs/content/reference/architecture.md`.
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database and no schema command. `kind_schema` is not parsed. Packaged defaults, at the end of this file, are loaded from `src/supershelf/default.toml`.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. This version adds no database. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. It does not choose kind-file columns. A new CSV kind file still starts as `PATH,__date__`. Packaged defaults, at the end of this file, are loaded from `src/supershelf/default.toml`.
 
 ## Variable types
 
-A declared type and a resolved value are different objects. Pydantic is the schema mechanism, so a later step can call `model_json_schema()` and `model_dump(mode="json")` for sqlite or mysql. This version adds no database and no schema command.
+A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `supershelf schema` builds one model per declared object and prints `model_json_schema()`. This version adds no database.
 
 ### VarSpec
 
@@ -44,7 +44,7 @@ amount:
   value_sources: []
 ```
 
-`scan vars` keeps printing `name: value` for set vars, using the display string. Under each of those lines, print `sources: ` plus the labels joined by `, `. A `None` value stays off the row. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
+`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
 
 ## Catalog
 
@@ -145,26 +145,34 @@ Resolver order in `VarPlan.resolve`: facts, then `default_vars`, then match-rule
 
 ## kind_schema
 
-`kind_schema` is reserved and is not parsed in this phase. Catalog names stay the references a kind will use. The shape is a mapping:
+`kind_schema` is an optional top-level mapping. A profile with no `kind_schema` resolves as before. A bad entry stops `scan vars` and `schema`.
 
 ```yaml
 vars_schema:
   company_name:
     type: text
     desc: Payer
+  employee_name:
+    type: text
 
 kind_schema:
   invoice:
     desc: A vendor bill
     vars_schema:
-      company:
-        schema: company_name
-        mandatory: true
+      company: company_name
       employee:
         schema: employee_name
+        mandatory: true
+      __date__:
 ```
 
-A kind entry points at a catalog spec with `schema` and overlays any fields it sets. A later phase defines how that overlay meets profile `mandatory`.
+The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`company: company_name`). Null or a blank string uses the local name, so `__date__:` and `__date__: ""` both use `__date__`. TOML has no null, so the blank form there is `""`. On an object, omitted, null, or blank `schema` uses the local name. An explicit `schema` remaps (`employee` above). A locked internal, or a name that was never declared, is a config error. The local name (`company`) is the variable for files of that kind. It follows the variable-name pattern and cannot be a locked internal. `type` and `internal` cannot be set on the kind var. They come from the referenced spec.
+
+Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the referenced spec. A present `validation` mapping replaces the referenced one. It is not merged key by key. `default` is not copied. A kind `default` applies only when that kind entry sets it, as the default layer for that local name on files of that kind. Profile `default` and `default_vars` still apply to the catalog name on every file.
+
+When a kind lists a name the profile also has, files of that kind use the overlaid spec. The kind may set `mandatory: false`. A matched kind with no `kind_schema` entry keeps the profile catalog. Names a kind does not list keep the profile spec, including profile `mandatory`.
+
+`supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names, excluding locked internals. `__date__` is included only when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. This version does not check kind-file column names against the schema.
 
 ## Cases
 

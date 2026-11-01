@@ -1,8 +1,8 @@
 # Variables
 
-`scan vars` takes the kept files, then the matched set, and prints one row per matched file. Columns: `profile`, `input`, `path`, `kind`, `rule`, `vars`.
+`scan vars` takes the kept files, then the matched set, and prints one row per matched file. Columns: `profile`, `input`, `path`, `kind`, `rule`, `vars`, `sources`.
 
-`kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each set variable uses two lines. The first is the name, `: `, then the display string. The second is `sources: ` plus the labels that wrote it, joined by `, `. An unset variable is left out. `csv` uses that same two-line cell. `--format json` and `--format yaml` replace the cell with one object per name: `value` is the Python value, and `value_sources` is the label list. `display` is not in the object. A float can have `value` `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling for both `value` and the table.
+`kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each set variable is one line: the name, `: `, then the display string. Names are sorted alphabetically. An unset variable is left out. `sources` is the next column. It has one line per name, in that same order. Each line is the labels that wrote the name, joined by `, `. `csv` uses those same two cells. `--format json` and `--format yaml` omit the `sources` column. They replace `vars` with one object per name: `value` is the Python value, and `value_sources` is the label list. `display` is not in the object. A float can have `value` `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling for both `value` and the table.
 
 Source labels are `fact`, `default`, `rule:<rule name>`, `kind:<kind file path>`, and `override:<path pattern>`. A later write appends a label. It keeps the earlier ones. The last label is the winner. A layer that misses does not add a label and does not remove earlier ones.
 
@@ -18,7 +18,7 @@ Facts are the base scope. An assignment of the same name shadows that fact for l
 
 Profile scope from [Paths](paths.md) is available to templates. It is not printed.
 
-Internal facts are always printed, in this order:
+Internal facts are always printed:
 
 - `__kind__`: the kind from matching, until an override replaces it
 - `__rule_name__`: the match rule name
@@ -30,9 +30,9 @@ Internal facts are always printed, in this order:
 - `__file_path__`: the path relative to the input, with `/` separators
 - `__file_dir__`: the directory relative to the input. Empty when the file sits in the input directory
 
-`file_ctime` is `__ctime__`. `file_mtime` is `__mtime__`. Both are printed after the internals.
+`file_ctime` is `__ctime__`. `file_mtime` is `__mtime__`. Both are printed.
 
-Named groups from the winning regex are facts, printed after the aliases, in the order the pattern declared them.
+Named groups from the winning regex are facts. They are stored in the order the pattern declared them. The table sorts every printed name alphabetically.
 
 ## Layers
 
@@ -49,11 +49,11 @@ Assignments are the user layers. Later wins on the same key. Each layer is appli
 
 Omitted `default_vars`, omitted rule `vars`, or no kind-file cells for that path means that layer is empty.
 
-A new key is appended. A key that already exists keeps its first position. The printed row uses the final display string. The kind-file row is applied after the rule template has stored its string, so the rule does not read the cell. A later override template does. Inside the cell, the lines are internals, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in first-seen order.
+A later write replaces the display string and keeps the name's earlier source labels. The kind-file row is applied after the rule template has stored its string, so the rule does not read the cell. A later override template does. The table sorts every printed name alphabetically, and the `sources` column follows that order.
 
 ## Types
 
-`vars_schema` is an optional top-level mapping. Each key is a variable name. A name with no entry is `text`. `kind_schema` is not read.
+`vars_schema` is an optional top-level mapping. Each key is a variable name. A name with no entry is `text`. A kind can point at those names. See [Kind schema](#kind-schema).
 
 `type` is `text`, `int`, `float`, `bool`, `date`, `time`, or `datetime`, in lower case. `date` is `YYYY-MM-DD`. `time` is `HH:MM` or `HH:MM:SS`. `datetime` is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`, and a set value always includes a clock. No timezone and no fractional seconds. Seconds stay in the display only when they were written. `15:04` and `15:04:00` match as the same clock in `allowed` and in range checks. A bool accepts `true`, `yes`, and `1`, or `false`, `no`, and `0`, in any case. The display is `true` or `false`. An int display drops a leading `+` and leading zeros, so `007` prints as `7`.
 
@@ -70,6 +70,18 @@ A list in an assignment is a candidate list: the first success is kept, and the 
 Jinja reads the display string after a successful cast. It does not receive the Python value. `{{ amount + 1 }}` is not integer math. `regex_replace` and `regex_time_var` still receive strings. `regex_time_var` returns `YYYY-MM-DD`, which satisfies `date` and misses `time` and `datetime`.
 
 A regex group is cast when the fact is stored. A group that does not match its type stops the file. There is no next candidate. Capture the raw text under another name when a later candidate list should supply the typed value.
+
+## Kind schema
+
+`kind_schema` is an optional top-level mapping. Each key is a kind name. A file whose kind is not listed keeps the profile catalog.
+
+A kind has `desc` and `vars_schema`. Each key under that `vars_schema` is a variable name for files of that kind. The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`my_amount: amount`). Null or a blank string uses the local name. In YAML, `amount:` is null. TOML has no null, so write `amount = ""`. An object may omit `schema`, and the local name is used (`tax: {mandatory: true}` uses `tax`). That catalog entry supplies `type` and `internal`. The kind cannot set those.
+
+Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the catalog entry. A `validation` mapping on the kind replaces the catalog one. `default` is not copied. Set it on the kind when that local name needs a default. Profile `default` and `default_vars` still apply to the catalog name on every file.
+
+When the kind lists a name the profile also has, files of that kind use the kind's spec. `mandatory: false` there leaves the name optional for that kind. Names the kind does not list stay on the profile spec, including profile `mandatory`.
+
+`supershelf schema` prints one JSON document, keyed by profile name. It does not walk inputs. With `kind_schema`, each kind is an object under `$defs`. Without it, the object is the declared `vars_schema` names. Locked internals are left out. `__date__` is included only when `vars_schema.__date__` is set. If neither key is set, the command stops with status 2. The schema describes resolved values, not the strings in a kind file or in rule `vars`. This version does not check CSV column names against it. A new kind file still starts as `PATH,__date__`.
 
 ## Candidates
 

@@ -434,9 +434,9 @@ class Matcher:
                         names.append(name)
         return tuple(names)
 
-    def rule_vars(self) -> tuple[tuple[str, object], ...]:
-        """Raw vars for each compiled rule, in rule order."""
-        return tuple((rule.name, rule.variables) for rule in self._rules)
+    def rule_vars(self) -> tuple[tuple[str, str, object], ...]:
+        """Raw vars for each compiled rule, in rule order, with that rule's kind."""
+        return tuple((rule.name, rule.kind, rule.variables) for rule in self._rules)
 
     def claim(self, file: InputFile) -> FileMatch | None:
         """Return the first matching rule, or None."""

@@ -38,6 +38,7 @@ Other keys under `config` are stored. This version does not interpret them.
 | `match_rules` | list of mappings | none | First match wins. Missing means nothing matches. See [Matching](../concepts/matching.md). |
 | `default_vars` | mapping | none | Lowest assignment layer. See [Variables](../concepts/variables.md). |
 | `vars_schema` | mapping | none | Type of each variable name. A missing name is `text`. See [Variables](../concepts/variables.md). |
+| `kind_schema` | mapping | none | Per-kind names that point at `vars_schema`. See [Variables](../concepts/variables.md). |
 | `overrides` | list of mappings | none | Highest assignment layer. First matching path wins. |
 
 ### inputs item
@@ -88,7 +89,35 @@ Unknown keys on an override item are ignored. `path` and `vars` are required.
 | `default` | typed literal, string, or list of candidates | omitted. Same slot as `default_vars`. |
 | `validation` | mapping | omitted |
 
-Unknown keys stop the command. `default` set here and in `default_vars` for the same name stops the command. `kind_schema` is ignored.
+Unknown keys stop the command. `default` set here and in `default_vars` for the same name stops the command.
+
+### kind_schema item
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `desc` | string | empty |
+| `vars_schema` | mapping | required |
+
+Each `vars_schema` value is a catalog reference:
+
+| Value | Meaning |
+| --- | --- |
+| null or `""` | `schema` is the local name. YAML `amount:` is null. TOML has no null, so use `amount = ""`. A blank string is the same. |
+| string | That string is `schema`. `my_amount: amount` remaps the local name. |
+| mapping | Keys below. Omitted, null, or blank `schema` uses the local name. |
+
+Each mapping:
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `schema` | string | the local name. A `vars_schema` name, or `__date__`. |
+| `desc` | string | copied from the referenced spec |
+| `unit` | string | copied from the referenced spec |
+| `mandatory` | boolean | copied from the referenced spec. `false` loosens it for this kind. |
+| `default` | typed literal, string, or list of candidates | omitted. Not copied. Applies only to this kind's local name. |
+| `validation` | mapping | copied when omitted. A present mapping replaces the referenced one. |
+
+`type` and `internal` cannot be set here. Unknown keys stop the command. This version does not check kind-file column names against these keys. A new CSV kind file still starts as `PATH,__date__`.
 
 ### Variable values
 

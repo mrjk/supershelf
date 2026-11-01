@@ -49,7 +49,7 @@ supershelf scan files
 
 `profiles` prints the profile name, the file type, and the config path. `scan files` prints each kept file. The `path` column is relative to `inbox`.
 
-`scan kinds` prints the kind for each matched file. `scan vars` prints the variables, and may create or append a kind file. The documentation site has the quickstart, the guides, and the reference. From this repository, `task docs` serves that site.
+`scan kinds` prints the kind for each matched file. `scan vars` prints the variables, and may create or append a kind file. `schema` prints a JSON Schema of the variables the profile declares. The documentation site has the quickstart, the guides, and the reference. From this repository, `task docs` serves that site.
 
 ## Development
 

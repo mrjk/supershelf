@@ -58,28 +58,21 @@ This profile sets a default owner, then replaces the vendor on the Bank2000 stat
 supershelf scan vars "Bank2000/REL_20260425_ab12cd34.pdf"
 ```
 
-Example `vars` cell. The rows between `__file_name__` and `date` are omitted: the other internal facts, then `file_ctime` and `file_mtime`.
+Example `vars` and `sources` cells. The other internal facts, `file_ctime`, and `file_mtime` are omitted. Names are alphabetical, and each `sources` line matches the name on that line.
 
 ```text
-__kind__: invoice
-sources: fact
-__rule_name__: bank2000_statement
-sources: fact
-__file_name__: REL_20260425_ab12cd34.pdf
-sources: fact
-date: 20260425
-sources: fact
-receipt_id: ab12cd34
-sources: fact
-vendor: Bank2000
-sources: default, rule:bank2000_statement
-owner: sample
-sources: default
-receipt: ab12cd34
-sources: rule:bank2000_statement
+vars                                      sources
+__file_name__: REL_20260425_ab12cd34.pdf  fact
+__kind__: invoice                         fact
+__rule_name__: bank2000_statement         fact
+date: 20260425                            fact
+owner: sample                             default
+receipt: ab12cd34                         rule:bank2000_statement
+receipt_id: ab12cd34                      fact
+vendor: Bank2000                          default, rule:bank2000_statement
 ```
 
-Each name is two lines. The printed order is the internal facts, then `file_ctime` and `file_mtime`, then regex groups, then assignment keys in the order they were first stored. `vendor` was set in `default_vars` and replaced by the rule, so it keeps the earlier position, and both layers stay in `sources`. `owner` stays `sample` because the rule does not set it.
+`vendor` was set in `default_vars` and replaced by the rule, so both layers stay on its `sources` line. `owner` stays `sample` because the rule does not set it.
 
 ## Declare a type
 
@@ -112,9 +105,50 @@ Each name is two lines. The printed order is the internal facts, then `file_ctim
         filename_regex: 'REL_(?P<amount>[0-9]+[.][0-9]{2})\.pdf'
     ```
 
-For `REL_12.50.pdf`, the table shows `amount: 12.50`. In `--format json` and `--format yaml` that name is an object: `value` is `12.5`, and `value_sources` lists the layers. `display` is not in the object. `csv` still uses the two-line display string. Templates still read the string `12.50`. `EUR12.50` stops the file, because a regex group has no next candidate.
+For `REL_12.50.pdf`, the table shows `amount: 12.50`. In `--format json` and `--format yaml` that name is an object: `value` is `12.5`, and `value_sources` lists the layers. `display` is not in the object. `csv` uses the same `vars` and `sources` cells as the table. Templates still read the string `12.50`. `EUR12.50` stops the file, because a regex group has no next candidate.
 
-There is no `--quick` on this command. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. If any kept path equals the selector, every input lists that exact path only. Otherwise the selector lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
+## Print a JSON Schema
+
+`supershelf schema` prints those declared types. It does not scan the inbox and it does not write a kind file.
+
+```bash
+supershelf schema
+```
+
+The output is one JSON document, keyed by profile name. Add `kind_schema` when a kind should require a name or carry its own description:
+
+=== "TOML"
+
+    ```toml title="profile.books.toml"
+    [kind_schema.invoice]
+    desc = "A vendor bill"
+
+    [kind_schema.invoice.vars_schema]
+    __date__ = ""
+    vendor = "vendor"
+
+    [kind_schema.invoice.vars_schema.amount]
+    schema = "amount"
+    mandatory = true
+    ```
+
+=== "YAML"
+
+    ```yaml title="profile.books.yaml"
+    kind_schema:
+      invoice:
+        desc: A vendor bill
+        vars_schema:
+          __date__:
+          vendor: vendor
+          amount:
+            schema: amount
+            mandatory: true
+    ```
+
+A string is the catalog name. Null or a blank string uses the local name. TOML has no null, so that form is `""`. An object may omit `schema`, which then uses the local name. `invoice` is then an object under `$defs`. `amount` is required. The rules are in [Variables](../concepts/variables.md). This version does not check the columns of a kind file against that object.
+
+`scan vars` has no `--quick`. The walk always reads mtime, ctime, and sha256. The path argument is the same as [List files](list-files.md). Omit it to list every matched file. If any kept path equals the selector, every input lists that exact path only. Otherwise the selector lists matched paths that start with it. A value that no kept file has stops the command. When a path is set, only the selected files are matched, so other files are not warned.
 
 A key in one mapping cannot read a key that appears later in that same mapping. `{{ vendor }}` inside `default_vars`, next to `vendor`, still sees the previous layer, which is the fact scope. It does not see the candidate list being tried.
 

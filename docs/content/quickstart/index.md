@@ -53,4 +53,4 @@ A file that no rule claims is still listed by `scan files`. `scan kinds` leaves 
 
 ## Where to go next
 
-[List files](../guides/list-files.md) adds include, exclude, and depth. [Match a kind](../guides/match-a-kind.md) separates a Bank2000 statement from the rest. [Set variables](../guides/set-variables.md) reads names out of the filename.
+[List files](../guides/list-files.md) adds include, exclude, and depth. [Match a kind](../guides/match-a-kind.md) separates a Bank2000 statement from the rest. [Set variables](../guides/set-variables.md) reads names out of the filename and can print them as JSON Schema.

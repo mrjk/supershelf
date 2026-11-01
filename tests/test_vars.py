@@ -773,8 +773,16 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
         "override:a.txt",
     )
     assert resolved.sources["__kind__"] == ("fact",)
-    text = resolved.present(None)
-    assert "vendor: Final\nsources: default, rule:notes, " in str(text)
+    text = str(resolved.present(None))
+    lines = text.splitlines()
+    source_lines = resolved.present_sources().splitlines()
+    assert [line.split(":", 1)[0] for line in lines] == sorted(
+        line.split(":", 1)[0] for line in lines
+    )
+    assert len(lines) == len(source_lines)
+    vendor_at = lines.index("vendor: Final")
+    assert source_lines[vendor_at] == ", ".join(resolved.sources["vendor"])
+    assert "sources:" not in text
     assert resolved.present("json")["vendor"]["value"] == "Final"
 
 
@@ -902,6 +910,87 @@ def test_mandatory_none_stops_and_omitted_time_does_not(tmp_path: Path) -> None:
     values = _values(dated)
     assert values["amount"] == "12"
     assert "opens" not in values
+
+
+def test_kind_schema_mandatory_applies_only_to_that_kind(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {
+                "amount": {"type": "int", "mandatory": True},
+                "company_name": {"type": "text", "default": "Bank2000"},
+            },
+            "kind_schema": {
+                "note": {
+                    "vars_schema": {"amount": {"schema": "amount", "mandatory": False}}
+                },
+                "invoice": {
+                    "desc": "A vendor bill",
+                    "vars_schema": {
+                        "amount": {"schema": "amount", "mandatory": False},
+                        "company": {"schema": "company_name", "mandatory": True},
+                    },
+                },
+            },
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+
+    note = _values(plan)
+    assert "amount" not in note
+    assert note["company_name"] == "Bank2000"
+    assert "company" not in note
+
+    with pytest.raises(VarResolveError, match="variable amount failed"):
+        _values(plan, match=_match(kind="other"))
+    with pytest.raises(VarResolveError, match="variable company failed"):
+        _values(plan, match=_match(kind="invoice", rule="bills"))
+
+
+def test_kind_default_replaces_the_profile_default_for_that_kind(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "int", "default": 12}},
+            "kind_schema": {
+                "invoice": {
+                    "vars_schema": {"amount": {"schema": "amount", "default": 15}}
+                }
+            },
+            "match_rules": [{"name": "bills", "kind": "invoice", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+
+    invoice = _values(plan, match=_match(kind="invoice", rule="bills"))
+    other = _values(plan, match=_match(kind="note"))
+
+    assert invoice["amount"] == "15"
+    assert other["amount"] == "12"
+
+
+def test_kind_validation_rejects_a_rule_literal_at_load(tmp_path: Path) -> None:
+    with pytest.raises(VarConfigError, match="cannot be cast"):
+        _plan(
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {
+                    "note": {
+                        "vars_schema": {
+                            "amount": {"schema": "amount", "validation": {"ge": 10}}
+                        }
+                    }
+                },
+                "match_rules": [
+                    {
+                        "name": "notes",
+                        "kind": "note",
+                        "filename_glob": "**",
+                        "vars": {"amount": "5"},
+                    }
+                ],
+            },
+            tmp_path,
+        )
 
 
 def test_kind_cell_cast_failure_stops_the_file(tmp_path: Path) -> None:

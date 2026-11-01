@@ -14,12 +14,13 @@ usage: supershelf [-h] [--log-colors | --no-log-colors] [--version] [-v]
                   [--log-format {default,extended,audit,debug}]
                   [--trace | --no-trace] [--config CONFIG] [--profile PROFILE]
                   [--dry-run]
-                  {profiles,scan} ...
+                  {profiles,schema,scan} ...
 
 Load supershelf profiles and scan their inputs.
 
 subcommands:
   profiles                    List profile names and config paths
+  schema                      Print JSON Schema for declared variables and kinds
   scan                        Scan profile inputs
     files                     List files kept by each input
     kinds                     List the kind matched for each kept file
@@ -86,6 +87,37 @@ Output options:
                               start with '-'. (default: None)
   --sort-mode {asc,desc}      Sort direction (default: asc) (default: None)
   --wrap MODE|COL,...         Flexible table columns: they expand or shrink to the terminal. last (rightmost), first (leftmost), all (any column), or comma-separated names/indexes in priority order. Use --wrap=-1 when the value starts with '-'. Ignored when width is content or stdout is not a TTY. (default: None)
+
+parent options:
+  --log-colors, --no-log-colors
+                              Enable colored logs (default: on for TTY;
+                              override with CLAK_LOG_COLORS or this flag)
+  --version                   Print the installed version and exit.
+  -v, --verbose               Increase verbosity level (-v, -vv, -vvv, -vvvv)
+  --log-format {default,extended,audit,debug}
+                              Set log formatter
+  --trace, --no-trace         Enable trace logging on errors
+  --config CONFIG             Config file or directory. Overrides SUPERSHELF_CONFIG.
+  --profile PROFILE           Comma-separated profile names. Overrides SUPERSHELF_PROFILES.
+  --dry-run                   Report actions without changing anything.
+```
+<!-- /extract -->
+
+## supershelf schema
+
+Prints one JSON document for the selected profiles. The object is keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Without it, the object is the declared `vars_schema` names. Neither key stops the command. The command does not walk inputs and does not write a kind file. Column names in a new CSV kind file stay `PATH,__date__`.
+
+<!-- extract: help schema -->
+```text
+usage: supershelf schema [-h] [--log-colors | --no-log-colors] [--version]
+                         [-v] [--log-format {default,extended,audit,debug}]
+                         [--trace | --no-trace] [--config CONFIG]
+                         [--profile PROFILE] [--dry-run]
+
+Print JSON Schema for declared variables and kinds.
+
+options:
+  -h, --help                  show this help message and exit
 
 parent options:
   --log-colors, --no-log-colors

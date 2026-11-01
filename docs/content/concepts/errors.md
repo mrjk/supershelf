@@ -4,7 +4,7 @@ User errors stop the command and print a message without a traceback. When the e
 
 `SupershelfError` covers discovery, profile files, inputs, and match rules. A missing config, an unknown profile, a bad regex, and a path that is not a directory are this kind of error.
 
-`VarConfigError` is a `SupershelfError` for a var table, a `vars_schema` entry, a template, a module, or a kind file that is invalid as written. It exits with status 2. These are checked before the walk, except a kind file, which is checked the first time that kind and input need it. A non-template literal that cannot cast to the name's type is this error, including when a later candidate might have worked.
+`VarConfigError` is a `SupershelfError` for a var table, a `vars_schema` entry, a `kind_schema` entry, a template, a module, or a kind file that is invalid as written. It exits with status 2. These are checked before the walk, except a kind file, which is checked the first time that kind and input need it. A non-template literal that cannot cast to the name's type is this error, including when a later candidate might have worked. `supershelf schema` uses the same check. A profile with neither `vars_schema` nor `kind_schema` stops that command with this error.
 
 `VarResolveError` is a fact or kind-file cell that cannot cast, or a `mandatory` name that is still unset after the last layer. A candidate list that misses does not raise it. The message names the profile, the input, the path, and the variable. The tip is the cast message for a failed fact or cell, `{name} is mandatory and no layer set it.` when a mandatory name is still unset, or the date-format message for a kind-file `__date__` cell. There is no next candidate.
 

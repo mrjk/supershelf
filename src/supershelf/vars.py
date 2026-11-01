@@ -92,7 +92,7 @@ class FileVars:
 
     @property
     def items(self) -> tuple[tuple[str, str], ...]:
-        """Set variables in print order. The value is the display string."""
+        """Set variables in first-seen order. The value is the display string."""
         return tuple((name, state.display) for name, state in self.states)
 
     @property
@@ -104,15 +104,21 @@ class FileVars:
         """JSON-ready values. Floats can differ from their display spelling."""
         return {name: state.model_dump(mode="json") for name, state in self.states}
 
+    def _table_pairs(self) -> tuple[tuple[str, str], ...]:
+        """Set variables in table order: alphabetical by name."""
+        return tuple(sorted(self.items))
+
     def present(self, fmt: str | None) -> object:
         """Table text, or the typed mapping for json and yaml."""
         if fmt in _STRUCTURED_FORMATS:
             return self.dump_vars()
-        lines: list[str] = []
-        for name, value in self.items:
-            lines.append(f"{name}: {value}")
-            lines.append(f"sources: {', '.join(self.sources[name])}")
-        return "\n".join(lines)
+        return "\n".join(f"{name}: {value}" for name, value in self._table_pairs())
+
+    def present_sources(self) -> str:
+        """Source labels for the table, one line per name in present() order."""
+        return "\n".join(
+            ", ".join(self.sources[name]) for name, _value in self._table_pairs()
+        )
 
 
 class VarTable:
@@ -944,7 +950,7 @@ class VarPlan:
             allows_kind=False,
             environment=environment,
         )
-        rules = cls._rule_tables(matcher, environment)
+        rules, rule_kinds = cls._rule_tables(matcher, environment)
         overrides = cls._override_tables(document, environment)
         kinds = KindFiles.from_section(
             section,
@@ -966,9 +972,14 @@ class VarPlan:
             names=names,
         )
         for rule_name, table in rules.items():
-            cls._check_literals(catalog, table, f"match rule {rule_name} vars")
+            cls._check_literals(
+                catalog,
+                table,
+                f"match rule {rule_name} vars",
+                rule_kinds[rule_name],
+            )
         for index, rule in enumerate(overrides, start=1):
-            cls._check_literals(catalog, rule.table, f"overrides item {index} vars")
+            cls._check_literals(catalog, rule.table, f"overrides item {index} vars", "")
         return cls(environment, catalog, rules, overrides, kinds, profile_scope)
 
     def resolve(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
@@ -980,7 +991,7 @@ class VarPlan:
         for key, value, label in self._fact_rows(file, match):
             self._save_raw(key, value, label, scope, states, order, match, file.path)
         binding = FileBinding(file.absolute, file.sha256 or "", file.ctime or "", file.mtime or "")
-        self._apply_defaults(scope, states, order, binding)
+        self._apply_defaults(scope, states, order, binding, match.kind)
         self._apply(
             self._rules.get(match.rule, VarTable.empty()),
             layer_source(SOURCE_RULE, match.rule),
@@ -988,6 +999,7 @@ class VarPlan:
             states,
             order,
             binding,
+            match.kind,
         )
         self._apply_cells(
             self._kinds.cells_for(match.kind, input_dir, file.path, match),
@@ -1006,6 +1018,7 @@ class VarPlan:
                 states,
                 order,
                 binding,
+                match.kind,
             )
         self._require_mandatory(states, match, file.path)
         chosen = tuple(
@@ -1040,16 +1053,18 @@ class VarPlan:
         states: dict[str, VarState],
         order: list[str],
         binding: FileBinding,
+        kind: str,
     ) -> None:
-        for key in self._catalog.names():
-            spec = self._catalog.spec(key)
-            if not spec.has_default:
+        for key in self._catalog.names_for(kind):
+            candidates = self._catalog.default_candidates(kind, key)
+            if not candidates:
                 continue
             cast = self._first(
                 key,
-                spec.candidates,
+                candidates,
                 self._render_scope(scope),
                 binding,
+                kind,
             )
             if cast is None:
                 continue
@@ -1063,6 +1078,7 @@ class VarPlan:
         states: dict[str, VarState],
         order: list[str],
         binding: FileBinding,
+        kind: str,
     ) -> None:
         for key in table.keys:
             cast = self._first(
@@ -1070,6 +1086,7 @@ class VarPlan:
                 table.candidates[key],
                 self._render_scope(scope),
                 binding,
+                kind,
             )
             if cast is None:
                 continue
@@ -1087,8 +1104,9 @@ class VarPlan:
         candidates: tuple[object, ...],
         scope: Mapping[str, Any],
         binding: FileBinding,
+        kind: str,
     ) -> CastValue | None:
-        spec = self._catalog.spec(key)
+        spec = self._catalog.effective(kind, key)
         for source in candidates:
             try:
                 if isinstance(source, str):
@@ -1130,7 +1148,7 @@ class VarPlan:
         match: FileMatch,
         path: str,
     ) -> None:
-        spec = self._catalog.spec(key)
+        spec = self._catalog.effective(match.kind, key)
         try:
             cast = cast_value(spec, raw, allow_typed=False)
         except CastMiss as exc:
@@ -1143,8 +1161,8 @@ class VarPlan:
         match: FileMatch,
         path: str,
     ) -> None:
-        for name in self._catalog.names():
-            spec = self._catalog.spec(name)
+        for name in self._catalog.names_for(match.kind):
+            spec = self._catalog.effective(match.kind, name)
             if not spec.mandatory:
                 continue
             state = states.get(name)
@@ -1200,10 +1218,16 @@ class VarPlan:
             )
 
     @classmethod
-    def _check_literals(cls, catalog: VarCatalog, table: VarTable, label: str) -> None:
+    def _check_literals(
+        cls,
+        catalog: VarCatalog,
+        table: VarTable,
+        label: str,
+        kind: str,
+    ) -> None:
         """Cast non-template literals now. A miss is a config error, not a fallback."""
         for key in table.keys:
-            spec = catalog.spec(key)
+            spec = catalog.effective(kind, key)
             for item in table.candidates[key]:
                 if is_template(item):
                     continue
@@ -1280,16 +1304,18 @@ class VarPlan:
         cls,
         matcher: Matcher,
         environment: VarEnvironment,
-    ) -> dict[str, VarTable]:
-        return {
-            name: VarTable.parse(
+    ) -> tuple[dict[str, VarTable], dict[str, str]]:
+        tables: dict[str, VarTable] = {}
+        kinds: dict[str, str] = {}
+        for name, kind, raw in matcher.rule_vars():
+            tables[name] = VarTable.parse(
                 raw,
                 label=f"match rule {name} vars",
                 allows_kind=False,
                 environment=environment,
             )
-            for name, raw in matcher.rule_vars()
-        }
+            kinds[name] = kind
+        return tables, kinds
 
     @classmethod
     def _override_tables(

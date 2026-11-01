@@ -26,7 +26,7 @@ These are set from the file and the match. Assignments cannot replace them, exce
 | `file_ctime` | Same string as `__ctime__`. |
 | `file_mtime` | Same string as `__mtime__`. |
 
-Named regex groups are printed after these, in pattern order. A group name that starts with `__` stops the command before the walk. A group that reuses an internal name or an alias is dropped.
+Named regex groups are stored in pattern order and printed with the other names. The table sorts every name alphabetically. A group name that starts with `__` stops the command before the walk. A group that reuses an internal name or an alias is dropped.
 
 ## Document date
 

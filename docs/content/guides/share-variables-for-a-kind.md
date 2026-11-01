@@ -38,6 +38,8 @@ supershelf scan vars
 
 The default mode is `auto`. When the CSV already exists, invoice paths that are not in the file are appended. The new cells are empty, so this run still prints the values from the rule. Fill a cell and run the command again to use it.
 
+`kind_schema` can name the variables for that kind and mark some of them mandatory. `supershelf schema` prints that shape. This version does not check these columns against it.
+
 `manual` reads the file and does not append. `always` creates `profile.books.invoice.csv` when no candidate exists. `disabled` ignores kind files. `--kind-overrides-mode` sets the mode for this command. `--dry-run` reads and does not write. `-v` shows the dry-run message when a file would change.
 
 The kind in the filename is the kind from the match rule. An override that changes `__kind__` does not switch files.

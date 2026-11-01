@@ -37,6 +37,7 @@ KEY_OVERRIDES = "overrides"
 KEY_RULE_VARS = "vars"
 KEY_OVERRIDE_PATH = "path"
 KEY_VARS_SCHEMA = "vars_schema"
+KEY_KIND_SCHEMA = "kind_schema"
 
 TYPE_TEXT = "text"
 TYPE_INT = "int"

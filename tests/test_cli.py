@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -356,10 +357,14 @@ def test_scan_vars_named_file_lists_only_that_path(
     app.dispatch(["-v", "scan", "vars", "a.txt"])
     captured = capsys.readouterr()
 
-    assert "a.txt" in captured.out
-    assert "vendor: Bank2000" in captured.out
-    assert "sources: default" in captured.out
-    assert "b.txt" not in captured.out
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", captured.out)
+    assert "a.txt" in plain
+    assert "vendor: Bank2000" in plain
+    assert "sources:" not in plain
+    assert "| sources |" in plain
+    assert plain.index("__kind__:") < plain.index("file_ctime:")
+    assert plain.index("file_mtime:") < plain.index("vendor:")
+    assert "b.txt" not in plain
     assert "No match_rule" not in captured.err
 
 
@@ -418,6 +423,7 @@ def test_scan_vars_json_uses_python_values(
     assert amount["value_sources"] == ["default"]
     assert paid["value"] is False
     assert "display" not in amount
+    assert "sources" not in rows[0]
 
 
 def test_scan_vars_named_unmatched_file_warns_only_for_that_file(
@@ -823,3 +829,43 @@ def test_scan_inspect_rejects_a_bad_regex_before_walking(
     assert caught.value.code == 1
     assert "Invalid regex" in capsys.readouterr().err
     assert "missing-inbox" not in caplog.text
+
+
+def test_schema_prints_json_for_the_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[vars_schema.amount]\ntype = 'float'\nunit = 'EUR'\n\n"
+        "[kind_schema.invoice]\ndesc = 'A vendor bill'\n\n"
+        "[kind_schema.invoice.vars_schema.amount]\nschema = 'amount'\nmandatory = true\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["schema"])
+    document = json.loads(capsys.readouterr().out)
+    invoice = document["work"]["$defs"]["invoice"]
+
+    assert invoice["required"] == ["amount"]
+    assert invoice["properties"]["amount"]["x-unit"] == "EUR"
+    assert invoice["additionalProperties"] is False
+
+
+def test_schema_without_declarations_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(tmp_path / "profile.work.toml", "[config]\nprofile = 'work'\n")
+
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["schema"])
+
+    assert caught.value.code == 2
+    assert "vars_schema or kind_schema" in capsys.readouterr().err

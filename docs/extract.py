@@ -72,6 +72,7 @@ class DocExtract:
         commands = {
             "help": (),
             "help profiles": ("profiles",),
+            "help schema": ("schema",),
             "help scan": ("scan",),
             "help scan files": ("scan", "files"),
             "help scan kinds": ("scan", "kinds"),
