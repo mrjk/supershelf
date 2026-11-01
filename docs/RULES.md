@@ -50,6 +50,38 @@ List of known app-products (to be filled by the time):
 * Assume any project may end up public, excepted personal projects.
     * I dont want to do cleanup, i want this to be clean from day one.
 
+### 1.3 Standard project structure
+
+Most of them  are optional, but if they exists, they should be here:
+
+Project_ROOT:
+  README.md: Says what the project does
+  LICENSE.md: Recommended license
+  CODE_OF_CONDUCT.md: OPtional code of conduct
+  CHANGELOG.md: Optional automanaged changelog
+
+Code project:
+  scripts/: Any scripts need to manage the project lifecycle, not related to code.
+  docs/: Documentation directory
+  tests/: TEst directory
+  images: Default docker/lxc/oci direcotory
+
+Depending the context, the language, the project size:
+  python:
+    src/PKG_NAME/
+    PKG_NAME: Old style, but still valid
+  shell:
+    bin/ ready to use bean, no compilation
+    lib/ bash lib
+
+  TODO: Feed with other lang patterns
+
+Main project files should be minimalist, and sometimes required:
+. env: Generic env file, read by docker 
+. dockerignore
+TODO: feed with other known files
+
+
 ### 1.3 mise and task
 
 * We use mise, aka mise-en-place.
@@ -71,6 +103,35 @@ List of known app-products (to be filled by the time):
         * Provide one task, `ci`, that runs the verification pipeline. A CI/CD builder runs that same task. Local and remote stay aligned. It can provide hidden shortcuts.
         * `ci` only calls other tasks. Leaf tasks do the work.
         * A workflow installs mise, then runs `mise x -- task <name>`. It does not inline pytest, uv, or the site generator.
+    * Taskfile workflow word topics, this is the general workflow, not all steps are mendatory:
+        * fix: auto fix format, linting, etc ....
+        * lint: Validate lint rules pass
+        * build: Validate the build works
+        * test: Test the build
+        * docs: Build docs
+        * security: Ensure the build pass security tests, test production result, before releasing
+        * release: Prepare a release
+        * publish: Publish release
+    * Taskfile stack word topics:
+        * images|docker|vm (build docker images vm applicances)
+        * terraform|ansible: run CD with ansible or terraform
+        * Add more later
+    * Taskfile ci/cd word topics:
+        * ci: run ci
+            * ci-short: run on all commit
+            * ci-full: the full ci pipeline
+        * cd: actually publish things
+    * Publicly exposed ci/cd jobs:
+        * ci-short
+        * ci-full
+        * release
+        * publish
+        * publish-docs
+
+    * Taskfiles must stay minimal and readable. Try to make it DRY, use vars and anchors if you want to.
+    * All external project logic should be in scripts/ directory, ideally in bash strict or in shell. 
+        * This directory is a placeholder for all project scripts, that can be reused at diffrent places
+
 
 ### 1.4 Documentation, containers, tests, CI, and examples
 
@@ -133,6 +194,8 @@ List of known app-products (to be filled by the time):
     * Every workflow is runnable from the Actions tab (`workflow_dispatch`), so the user can choose the branch.
     * The name in the Actions tab is that task name. `ci` is `ci`. `docs:build` is `docs:build`. Do not replace it with a title.
     * Do not run both the pipeline workflow and the single-task workflows on the same automatic event. The single-task workflows are dispatch only.
+
+* Git workflow:
     * Branches:
         * `main` is the stable line. `dev` is the unstable line. A branch named `dev-*` has the same behavior as `dev`.
         * Verification runs on a pull request, and on a push to `main`, `dev`, or `dev-*`. A push to any other branch does not. The pull request covers that branch.
