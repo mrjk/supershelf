@@ -58,7 +58,6 @@ VAR_NAME_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*\Z"
 TEMPLATE_MARKERS = ("{{", "{%", "{#")
 
 SOURCE_FACT = "fact"
-SOURCE_FILENAME = "filename"
 SOURCE_DEFAULT = "default"
 SOURCE_RULE = "rule"
 SOURCE_KIND = "kind"

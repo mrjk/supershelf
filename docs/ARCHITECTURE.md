@@ -115,28 +115,27 @@ One pipeline for every candidate and every fact. Load time uses it for non-templ
 
 A non-template literal that fails step 4 or 5 is a config error at load, including when a later candidate might have worked. A template is checked only at render, and a miss there tries the next candidate.
 
-When every candidate in a layer misses, the command stops with today's resolve error (profile, input, path, variable, last miss as the advice). Later layers do not run. `__date__` keeps its exception: total failure clears the value and the source list, and the command continues. If `__date__` is `mandatory` and still `None` after the last layer, the command stops.
+When every candidate in a layer misses, that layer does not write the name. An earlier value and its source list stay. Later layers still run. The name stays `None` when no layer writes it. `mandatory` after the last layer stops the file when the value is still `None`. This is the same rule for `__date__` and for every other name.
 
 Facts are one value, with no candidate list. A file fact or regex group that fails the pipeline stops the command. A filename group `amount` of `12.50`, declared as `float`, becomes the float `12.5` when the match stores it. `EUR12.50` and `12,50` stop the file. A later layer does not repair that fact. To keep fallbacks, capture the text under another name and assign the typed name from a candidate list.
 
-A filename stem that is not a date does not set `__date__`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
+The filename does not set `__date__`. A stem that is a date stays `__file_stem__`. A profile that wants that date writes a candidate, such as `{{ regex_time_var(__file_stem__, __default_date_format__) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
 
 `mandatory` runs after the last layer, and only on `None`.
 
 `null` does not mean unset. Omit the key to leave the var unset. Quote scalars in `default_vars`, rule `vars`, overrides, and kind files. An unquoted YAML date, number, bool, or null is a config error there. Typed literals belong on `vars_schema.<name>.default`. Quote date, time, and datetime defaults too, including on the schema, so TOML and YAML stay on the same string grammar. YAML 1.1 may already have turned `yes`, `no`, `on`, and `off` into bools before supershelf sees them. Quote those words when the type is text.
 
-While a key is rendering, `{{ that_key }}` reads the previous layer's display string. A default layer that misses all of its candidates stops the file before rule, kind, and override layers. Omit the default if a later layer should supply the value.
+While a key is rendering, `{{ that_key }}` reads the previous layer's display string. A layer that misses all of its candidates does not write the name, so a later layer can still set it.
 
 Leading zeros are data only for `text`. An int schema on a regex group `0012` stores `12`. Pad in the template if the width matters.
 
 ## value_sources
 
-Append a label only when that layer writes the name. A later write appends. It keeps the earlier labels. Total failure of `__date__` clears the value and the source list together.
+Append a label only when that layer writes the name. A later write appends. It keeps the earlier labels. A layer that misses does not clear the value or the source list.
 
 Labels:
 
 - `fact` for file metadata, aliases, and regex groups
-- `filename` when `__date__` comes from the stem
 - `default` for the spec default or `default_vars`
 - `rule:<rule name>`
 - `kind:<kind file path>`
@@ -183,7 +182,7 @@ Two defaults. `vars_schema.vendor.default: Bank2000` together with `default_vars
 
 Mandatory. `amount` with `mandatory: true` and no successful write stops the file. An omitted `opens` of type `time` stays unset and the file continues.
 
-`__date__`. Every candidate missing clears it and the command continues. `mandatory: true` on `__date__` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
+`__date__`. A filename that is a date does not set it. Every candidate in a layer missing leaves the earlier value, or leaves it unset when nothing wrote it. `mandatory: true` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
 
 Leading zeros. Regex group `0012` declared as `int` stores `12`. A group `007` displays as `7`.
 

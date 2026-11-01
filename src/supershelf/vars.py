@@ -41,7 +41,6 @@ from supershelf.constants import (
     KEY_VAR_MODULES,
     SOURCE_DEFAULT,
     SOURCE_FACT,
-    SOURCE_FILENAME,
     SOURCE_KIND,
     SOURCE_OVERRIDE,
     SOURCE_RULE,
@@ -275,19 +274,6 @@ class KindDateFormat:
             )
         fmt = cls(raw)
         fmt._check(label)
-        return fmt
-
-    @classmethod
-    def for_filename(cls, profile_scope: Mapping[str, Any]) -> KindDateFormat | None:
-        """Date format for a filename stem. A format that is not a calendar date is ignored."""
-        raw = profile_scope.get(VAR_DEFAULT_DATE_FORMAT, PACKAGED.default_date_format)
-        if not isinstance(raw, str) or not raw.strip():
-            return None
-        fmt = cls(raw)
-        try:
-            fmt._check("config.default_date_format")
-        except VarConfigError:
-            return None
         return fmt
 
     def store(self, cell: str) -> str:
@@ -930,7 +916,6 @@ class VarPlan:
         self._overrides = overrides
         self._kinds = kinds
         self._profile_scope = dict(profile_scope)
-        self._stem_dates = KindDateFormat.for_filename(profile_scope)
         self._pdf: dict[str, tuple[str | None, str | None]] = {}
 
     @classmethod
@@ -995,7 +980,7 @@ class VarPlan:
         for key, value, label in self._fact_rows(file, match):
             self._save_raw(key, value, label, scope, states, order, match, file.path)
         binding = FileBinding(file.absolute, file.sha256 or "", file.ctime or "", file.mtime or "")
-        self._apply_defaults(scope, states, order, binding, match, file.path)
+        self._apply_defaults(scope, states, order, binding)
         self._apply(
             self._rules.get(match.rule, VarTable.empty()),
             layer_source(SOURCE_RULE, match.rule),
@@ -1003,8 +988,6 @@ class VarPlan:
             states,
             order,
             binding,
-            match,
-            file.path,
         )
         self._apply_cells(
             self._kinds.cells_for(match.kind, input_dir, file.path, match),
@@ -1023,8 +1006,6 @@ class VarPlan:
                 states,
                 order,
                 binding,
-                match,
-                file.path,
             )
         self._require_mandatory(states, match, file.path)
         chosen = tuple(
@@ -1059,8 +1040,6 @@ class VarPlan:
         states: dict[str, VarState],
         order: list[str],
         binding: FileBinding,
-        match: FileMatch,
-        path: str,
     ) -> None:
         for key in self._catalog.names():
             spec = self._catalog.spec(key)
@@ -1071,11 +1050,8 @@ class VarPlan:
                 spec.candidates,
                 self._render_scope(scope),
                 binding,
-                match,
-                path,
             )
             if cast is None:
-                self._clear(key, scope, states, order)
                 continue
             self._save(key, cast, SOURCE_DEFAULT, scope, states, order)
 
@@ -1087,8 +1063,6 @@ class VarPlan:
         states: dict[str, VarState],
         order: list[str],
         binding: FileBinding,
-        match: FileMatch,
-        path: str,
     ) -> None:
         for key in table.keys:
             cast = self._first(
@@ -1096,11 +1070,8 @@ class VarPlan:
                 table.candidates[key],
                 self._render_scope(scope),
                 binding,
-                match,
-                path,
             )
             if cast is None:
-                self._clear(key, scope, states, order)
                 continue
             self._save(key, cast, label, scope, states, order)
 
@@ -1116,11 +1087,8 @@ class VarPlan:
         candidates: tuple[object, ...],
         scope: Mapping[str, Any],
         binding: FileBinding,
-        match: FileMatch,
-        path: str,
     ) -> CastValue | None:
         spec = self._catalog.spec(key)
-        misses: list[str] = []
         for source in candidates:
             try:
                 if isinstance(source, str):
@@ -1128,17 +1096,10 @@ class VarPlan:
                     cast = cast_value(spec, rendered, allow_typed=False)
                 else:
                     cast = cast_value(spec, source, allow_typed=True)
-            except VarCandidateError as exc:
-                misses.append(str(exc))
-                continue
-            except CastMiss as exc:
-                misses.append(str(exc))
+            except (VarCandidateError, CastMiss):
                 continue
             return cast
-        if key == VAR_DATE:
-            return None
-        advice = misses[-1] if misses else "Add a candidate that renders to a string."
-        raise self._failed(match, path, key, advice)
+        return None
 
     def _save(
         self,
@@ -1175,19 +1136,6 @@ class VarPlan:
         except CastMiss as exc:
             raise self._failed(match, path, key, str(exc)) from exc
         self._save(key, cast, label, scope, states, order)
-
-    def _clear(
-        self,
-        key: str,
-        scope: dict[str, str],
-        states: dict[str, VarState],
-        order: list[str],
-    ) -> None:
-        scope.pop(key, None)
-        state = states.get(key)
-        if state is not None:
-            state.clear()
-        order[:] = [item for item in order if item != key]
 
     def _require_mandatory(
         self,
@@ -1237,24 +1185,12 @@ class VarPlan:
         rows = [(name, values[name], SOURCE_FACT) for name in INTERNAL_NAMES]
         rows.append((VAR_FILE_CTIME, values[VAR_CTIME], SOURCE_FACT))
         rows.append((VAR_FILE_MTIME, values[VAR_MTIME], SOURCE_FACT))
-        stem_date = self._date_from_stem(values[VAR_FILE_STEM])
-        if stem_date is not None:
-            rows.append((VAR_DATE, stem_date, SOURCE_FILENAME))
         seen = {name for name, _value, _label in rows}
         for name, value in match.groups.items():
             if name in seen:
                 continue
             rows.append((name, value, SOURCE_FACT))
         return rows
-
-    def _date_from_stem(self, stem: str) -> str | None:
-        """YYYY-MM-DD when the stem is a complete date in default_date_format."""
-        if self._stem_dates is None or not stem:
-            return None
-        try:
-            return self._stem_dates.store(stem)
-        except ValueError:
-            return None
 
     def _require_metadata(self, file: InputFile, match: FileMatch) -> None:
         if file.ctime is None or file.mtime is None or file.sha256 is None:

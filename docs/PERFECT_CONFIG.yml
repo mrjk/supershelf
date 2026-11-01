@@ -246,10 +246,11 @@
         - __file_path__: path relative to the input, with / separators
         - __file_dir__: directory relative to the input. Empty when the file sits in the input directory
     - file_ctime is __ctime__. file_mtime is __mtime__. Both are printed after the internals.
-    - When __file_stem__ is a complete date in config.default_date_format, that date is the starting __date__.
-      Store it as YYYY-MM-DD. Print it after file_ctime and file_mtime, and before regex groups.
-      A stem that does not match leaves __date__ unset. A format without a year, a month, and a day does not set it.
-      Later layers may replace it. {{__date__}} in the next layer reads this string.
+    - The filename does not set __date__. A stem that is a date stays __file_stem__.
+      A profile that wants that date writes a candidate, such as
+      {{ regex_time_var(__file_stem__, __default_date_format__) }}.
+      Later layers may replace a date an earlier layer wrote.
+      {{__date__}} in the next layer reads the string the earlier layer kept.
     - Named groups from the winning regex are facts. Unnamed groups stay ignored.
       A group name that starts with __ is a config error before the walk.
       A group cannot replace an internal or a profile key.
@@ -292,9 +293,11 @@
       The rendered result is stored as a string.
     - A string candidate is rendered once. Failure aborts that candidate.
     - Inserted strings are not rendered again.
-    - An empty string is a success, except for __date__.
-    - If every candidate fails, the command stops. The error names profile, input, path, and the variable.
-      __date__ is the exception: if no candidate yields a valid date, omit __date__ and do not stop the command.
+    - An empty string is a success for text. For every other type, empty or whitespace is a miss.
+    - If every candidate in a layer misses, that layer does not write the name.
+      An earlier value stays. When no layer has written it, the name stays unset.
+      The command continues. mandatory after the last layer stops the file when the value is still unset.
+      A fact or a kind-file cell that cannot cast stops the file. There is no next candidate for those.
     - __date__, when set, is a calendar date YYYY-MM-DD. A candidate that renders to anything else fails, and the next candidate is tried.
       Supershelf uses this date as the document date, including for output paths.
       This step does not write outputs. A later output that uses __date__ fails when __date__ was omitted.

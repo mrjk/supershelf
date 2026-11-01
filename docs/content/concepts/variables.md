@@ -4,7 +4,7 @@
 
 `kind` is the final `__kind__` after overrides. `rule` stays the match rule name. `vars` is one cell. Each set variable uses two lines. The first is the name, `: `, then the display string. The second is `sources: ` plus the labels that wrote it, joined by `, `. An unset variable is left out. `--format json` and `--format yaml` use the Python value instead of the display string, so a float can be `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling in both.
 
-Source labels are `fact`, `filename`, `default`, `rule:<rule name>`, `kind:<kind file path>`, and `override:<path pattern>`. A later write appends a label. It keeps the earlier ones. The last label is the winner.
+Source labels are `fact`, `default`, `rule:<rule name>`, `kind:<kind file path>`, and `override:<path pattern>`. A later write appends a label. It keeps the earlier ones. The last label is the winner. A layer that misses does not add a label and does not remove earlier ones.
 
 The walk is the full walk. mtime, ctime, and sha256 are required. There is no `--quick`. The path argument is the same as `scan files`: omit it to list every matched file, pass an exact file path to list that file, or pass any other value to list paths that start with it. A value that no kept file has stops the command. The same path in two inputs is listed twice. When a path is set, only the selected files are matched, so other files are not warned.
 
@@ -45,7 +45,7 @@ Assignments are the user layers. Later wins on the same key. Each layer is appli
 
 `default_vars` and rule `vars` must not set an internal name, `file_ctime`, or `file_mtime`. A kind-file row must not either. Only overrides may set `__kind__`. That changes the printed kind and the `__kind__` fact seen by later override templates. It does not change `rule`, and it does not load another kind file. Overrides must not set the other internal names, `file_ctime`, or `file_mtime`.
 
-`__date__` is not an internal. Any of these layers may set it. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
+`__date__` is not an internal. Any of these layers may set it. The filename does not. A stem that is a date stays `__file_stem__`. To use it, write a candidate such as `{{ regex_time_var(__file_stem__, __default_date_format__) }}`. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
 
 Omitted `default_vars`, omitted rule `vars`, or no kind-file cells for that path means that layer is empty.
 
@@ -83,7 +83,7 @@ A template can read facts and any assignment already rendered. It cannot read a 
 
 An empty string is a success for `text`. For `int`, `float`, `bool`, `date`, `time`, and `datetime`, empty or whitespace is a miss. `__date__` is `date`, so an empty string misses.
 
-If every candidate fails, the command stops. The error names the profile, the input, the path, and the variable. `__date__` is the exception: if no candidate yields `YYYY-MM-DD`, `__date__` is omitted and the command continues. A later step that needs `__date__` fails when it was omitted. This version does not write output paths.
+If every candidate in a layer misses, that layer does not write the name. An earlier value stays. When no layer has written it, the name stays unset and is left off the row. The command continues. `mandatory` runs after the last layer, and `None` stops the file. A fact or a kind-file cell that cannot cast still stops the file. There is no next candidate for those. This version does not write output paths.
 
 A function that has nothing to return fails that candidate only, by raising `VarCandidateError`. Any other exception from a template stops the command. Built-in commands are documented in [Template commands](template-commands.md).
 

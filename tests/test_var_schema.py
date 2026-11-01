@@ -279,7 +279,7 @@ def test_typed_literal_must_match_and_dumps_json() -> None:
 
 
 def test_state_clear_drops_sources() -> None:
-    state = VarState(value="2026-04-25", display="2026-04-25", value_sources=["filename"])
+    state = VarState(value="2026-04-25", display="2026-04-25", value_sources=["default"])
     state.clear()
 
     assert state.model_dump(mode="json") == {"value": None, "value_sources": []}

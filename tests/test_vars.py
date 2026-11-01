@@ -148,7 +148,7 @@ def test_reserved_group_name_is_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_file_stem_in_the_date_format_is_the_document_date(tmp_path: Path) -> None:
+def test_filename_stem_does_not_set_the_document_date(tmp_path: Path) -> None:
     plan = _plan(
         {"match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}]},
         tmp_path,
@@ -159,13 +159,12 @@ def test_file_stem_in_the_date_format_is_the_document_date(tmp_path: Path) -> No
         file=_file("bank2000/phone/2025-07-18.pdf"),
         match=_match("bank2000/phone/2025-07-18.pdf"),
     )
-    assert dated["__date__"] == "2025-07-18"
-    names = list(dated)
-    assert names.index("file_mtime") < names.index("__date__")
+    assert dated["__file_stem__"] == "2025-07-18"
+    assert "__date__" not in dated
     assert "__date__" not in _values(plan)
 
 
-def test_assignment_replaces_the_stem_date(tmp_path: Path) -> None:
+def test_missed_layer_keeps_the_previous_date(tmp_path: Path) -> None:
     plan = _plan(
         {
             "default_vars": {"__date__": "2020-01-01"},
@@ -174,20 +173,18 @@ def test_assignment_replaces_the_stem_date(tmp_path: Path) -> None:
                     "name": "notes",
                     "kind": "note",
                     "filename_glob": "**",
-                    "vars": {"__date__": ["{{ missing }}", "{{ __date__ }}"]},
+                    "vars": {"__date__": "{{ missing }}"},
                 }
             ],
         },
         tmp_path,
         {"__default_date_format__": "%Y%m%d"},
     )
-    replaced = _values(
-        plan,
-        file=_file("20250718.pdf"),
-        match=_match("20250718.pdf"),
-    )
-    assert replaced["__date__"] == "2020-01-01"
-    kept = _plan(
+    resolved = plan.resolve(_file("20250718.pdf"), _match("20250718.pdf"), Path("/in"))
+    assert dict(resolved.items)["__date__"] == "2020-01-01"
+    assert resolved.sources["__date__"] == ("default",)
+
+    unset = _plan(
         {
             "match_rules": [
                 {
@@ -201,14 +198,14 @@ def test_assignment_replaces_the_stem_date(tmp_path: Path) -> None:
         tmp_path,
         {"__default_date_format__": "%Y%m%d"},
     )
-    assert _values(
-        kept,
+    assert "__date__" not in _values(
+        unset,
         file=_file("20250718.pdf"),
         match=_match("20250718.pdf"),
-    )["__date__"] == "2025-07-18"
+    )
 
 
-def test_missing_date_is_omitted_and_other_failures_abort(tmp_path: Path) -> None:
+def test_missed_candidates_stay_unset_and_bad_literals_are_config_errors(tmp_path: Path) -> None:
     omitted = _plan(
         {
             "default_vars": {"__date__": "{{ missing }}", "owner": "ada"},
@@ -220,15 +217,32 @@ def test_missing_date_is_omitted_and_other_failures_abort(tmp_path: Path) -> Non
     assert "__date__" not in values
     assert values["owner"] == "ada"
 
-    broken = _plan(
+    missed = _plan(
         {
             "default_vars": {"owner": "{{ missing }}"},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
     )
-    with pytest.raises(VarResolveError, match="variable owner failed"):
-        _values(broken)
+    assert "owner" not in _values(missed)
+
+    kept = _plan(
+        {
+            "default_vars": {"owner": "ada"},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "**",
+                    "vars": {"owner": "{{ missing }}"},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    resolved = kept.resolve(_file(), _match(), Path("/in"))
+    assert dict(resolved.items)["owner"] == "ada"
+    assert resolved.sources["owner"] == ("default",)
 
     with pytest.raises(VarConfigError, match="cannot be cast"):
         _plan(
@@ -495,7 +509,7 @@ def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
     assert "__date__" not in blank
 
 
-def test_kind_date_replaces_the_stem_date(tmp_path: Path) -> None:
+def test_kind_date_cell_is_not_taken_from_the_stem(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,__date__\n2025-07-18.pdf,2024-05-29\n", encoding="utf-8")
     plan = _plan(
