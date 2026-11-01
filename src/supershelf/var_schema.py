@@ -1098,6 +1098,16 @@ def check_var_name(name: object, label: str) -> None:
         )
 
 
+def check_assignment_key(key: object, label: str) -> None:
+    """Reject a name that is not a variable, or a locked internal."""
+    check_var_name(key, f"{label} key {key!r}")
+    if isinstance(key, str) and key in INTERNAL_NAMES:
+        raise VarConfigError(
+            f"{label} cannot set {key}",
+            advice="__kind__ stays the kind from the match rule. Other internal names are fixed.",
+        )
+
+
 
 def _typed_matches(var_type: str, raw: object) -> bool:
     if var_type == TYPE_INT:

@@ -23,7 +23,7 @@ from supershelf.record import RecordReader, RecordSession
 from supershelf.runs import ShelfRuns
 from supershelf.scan import InputFile
 from supershelf.var_template import VarEnvironment
-from supershelf.vars import KindOverrideMode
+from supershelf.kind_file import KindOverrideMode
 
 
 def kept_path() -> Argument:

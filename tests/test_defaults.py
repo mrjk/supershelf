@@ -8,7 +8,7 @@ import pytest
 from supershelf.constants import VAR_DEFAULT_DATE_FORMAT
 from supershelf.defaults import PACKAGED, load_packaged
 from supershelf.errors import SupershelfError, VarConfigError
-from supershelf.vars import KindCsvSep, KindDateFormat, KindFiles, KindOverrideMode
+from supershelf.kind_file import KindCsvSep, KindDateFormat, KindFiles, KindOverrideMode
 from tests.helpers import load_profile as _profile
 
 
