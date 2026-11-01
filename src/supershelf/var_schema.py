@@ -846,7 +846,13 @@ class VarCatalog:
         return tuple(names)
 
     def default_candidates(self, kind: str, name: str) -> tuple[object, ...] | None:
-        """Default-layer candidates. A kind default wins for that local name."""
+        """Default-layer candidates. A kind default wins for that local name.
+
+        A listed kind takes defaults only for names in its vars_schema.
+        """
+        found = self._kinds.get(kind)
+        if found is not None and name not in found.vars:
+            return None
         kind_spec = self._kinds.var(kind, name)
         if kind_spec is not None and kind_spec.has_default:
             return kind_spec.candidates

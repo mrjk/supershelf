@@ -944,7 +944,7 @@ def test_kind_schema_mandatory_applies_only_to_that_kind(tmp_path: Path) -> None
 
     note = _values(plan)
     assert "amount" not in note
-    assert note["company_name"] == "Bank2000"
+    assert "company_name" not in note
     assert "company" not in note
 
     with pytest.raises(VarResolveError, match="variable amount failed"):
@@ -972,6 +972,42 @@ def test_kind_default_replaces_the_profile_default_for_that_kind(tmp_path: Path)
 
     assert invoice["amount"] == "15"
     assert other["amount"] == "12"
+
+
+def test_listed_kind_skips_catalog_defaults_it_does_not_name(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {
+                "provider": {"type": "text"},
+                "doc_count": {"type": "int", "default": 1},
+                "doc_items": {"type": "int", "default": 1},
+            },
+            "kind_schema": {
+                "statement": {
+                    "desc": "A bank or card statement for one period",
+                    "vars_schema": {
+                        "__date__": None,
+                        "provider": None,
+                    },
+                },
+                "receipt": {"vars_schema": {"doc_items": None}},
+            },
+            "match_rules": [{"name": "notes", "kind": "statement", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+
+    statement = _values(plan, match=_match(kind="statement", rule="notes"))
+    assert "doc_count" not in statement
+    assert "doc_items" not in statement
+
+    unlisted = _values(plan, match=_match(kind="note"))
+    assert unlisted["doc_count"] == "1"
+    assert unlisted["doc_items"] == "1"
+
+    receipt = _values(plan, match=_match(kind="receipt", rule="receipts"))
+    assert receipt["doc_items"] == "1"
+    assert "doc_count" not in receipt
 
 
 def test_kind_validation_rejects_a_rule_literal_at_load(tmp_path: Path) -> None:

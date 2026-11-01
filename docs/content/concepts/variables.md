@@ -77,7 +77,7 @@ A regex group is cast when the fact is stored. A group that does not match its t
 
 A kind has `desc` and `vars_schema`. Each key under that `vars_schema` is a variable name for files of that kind. The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`my_amount: amount`). Null or a blank string uses the local name. In YAML, `amount:` is null. TOML has no null, so write `amount = ""`. An object may omit `schema`, and the local name is used (`tax: {mandatory: true}` uses `tax`). That catalog entry supplies `type` and `internal`. The kind cannot set those.
 
-Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the catalog entry. A `validation` mapping on the kind replaces the catalog one. `default` is not copied. Set it on the kind when that local name needs a default. Profile `default` and `default_vars` still apply to the catalog name on every file.
+Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the catalog entry. A `validation` mapping on the kind replaces the catalog one. `default` is not copied. Set it on the kind when that local name needs a default. Profile `default` and `default_vars` apply to that catalog name on files whose kind is not listed. On a listed kind they apply only when that kind's `vars_schema` includes the name.
 
 When the kind lists a name the profile also has, files of that kind use the kind's spec. `mandatory: false` there leaves the name optional for that kind. Names the kind does not list stay on the profile spec, including profile `mandatory`.
 
