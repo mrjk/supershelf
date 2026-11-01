@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from supershelf.configs import ShelfConfigs
+from supershelf.common import WordChoice
 from supershelf.constants import (
-    CONFIG_SECTION,
     ENV_RECORD_IDENTITY,
     EVENT_GENERATION,
     EVENT_MISSING,
@@ -22,7 +20,6 @@ from supershelf.constants import (
     EVENT_UNMATCHED,
     EVENT_VARS,
     IDENTITY_HASH,
-    INTERNAL_NAMES,
     KEY_RECORD_IDENTITY,
     LOGGER_NAME,
     PRESENCE_MISSING,
@@ -41,88 +38,26 @@ from supershelf.database import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import RecordConfigError, SupershelfError
-from supershelf.match import Matcher
 from supershelf.profile import ShelfProfile
-from supershelf.scan import InputFile, InputScanResult
-from supershelf.var_schema import VarCatalog
-from supershelf.vars import FileVars, VarPlan
+from supershelf.scan import InputFile, InputScanResult, KeptPath
 
 
-class RecordIdentity:
+class RecordIdentity(WordChoice):
     """path or hash. The flag wins, then the env var, then config."""
 
-    @staticmethod
-    def resolve(
-        section: Mapping[str, object],
-        flag: str | None,
-        environ: Mapping[str, str],
-    ) -> str:
-        """The link rule for this run."""
-        if flag is not None:
-            return RecordIdentity._one(flag, "--record-identity")
-        if ENV_RECORD_IDENTITY in environ:
-            return RecordIdentity._one(
-                environ[ENV_RECORD_IDENTITY],
-                ENV_RECORD_IDENTITY,
-            )
-        raw = section.get(KEY_RECORD_IDENTITY)
-        if raw is not None:
-            return RecordIdentity._one(raw, "config.record_identity")
-        return PACKAGED.record_identity
-
-    @staticmethod
-    def _one(value: object, label: str) -> str:
-        if isinstance(value, str) and value in RECORD_IDENTITIES:
-            return value
-        raise RecordConfigError(
-            f"{label} must be path or hash",
-            advice="Use path or hash, in lower case.",
-        )
-
-
-class RecordSnapshot:
-    """JSON object stored in `vars_json`."""
-
-    @staticmethod
-    def encode(resolved: FileVars, catalog: VarCatalog) -> str:
-        """Bindings that are not already columns, with sorted keys."""
-        body: dict[str, dict[str, object]] = {}
-        for name, state in resolved.states:
-            if name in INTERNAL_NAMES:
-                continue
-            if state.value is None:
-                continue
-            spec = catalog.effective(resolved.kind, name)
-            body[name] = {
-                "type": spec.type,
-                "value": state.value,
-                "display": state.display,
-                "value_sources": list(state.value_sources),
-            }
-        return json.dumps(body, sort_keys=True, separators=(",", ":"))
-
-
-class PathSelector:
-    """Exact path, or a prefix, using the same rule as the scan filter."""
-
-    def __init__(self, text: str | None, *, exact: bool) -> None:
-        self.text = text
-        self.exact = exact
+    words = RECORD_IDENTITIES
+    flag_name = "--record-identity"
+    env_name = ENV_RECORD_IDENTITY
+    config_key = KEY_RECORD_IDENTITY
+    config_label = "config.record_identity"
+    requirement = "{label} must be path or hash"
+    advice = "Use path or hash, in lower case."
+    error = RecordConfigError
 
     @classmethod
-    def from_paths(cls, text: str | None, paths: list[str]) -> PathSelector:
-        """None keeps every path. An exact kept path wins over a prefix."""
-        if text is None:
-            return cls(None, exact=False)
-        return cls(text, exact=text in paths)
-
-    def matches(self, relative: str) -> bool:
-        """Whether this relative path is in the observed set."""
-        if self.text is None:
-            return True
-        if self.exact:
-            return relative == self.text
-        return relative.startswith(self.text)
+    def packaged(cls) -> str:
+        """The packaged link rule."""
+        return PACKAGED.record_identity
 
 
 @dataclass(frozen=True)
@@ -274,7 +209,7 @@ class RecordPlan:
         live: list[LiveFile],
         kept: set[tuple[str, str]],
         walked_inputs: set[str],
-        selector: PathSelector,
+        selector: KeptPath,
         ignored: set[tuple[str, str]] | None = None,
     ) -> None:
         self.identity = identity
@@ -508,34 +443,27 @@ class _ProfileRun:
                     ignored.add(location)
                     continue
                 kept.add(location)
-        selector = PathSelector.from_paths(path, kept_paths)
-        matcher = Matcher.from_document(self.shelf.document, self.shelf.name)
-        variables = VarPlan.from_document(
-            self.shelf.document,
-            self.shelf.name,
-            matcher,
-            self.shelf.root_dir,
-            self.shelf.scope,
-        )
+        selector = KeptPath.from_paths(path, kept_paths)
+
+        def accept(found: InputFile) -> bool:
+            if not selector.matches(found.path):
+                return False
+            return found.absolute.resolve() != database_path
+
+        from supershelf.cli import ShelfRuns
+
+        walk = ShelfRuns([self.shelf]).resolved(None, groups=[scans], accept=accept)
         live: list[LiveFile] = []
-        for result in scans:
-            files = {found.path: found for found in result.results}
-            for matched in matcher.collect(result):
-                found = files.get(matched.path)
-                if found is None or not selector.matches(found.path):
-                    continue
-                if found.absolute.resolve() == database_path:
-                    continue
-                resolved = variables.resolve(found, matched, result.config.path)
-                live.append(
-                    LiveFile.from_match(
-                        result,
-                        found,
-                        kind=resolved.kind,
-                        rule=matched.rule,
-                        snapshot=RecordSnapshot.encode(resolved, variables.catalog),
-                    )
+        for _shelf, result, found, matched, resolved, variables in walk:
+            live.append(
+                LiveFile.from_match(
+                    result,
+                    found,
+                    kind=resolved.kind,
+                    rule=matched.rule,
+                    snapshot=variables.snapshot(resolved),
                 )
+            )
         with ShelfDatabase.open_read(self.shelf.database_file) as database:
             stored = database.identity()
             if stored is not None and stored != self.identity:
@@ -580,7 +508,7 @@ class _ProfileRun:
         return stored is not None and stored != self.identity
 
     @staticmethod
-    def _selector_saw_file(selector: PathSelector, kept: set[tuple[str, str]]) -> bool:
+    def _selector_saw_file(selector: KeptPath, kept: set[tuple[str, str]]) -> bool:
         return any(selector.matches(relative) for _input_path, relative in kept)
 
     def display(self, rows: list[PlannedRow], *, changes_only: bool) -> list[dict[str, object]]:
@@ -620,16 +548,18 @@ class RecordSession:
     ) -> RecordSession:
         """Resolve the link rule before any walk."""
         env = os.environ if environ is None else environ
-        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
-        runs: list[_ProfileRun] = []
-        for item in loaded.config_list:
-            shelf = ShelfProfile.from_config(item)
-            section = shelf.document.get(CONFIG_SECTION)
-            if not isinstance(section, dict):
-                section = {}
-            identity = RecordIdentity.resolve(section, identity_flag, env)
-            runs.append(_ProfileRun(shelf, identity))
-        return cls(runs)
+        from supershelf.cli import ShelfRuns
+
+        runs = ShelfRuns.load(config, profile)
+        built: list[_ProfileRun] = []
+        for shelf in runs.shelves:
+            identity = RecordIdentity.resolve(
+                ShelfProfile.config_section(shelf.document),
+                identity_flag,
+                env,
+            )
+            built.append(_ProfileRun(shelf, identity))
+        return cls(built)
 
     def status(self, path: str | None) -> list[dict[str, object]]:
         """Every in-scope row. Writes nothing."""
@@ -658,8 +588,9 @@ class RecordReader:
     @classmethod
     def load(cls, config: str | None, profile: str | None) -> RecordReader:
         """Load profiles so each database path can be opened read-only."""
-        loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
-        return cls([ShelfProfile.from_config(item) for item in loaded.config_list])
+        from supershelf.cli import ShelfRuns
+
+        return cls(ShelfRuns.load(config, profile).shelves)
 
     def history(self, path: str | None) -> list[dict[str, object]]:
         """Events in id order. A move is still found from its old path."""
@@ -697,7 +628,7 @@ class RecordReader:
             with ShelfDatabase.open_read(shelf.database_file) as database:
                 documents = database.documents()
                 hits = DuplicateListing.collect(documents, database.events())
-            selector = PathSelector.from_paths(path, [document.path for document in documents])
+            selector = KeptPath.from_paths(path, [document.path for document in documents])
             for hit in hits:
                 if not selector.matches(hit.path):
                     continue
@@ -723,7 +654,7 @@ class RecordReader:
         for event in events:
             by_document.setdefault(event.document_id, []).append(event.path)
         known = [relative for paths in by_document.values() for relative in paths]
-        selector = PathSelector.from_paths(path, known)
+        selector = KeptPath.from_paths(path, known)
         return {
             document_id
             for document_id, paths in by_document.items()

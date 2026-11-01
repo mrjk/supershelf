@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import importlib
 import io
+import json
 import logging
 import os
 import re
@@ -16,7 +17,7 @@ from typing import Any, NamedTuple
 
 import yaml
 
-from supershelf.common import resolve_user_path
+from supershelf.common import WordChoice, resolve_user_path
 from supershelf.constants import (
     CONFIG_SECTION,
     DATE_TEXT,
@@ -216,40 +217,21 @@ class OverrideRule:
         return PurePosixPath(relative).full_match(self.pattern)
 
 
-class KindOverrideMode:
+class KindOverrideMode(WordChoice):
     """auto, manual, always, or disabled. The flag wins, then the env var, then config."""
 
-    @staticmethod
-    def resolve(
-        section: Mapping[str, Any],
-        flag: str | None,
-        environ: Mapping[str, str],
-    ) -> str:
-        if flag is not None:
-            return KindOverrideMode._one(flag, "--kind-overrides-mode")
-        if ENV_KIND_OVERRIDES_MODE in environ:
-            return KindOverrideMode._one(
-                environ[ENV_KIND_OVERRIDES_MODE],
-                ENV_KIND_OVERRIDES_MODE,
-            )
-        raw = section.get(KEY_KIND_OVERRIDES_MODE)
-        if raw is not None:
-            return KindOverrideMode._one(raw, "config.kind_overrides_mode")
+    words = KIND_OVERRIDE_MODES
+    flag_name = "--kind-overrides-mode"
+    env_name = ENV_KIND_OVERRIDES_MODE
+    config_key = KEY_KIND_OVERRIDES_MODE
+    config_label = "config.kind_overrides_mode"
+    requirement = "{label} must be auto, manual, always, or disabled"
+    advice = "Use one of those four words, in lower case."
+    error = VarConfigError
+
+    @classmethod
+    def packaged(cls) -> str:
         return PACKAGED.kind_overrides_mode
-
-    @staticmethod
-    def check(value: object, label: str) -> str:
-        """Validate one mode word. `resolve` uses the same check."""
-        return KindOverrideMode._one(value, label)
-
-    @staticmethod
-    def _one(value: object, label: str) -> str:
-        if isinstance(value, str) and value in KIND_OVERRIDE_MODES:
-            return value
-        raise VarConfigError(
-            f"{label} must be auto, manual, always, or disabled",
-            advice="Use one of those four words, in lower case.",
-        )
 
 
 class KindDateFormat:
@@ -1182,6 +1164,23 @@ class VarPlan:
     def catalog(self) -> VarCatalog:
         """The catalog used to resolve this plan."""
         return self._catalog
+
+    def snapshot(self, resolved: FileVars) -> str:
+        """JSON object stored on a document. Identity columns are omitted."""
+        body: dict[str, dict[str, object]] = {}
+        for name, state in resolved.states:
+            if name in INTERNAL_NAMES:
+                continue
+            if state.value is None:
+                continue
+            spec = self._catalog.effective(resolved.kind, name)
+            body[name] = {
+                "type": spec.type,
+                "value": state.value,
+                "display": state.display,
+                "value_sources": list(state.value_sources),
+            }
+        return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
     def commit(self) -> None:
         """Create or append kind rows after every file in this plan has resolved."""

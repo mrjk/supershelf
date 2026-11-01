@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version as package_version
 
 from clak import Argument, Command, ListViewMixin, LoggingOptMixin, Parser
@@ -22,7 +23,7 @@ from supershelf.match import (
 )
 from supershelf.profile import ShelfProfile
 from supershelf.record import RecordReader, RecordSession
-from supershelf.scan import InputFile, filter_kept
+from supershelf.scan import InputFile, InputScanResult, KeptPath
 from supershelf.var_template import VarEnvironment
 from supershelf.vars import KindOverrideMode, VarPlan
 
@@ -74,6 +75,40 @@ class GlobalFlags:
     )
 
 
+class ResolvedWalk:
+    """Matched files with resolved variables. Does not commit kind files."""
+
+    def __init__(
+        self,
+        prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
+        groups: list[list[InputScanResult]],
+        accept: Callable[[InputFile], bool] | None = None,
+    ) -> None:
+        self._prepared = prepared
+        self._groups = groups
+        self._accept = accept
+
+    @property
+    def plans(self) -> list[VarPlan]:
+        """One plan per profile, including a profile with no matched files."""
+        return [plan for _shelf, _matcher, plan in self._prepared]
+
+    def __iter__(self):
+        for (_shelf, matcher, plan), scans in zip(
+            self._prepared,
+            self._groups,
+            strict=True,
+        ):
+            for result in scans:
+                files = {found.path: found for found in result.results}
+                for matched in matcher.collect(result):
+                    found = files[matched.path]
+                    if self._accept is not None and not self._accept(found):
+                        continue
+                    resolved = plan.resolve(found, matched, result.config.path)
+                    yield _shelf, result, found, matched, resolved, plan
+
+
 class ShelfRuns:
     """Profiles loaded for one scan command."""
 
@@ -86,13 +121,46 @@ class ShelfRuns:
         return cls([ShelfProfile.from_config(item) for item in loaded.config_list])
 
     def scans(self, *, quick: bool, path: str | None):
-        return filter_kept([shelf.scan(quick=quick) for shelf in self.shelves], path)
+        groups = [shelf.scan(quick=quick) for shelf in self.shelves]
+        return KeptPath.narrow_groups(groups, path)
 
     def matched(self) -> list[tuple[ShelfProfile, Matcher]]:
         return [
             (shelf, Matcher.from_document(shelf.document, shelf.name))
             for shelf in self.shelves
         ]
+
+    def resolved(
+        self,
+        path: str | None,
+        *,
+        mode: str | None = None,
+        dry_run: bool = False,
+        groups: list[list[InputScanResult]] | None = None,
+        accept: Callable[[InputFile], bool] | None = None,
+    ) -> ResolvedWalk:
+        """Match and resolve. A passed `groups` skips a second walk."""
+        prepared: list[tuple[ShelfProfile, Matcher, VarPlan]] = []
+        for shelf in self.shelves:
+            matcher = Matcher.from_document(shelf.document, shelf.name)
+            prepared.append(
+                (
+                    shelf,
+                    matcher,
+                    VarPlan.from_document(
+                        shelf.document,
+                        shelf.name,
+                        matcher,
+                        shelf.root_dir,
+                        shelf.scope,
+                        mode=mode,
+                        dry_run=dry_run,
+                    ),
+                )
+            )
+        if groups is None:
+            groups = self.scans(quick=False, path=path)
+        return ResolvedWalk(prepared, groups, accept)
 
 
 class ProfilesCommand(ListViewMixin, Parser):
@@ -194,47 +262,26 @@ class ScanVarsCommand(ListViewMixin, Parser):
         if kind_overrides_mode is not None:
             KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
         runs = ShelfRuns.load(config, profile)
-        prepared = []
-        for shelf, matcher in runs.matched():
-            prepared.append(
-                (
-                    shelf,
-                    matcher,
-                    VarPlan.from_document(
-                        shelf.document,
-                        shelf.name,
-                        matcher,
-                        shelf.root_dir,
-                        shelf.scope,
-                        mode=kind_overrides_mode,
-                        dry_run=bool(dry_run),
-                    ),
-                )
-            )
-        groups = runs.scans(quick=False, path=path)
+        walk = runs.resolved(
+            path,
+            mode=kind_overrides_mode,
+            dry_run=bool(dry_run),
+        )
         rows = []
-        for (_shelf, matcher, plan), scans in zip(prepared, groups, strict=True):
-            for result in scans:
-                files = {found.path: found for found in result.results}
-                for matched in matcher.collect(result):
-                    resolved = plan.resolve(
-                        files[matched.path],
-                        matched,
-                        result.config.path,
-                    )
-                    presented = resolved.present(fmt, show_all=bool(show_all))
-                    row = {
-                        "profile": matched.profile,
-                        "input": matched.index,
-                        "path": matched.path,
-                        "kind": resolved.kind,
-                        "rule": matched.rule,
-                        "vars": presented,
-                    }
-                    if isinstance(presented, str):
-                        row["sources"] = resolved.present_sources(show_all=bool(show_all))
-                    rows.append(row)
-        for _shelf, _matcher, plan in prepared:
+        for _shelf, _result, _found, matched, resolved, _plan in walk:
+            presented = resolved.present(fmt, show_all=bool(show_all))
+            row = {
+                "profile": matched.profile,
+                "input": matched.index,
+                "path": matched.path,
+                "kind": resolved.kind,
+                "rule": matched.rule,
+                "vars": presented,
+            }
+            if isinstance(presented, str):
+                row["sources"] = resolved.present_sources(show_all=bool(show_all))
+            rows.append(row)
+        for plan in walk.plans:
             plan.commit()
         return rows
 

@@ -1,5 +1,7 @@
 """Link rules: path, hash, duplicates, missing, unmatched, and the path filter."""
 
+from pathlib import Path
+
 from supershelf.constants import (
     ENV_RECORD_IDENTITY,
     EVENT_GENERATION,
@@ -20,13 +22,13 @@ from supershelf.errors import RecordConfigError
 from supershelf.record import (
     DuplicateListing,
     LiveFile,
-    PathSelector,
     RecordIdentity,
     RecordPlan,
-    RecordSnapshot,
 )
-from supershelf.var_schema import VarCatalog, VarState
-from supershelf.vars import FileVars
+from supershelf.match import Matcher
+from supershelf.scan import KeptPath
+from supershelf.var_schema import VarState
+from supershelf.vars import FileVars, VarPlan
 
 import pytest
 
@@ -109,7 +111,7 @@ def _plan(
         live,
         kept if kept is not None else {item.location() for item in live},
         walked if walked is not None else {_IN},
-        PathSelector.from_paths(selector, observed),
+        KeptPath.from_paths(selector, observed),
     ).rows()
 
 
@@ -333,7 +335,7 @@ def test_ignored_database_path_is_out_of_scope() -> None:
         live,
         {live[0].location()},
         {_IN},
-        PathSelector.from_paths(None, ["a.pdf"]),
+        KeptPath.from_paths(None, ["a.pdf"]),
         ignored={(_IN, "a.pdf")},
     )
     assert plan.rows() == []
@@ -413,8 +415,14 @@ def test_duplicate_listing_marks_a_past_generation() -> None:
     assert by_doc[2].current is True
 
 
-def test_snapshot_keeps_date_and_drops_identity_facts() -> None:
-    catalog = VarCatalog.load({"vars_schema": {"vendor": {"type": "text"}}})
+def test_snapshot_keeps_date_and_drops_identity_facts(tmp_path: Path) -> None:
+    plan = VarPlan.from_document(
+        {"vars_schema": {"vendor": {"type": "text"}}},
+        "work",
+        Matcher.from_document({}, "work"),
+        tmp_path,
+        {"__root_dir__": str(tmp_path), "__profile__": "work"},
+    )
     resolved = FileVars(
         "bill",
         "bill",
@@ -425,7 +433,7 @@ def test_snapshot_keeps_date_and_drops_identity_facts() -> None:
             ("empty", VarState(value=None, display="", value_sources=[])),
         ),
     )
-    text = RecordSnapshot.encode(resolved, catalog)
+    text = plan.snapshot(resolved)
     assert "__kind__" not in text
     assert "Bank2000" in text
     assert "__date__" in text

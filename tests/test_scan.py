@@ -12,7 +12,7 @@ from supershelf.configs import ShelfConfig
 from supershelf.constants import LOGGER_NAME
 from supershelf.errors import SupershelfError
 from supershelf.profile import ShelfProfile
-from supershelf.scan import InputFile, InputScanResult, ResolvedInput, filter_kept
+from supershelf.scan import InputFile, InputScanResult, KeptPath, ResolvedInput
 
 HELLO = b"hello"
 HELLO_HASH = hashlib.sha256(HELLO).hexdigest()
@@ -305,13 +305,13 @@ def _selected(groups: list[list[InputScanResult]]) -> list[list[str]]:
 def test_filter_kept_without_a_path_returns_every_file() -> None:
     groups = [[_result("a.txt", "b.txt")]]
 
-    assert filter_kept(groups, None) is groups
+    assert KeptPath.narrow_groups(groups, None) is groups
 
 
 def test_filter_kept_exact_file_drops_a_longer_prefix() -> None:
     groups = [[_result("a.txt", "a.txt.bak", "b.txt")]]
 
-    chosen = filter_kept(groups, "a.txt")
+    chosen = KeptPath.narrow_groups(groups, "a.txt")
 
     assert _selected(chosen) == [["a.txt"]]
     assert [found.path for found in groups[0][0].results] == [
@@ -324,7 +324,7 @@ def test_filter_kept_exact_file_drops_a_longer_prefix() -> None:
 def test_filter_kept_prefix_selects_paths_that_start_with() -> None:
     groups = [[_result("Bank2000/file.pdf", "Bank.txt", "notes/a.txt")]]
 
-    chosen = filter_kept(groups, "Bank")
+    chosen = KeptPath.narrow_groups(groups, "Bank")
 
     assert _selected(chosen) == [["Bank2000/file.pdf", "Bank.txt"]]
 
@@ -335,7 +335,7 @@ def test_filter_kept_exact_file_applies_to_every_input() -> None:
         [_result("a.txt", profile="home")],
     ]
 
-    chosen = filter_kept(groups, "a.txt")
+    chosen = KeptPath.narrow_groups(groups, "a.txt")
 
     assert _selected(chosen) == [["a.txt"], [], ["a.txt"]]
 
@@ -343,11 +343,11 @@ def test_filter_kept_exact_file_applies_to_every_input() -> None:
 def test_filter_kept_leaves_an_unmatched_input_empty() -> None:
     groups = [[_result("Bank2000/file.pdf"), _result("notes/a.txt", index=2)]]
 
-    chosen = filter_kept(groups, "Bank")
+    chosen = KeptPath.narrow_groups(groups, "Bank")
 
     assert _selected(chosen) == [["Bank2000/file.pdf"], []]
 
 
 def test_filter_kept_unknown_path_is_an_error() -> None:
     with pytest.raises(SupershelfError, match="No kept file 'missing.pdf'"):
-        filter_kept([[_result("a.txt")]], "missing.pdf")
+        KeptPath.narrow_groups([[_result("a.txt")]], "missing.pdf")

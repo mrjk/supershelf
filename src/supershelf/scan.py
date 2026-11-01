@@ -164,41 +164,65 @@ class InputScanResult:
     results: list[InputFile]
 
 
-def filter_kept(
-    groups: list[list[InputScanResult]],
-    path: str | None,
-) -> list[list[InputScanResult]]:
-    """Keep every file, one exact path, or paths that start with `path`.
+class KeptPath:
+    """Exact path, or a prefix. None matches every relative path."""
 
-    None returns `groups` unchanged. An exact kept path keeps only that path
-    in every input. Anything else keeps paths that start with it. A selector
-    that matches nothing is an error. Empty inputs stay empty.
-    """
-    if path is None:
-        return groups
-    exact = any(
-        found.path == path
-        for scans in groups
-        for scan in scans
-        for found in scan.results
-    )
-    narrowed: list[list[InputScanResult]] = []
-    seen = 0
-    for scans in groups:
-        group: list[InputScanResult] = []
-        for scan in scans:
-            if exact:
-                chosen = [found for found in scan.results if found.path == path]
-            else:
-                chosen = [
-                    found for found in scan.results if found.path.startswith(path)
-                ]
-            seen += len(chosen)
-            group.append(replace(scan, results=chosen))
-        narrowed.append(group)
-    if seen == 0:
-        raise SupershelfError(f"No kept file {path!r}")
-    return narrowed
+    def __init__(self, text: str | None, *, exact: bool) -> None:
+        self.text = text
+        self.exact = exact
+
+    @classmethod
+    def from_paths(cls, text: str | None, paths: list[str]) -> KeptPath:
+        """None keeps every path. An exact known path wins over a prefix."""
+        if text is None:
+            return cls(None, exact=False)
+        return cls(text, exact=text in paths)
+
+    @classmethod
+    def narrow_groups(
+        cls,
+        groups: list[list[InputScanResult]],
+        path: str | None,
+    ) -> list[list[InputScanResult]]:
+        """Narrow scan groups. No match is an error. None returns `groups`."""
+        paths = [
+            found.path
+            for scans in groups
+            for scan in scans
+            for found in scan.results
+        ]
+        return cls.from_paths(path, paths).narrow(groups)
+
+    def matches(self, relative: str) -> bool:
+        """Whether this relative path is selected."""
+        if self.text is None:
+            return True
+        if self.exact:
+            return relative == self.text
+        return relative.startswith(self.text)
+
+    def narrow(
+        self,
+        groups: list[list[InputScanResult]],
+    ) -> list[list[InputScanResult]]:
+        """Keep matching files in every input. No match is an error.
+
+        None returns `groups` unchanged. Empty inputs stay empty.
+        """
+        if self.text is None:
+            return groups
+        narrowed: list[list[InputScanResult]] = []
+        seen = 0
+        for scans in groups:
+            group: list[InputScanResult] = []
+            for scan in scans:
+                chosen = [found for found in scan.results if self.matches(found.path)]
+                seen += len(chosen)
+                group.append(replace(scan, results=chosen))
+            narrowed.append(group)
+        if seen == 0:
+            raise SupershelfError(f"No kept file {self.text!r}")
+        return narrowed
 
 
 class InputScanner:

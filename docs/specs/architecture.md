@@ -273,8 +273,8 @@ Modules. A missing or null `var_modules` loads no modules. `[]` loads no modules
 Missing and null are both `None` before the type check.
 
 - `profile.py`: `default_date_format`, `root_dir`, `database_file`, `cache_file`.
-- `record.py`: `RecordIdentity.resolve`. The flag wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then packaged `path`. An empty string is invalid and does not fall back.
-- `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
+- `record.py`: `RecordIdentity.resolve`, a `WordChoice`. The flag wins, then `SUPERSHELF_RECORD_IDENTITY`, then `config.record_identity`, then packaged `path`. An empty string is invalid and does not fall back.
+- `vars.py`: `KindDateFormat.from_section`, `KindCsvSep.from_section`, `KindOverrideMode.resolve`. `KindOverrideMode` is a `WordChoice`. The date-format reader uses the user's `default_date_format` only after `kind_overrides_date_format` is `None`.
 - `scan.py`: a null `inputs` uses the same "no inputs" error as a missing key. An empty list stays "inputs is empty".
 
 These also use a missing key and null as `None`: `kind_overrides_config`, `var_modules`, `match_rules`, `default_vars`, and the profile name. A present `overrides` key is a config error, not `None`.

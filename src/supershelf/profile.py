@@ -61,7 +61,7 @@ class ShelfProfile:
     @classmethod
     def from_config(cls, shelf_config: ShelfConfig) -> ShelfProfile:
         document = shelf_config.config
-        section = cls._config_section(document)
+        section = cls.config_section(document)
         directory = shelf_config.path.parent
         date_format = cls._date_format(section)
         scope: dict[str, Any] = {
@@ -129,7 +129,7 @@ class ShelfProfile:
         return resolve_user_path(rendered, base).resolve()
 
     @staticmethod
-    def _config_section(document: Mapping[str, Any]) -> dict[str, Any]:
+    def config_section(document: Mapping[str, Any]) -> dict[str, Any]:
         section = document.get(CONFIG_SECTION)
         if section is None:
             return {}

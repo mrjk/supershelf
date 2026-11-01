@@ -148,3 +148,49 @@ def load_mapping_file(path: Path) -> tuple[Any, str]:
     if file_type == FILE_TYPE_TOML:
         return load_toml(path), file_type
     return load_yaml(path), file_type
+
+
+class WordChoice:
+    """A closed word. The flag wins, then the env var, then config, then packaged.
+
+    A subclass sets the words, the flag, the env name, the config key, the
+    error sentence, and the error class. `cli_or_env` stays for free text.
+    """
+
+    words: tuple[str, ...] = ()
+    flag_name = ""
+    env_name = ""
+    config_key = ""
+    config_label = ""
+    requirement = "{label} is invalid"
+    advice = ""
+    error = SupershelfError
+
+    @classmethod
+    def packaged(cls) -> str:
+        """The packaged word when the flag, the env var, and the key are absent."""
+        raise NotImplementedError
+
+    @classmethod
+    def resolve(
+        cls,
+        section: Mapping[str, Any],
+        flag: str | None,
+        environ: Mapping[str, str],
+    ) -> str:
+        """Flag, then environment, then config. An empty string does not fall back."""
+        if flag is not None:
+            return cls.check(flag, cls.flag_name)
+        if cls.env_name in environ:
+            return cls.check(environ[cls.env_name], cls.env_name)
+        raw = section.get(cls.config_key)
+        if raw is not None:
+            return cls.check(raw, cls.config_label)
+        return cls.packaged()
+
+    @classmethod
+    def check(cls, value: object, label: str) -> str:
+        """Validate one word. `resolve` uses the same check."""
+        if isinstance(value, str) and value in cls.words:
+            return value
+        raise cls.error(cls.requirement.format(label=label), advice=cls.advice)
