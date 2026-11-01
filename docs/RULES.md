@@ -4,7 +4,45 @@ These numbers are rules, not product steps. Where a supershelf decision is writt
 
 ## 1 Project
 
-### 1.1 License, language, and examples
+### 1.1 Naming and classifiers
+
+Ideally, a project should respect this name pattern:
+* If it's an app:
+    * NAME_OF_THE_APP or CODENAME
+    * For side repos, or project, either use component naming convention, or ecosystem:
+        * NAME_OF_THE_APP-COMPONENENT, where component can be -cli, -web, -server, -api, -doc etc ...
+* If it's a component:
+    * DOMAIN-NAME, where domain is language, or a product (python, ruby, go, rust ...) or (ansible, terraform, mise/asdf, etc ...)
+        
+
+
+Classifiers, a project can be:
+* MAINTAINED: Support is done, security is done. After 2 years of non commit, fallback to UNMAINTAINED
+* UNMAINTENED: mention since what date the project is not maintained
+* DEPRECATED, replaced by something else that need to be mentionned
+* ABANDONNED: when a project was abandonned before it does not make sense to work on it anymore, mention the reason, no replacements or give alternative project
+
+Tags:
+* GROUP: Name of the main app, or the parent application (project name, or component DOMAIN)
+* COMPONENT: Name of the component, or "app"
+* COMPONENT_TYPE: Type of the component, like ansible-collection or ansible-role
+
+
+List of known app-products (to be filled by the time):
+* terraform:
+    * terraform-module-
+* ansible:
+    * ansible-role-
+    * ansible-collection-
+* mise/asdf/...:
+    * mise-
+* python|shell|go|rust|:
+    * python- (for python lib)
+    * CODENAME
+
+
+
+### 1.2 License, language, and examples
 
 * Ensure a GPL license is present in project, unless another license is mentionned
 * Each new code changes should come with documentation and tests. Codes changes should be small and reviewable.
@@ -12,7 +50,7 @@ These numbers are rules, not product steps. Where a supershelf decision is writt
 * Assume any project may end up public, excepted personal projects.
     * I dont want to do cleanup, i want this to be clean from day one.
 
-### 1.2 mise and task
+### 1.3 mise and task
 
 * We use mise, aka mise-en-place.
     * Ensure a config is present
@@ -30,9 +68,12 @@ These numbers are rules, not product steps. Where a supershelf decision is writt
         * Include taskfiles in root taskfile
         * Only show at the top level commands general commands, if the user want to run specific tests/docsumentation commands, it changes dir to it to have more focused command
     * CI/CD commands:
-        * It should provide a single command that a CI/CD builder can run. We want the same behavior local and remote
+        * Provide one task, `ci`, that runs the verification pipeline. A CI/CD builder runs that same task. Local and remote stay aligned. It can provide hidden shortcuts.
+        * `ci` only calls other tasks. Leaf tasks do the work.
+        * A workflow installs mise, then runs `mise x -- task <name>`. It does not inline pytest, uv, or the site generator.
 
-### 1.3 Documentation, containers, tests, CI, and examples
+### 1.4 Documentation, containers, tests, CI, and examples
+
 
 * Documentation:
     * Lives under docs/. Use a sub taskfile to allow to build, run, release, run pre scripts ... etc ..
@@ -83,10 +124,26 @@ These numbers are rules, not product steps. Where a supershelf decision is writt
     * If there are long tests or more complex tests scenarios, use a specific taskfile under tests/.
 
 * CI/CD:
-    * Task should provides a way to run the whole pipeline locally.
-    * Local CI == remote CI, it should be aligned.
-    * Use env vars
-    * CI/CD tasks should actually only call other tasks.
+    * Task provides a way to run the whole verification pipeline locally. `ci` only calls other tasks. Leaf tasks do the work.
+    * Local CI and remote CI stay aligned. Each workflow job installs mise, then runs `mise x -- task <name>`.
+    * Use env vars for deployment settings. Do not hardcode the repository owner.
+    * The job names below are examples, not a list every project must implement. Add a workflow only for a task the project already has. Do not add lint, a package build, a version bump, or a registry publish just to match an example.
+        * Verification examples: `ci`, and when the task exists: lint, build, test, docs lint, docs build.
+        * Deploy examples: a top release workflow only when several publish tasks exist; publish documentation; registry or GitHub release publishes when those tasks exist.
+    * Every workflow is runnable from the Actions tab (`workflow_dispatch`), so the user can choose the branch.
+    * Do not run both the pipeline workflow and the single-task workflows on the same automatic event. The single-task workflows are dispatch only.
+    * Branches:
+        * `main` is the stable line. `dev` is the unstable line. A branch named `dev-*` has the same behavior as `dev`.
+        * Verification runs on a pull request, and on a push to `main`, `dev`, or `dev-*`. A push to any other branch does not. The pull request covers that branch.
+    * Tags:
+        * A stable tag is cut only from `main`. An unstable tag (a pre-release such as alpha, beta, rc, or the same idea) is cut only from `dev` or `dev-*`. No other ref is tagged.
+    * Versions:
+        * Semantic versioning is preferred.
+        * `1.0.0` is the first version that means the product is stable and ready for production. A version below that is not a production declaration.
+        * A tag with no pre-release identifier is a stable tag. A tag with a pre-release identifier is an unstable tag.
+        * When semantic versioning does not fit, use a calendar version: `YY.MM`, then optional day, hour, minute, and a sequence. The shape is `YY.MM[.DD[.HH[.MM]]][.SEQ]`. Each extra field requires the fields before it, except `SEQ`, which may close any of those forms.
+        * The separator is a dot by default. A use case may instead use `-`, `_`, or no separator.
+    * If the project publishes a documentation site, publish it after verification succeeds on a push to `main`. Do not publish from a pull request, or from `dev` or `dev-*`. A manual dispatch publishes the branch selected in that dialog.
 
 * examples:
     * This should provide code examples to try for the user
