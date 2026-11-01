@@ -1,4 +1,4 @@
-name: CI
+name: ci
 
 on:
   push:
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   test:
+    name: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,6 +31,7 @@ jobs:
         run: mise x -- task test
 
   docs:
+    name: docs:build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,6 +49,7 @@ jobs:
   deploy:
     needs: [test, docs]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: docs:release
     runs-on: ubuntu-latest
     permissions:
       contents: write

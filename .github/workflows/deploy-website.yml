@@ -1,4 +1,4 @@
-name: Deploy website
+name: docs:release
 
 on:
   workflow_dispatch:

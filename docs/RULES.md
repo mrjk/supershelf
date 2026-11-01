@@ -58,7 +58,7 @@ List of known app-products (to be filled by the time):
 
 * We use task and taskfile:
     * GEneral:
-        * Ensure command naming pattern make sense
+        * Good and consistent naming matters. A command has one name. The task, the workflow, and the job use that name, with the same case and separators.
         * CWD is where the taskfile is
         * Ensure it uses a common .env file
         * Do not hardcode versions or repo owner, use env vars.
@@ -131,6 +131,7 @@ List of known app-products (to be filled by the time):
         * Verification examples: `ci`, and when the task exists: lint, build, test, docs lint, docs build.
         * Deploy examples: a top release workflow only when several publish tasks exist; publish documentation; registry or GitHub release publishes when those tasks exist.
     * Every workflow is runnable from the Actions tab (`workflow_dispatch`), so the user can choose the branch.
+    * The name in the Actions tab is that task name. `ci` is `ci`. `docs:build` is `docs:build`. Do not replace it with a title.
     * Do not run both the pipeline workflow and the single-task workflows on the same automatic event. The single-task workflows are dispatch only.
     * Branches:
         * `main` is the stable line. `dev` is the unstable line. A branch named `dev-*` has the same behavior as `dev`.

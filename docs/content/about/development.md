@@ -8,10 +8,10 @@ From the repository root, `task test` runs pytest, `task docs` serves this site,
 
 GitHub Actions installs the tools from `mise.toml`, then calls task. Each workflow has its own Run workflow button:
 
-- CI (`.github/workflows/ci.yml`): `mise x -- task test` and `mise x -- task docs:build`, on a pull request, on a push to `main`, `dev`, or `dev-*`, and on dispatch. After both succeed, a push to `main` also runs `mise x -- task docs:release`.
-- Test (`.github/workflows/test.yml`): `mise x -- task test`, on dispatch only
-- Docs (`.github/workflows/docs.yml`): `mise x -- task docs:build`, on dispatch only
-- Deploy website (`.github/workflows/deploy-website.yml`): `mise x -- task docs:release`, on dispatch only. The branch you pick in that dialog is the one that is published.
+- `ci` (`.github/workflows/ci.yml`): `mise x -- task test` and `mise x -- task docs:build`, on a pull request, on a push to `main`, `dev`, or `dev-*`, and on dispatch. After both succeed, a push to `main` also runs `mise x -- task docs:release`.
+- `test` (`.github/workflows/test.yml`): `mise x -- task test`, on dispatch only
+- `docs:build` (`.github/workflows/docs.yml`): `mise x -- task docs:build`, on dispatch only
+- `docs:release` (`.github/workflows/deploy-website.yml`): `mise x -- task docs:release`, on dispatch only. The branch you pick in that dialog is the one that is published.
 
 Layout:
 

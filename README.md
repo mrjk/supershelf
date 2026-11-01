@@ -53,7 +53,7 @@ supershelf scan files
 
 ## Development
 
-Python, uv, and task come from `mise.toml`. From the repository root, `task test` runs the tests, `task docs` serves the documentation, and `task ci` runs the tests and the docs build. GitHub Actions runs those tasks through mise. CI runs on a pull request and on a push to `main`, `dev`, or `dev-*`. The site publishes after that succeeds on `main`. Test, Docs, and Deploy website can also be run on their own from the Actions tab.
+Python, uv, and task come from `mise.toml`. From the repository root, `task test` runs the tests, `task docs` serves the documentation, and `task ci` runs the tests and the docs build. GitHub Actions runs those tasks through mise. CI runs on a pull request and on a push to `main`, `dev`, or `dev-*`. The site publishes after that succeeds on `main`. `test`, `docs:build`, and `docs:release` can also be run on their own from the Actions tab.
 
 ## License
 
