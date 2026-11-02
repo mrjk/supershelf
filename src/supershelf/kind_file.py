@@ -40,9 +40,10 @@ from supershelf.constants import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import VarConfigError, VarResolveError
-from supershelf.match import FileMatch
-from supershelf.template import ScopeObject, scope_field
-from supershelf.var_schema import VarCatalog, check_assignment_key
+from supershelf.scan.match import FileMatch
+from supershelf.template.render import ScopeObject, scope_field
+from supershelf.vars.catalog import VarCatalog
+from supershelf.vars.spec import check_assignment_key
 
 
 KindMode = Literal[

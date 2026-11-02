@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
 from supershelf.errors import VarCandidateError, VarConfigError
-from supershelf.scan import InputFile
+from supershelf.scan.walk import InputFile
 
 _ENABLE_WORDS = ("auto", "true", "false")
 DEFAULT_DRIVER_TIMEOUT = 30.0

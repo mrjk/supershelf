@@ -28,8 +28,8 @@ from supershelf.constants import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
-from supershelf.template import ScopeObject
-from supershelf.scan import InputScanResult, InputScanner
+from supershelf.scan.walk import InputScanResult, InputScanner
+from supershelf.template.render import ScopeObject
 
 _PATH_STEPS = (
     KEY_ROOT_DIR,

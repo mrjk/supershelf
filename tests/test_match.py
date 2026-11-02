@@ -7,7 +7,7 @@ import pytest
 
 from supershelf.constants import LOGGER_NAME
 from supershelf.errors import SupershelfError
-from supershelf.match import (
+from supershelf.scan.match import (
     DETAIL_EMPTY_DIRECTORY,
     STATUS_HIT,
     STATUS_MISS,

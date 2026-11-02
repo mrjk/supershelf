@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from supershelf.errors import VarConfigError
-from supershelf.match import FileMatch
+from supershelf.scan.match import FileMatch
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
 from tests.metadata_helpers import input_file as _file

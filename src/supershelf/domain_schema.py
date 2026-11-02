@@ -17,8 +17,8 @@ from supershelf.constants import (
     TYPE_TIME,
 )
 from supershelf.errors import VarConfigError
-from supershelf.var_schema import VarCatalog, VarSpec, cast_value
-from supershelf.var_template import is_template
+from supershelf.template.environment import is_template
+from supershelf.vars import VarCatalog, VarSpec, cast_value
 
 _DRAFT = "https://json-schema.org/draft/2020-12/schema"
 _DATE_PATTERN = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"

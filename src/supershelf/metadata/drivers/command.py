@@ -1,4 +1,4 @@
-"""Builtin metadata drivers."""
+"""One program, shared by every supershelf.meta_driver entry."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from pathlib import Path
 from supershelf.errors import VarCandidateError, VarConfigError
 from supershelf.metadata.driver import DriverOptions, MetadataDriver, MetadataFile
 from supershelf.metadata.parse import OutputParser
-from supershelf.metadata.pdf import pdf_date, read_pdf_metadata
 
 _TOKENS = {
     "p": "absolute",
@@ -25,147 +24,6 @@ _TOKENS = {
     "d": "directory",
 }
 _FORMATS = frozenset({"yaml", "toml", "ini", "shell"})
-_PDF_TEXT = (
-    ("author", "author"),
-    ("title", "title"),
-    ("subject", "subject"),
-    ("creator", "creator"),
-    ("producer", "producer"),
-)
-
-
-class PdfDriver(MetadataDriver):
-    """PDF info via pypdf. Dates are YYYY-MM-DD."""
-
-    identity = "pdf"
-    extensions = ("pdf",)
-    mime_types = ("application/pdf",)
-    ignores_enable = True
-    accepts_timeout = False
-
-    def extract(self, file: MetadataFile, field: str, options: DriverOptions) -> str:
-        """Return one PDF info field. The parsed map is reused for this hash."""
-        return self.one_field(file, field, options, lambda: self._read(file))
-
-    def _read(self, file: MetadataFile) -> tuple[str, dict[str, str]]:
-        fields = self._info(file.absolute)
-        payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
-        return payload, fields
-
-    def fields_from_payload(self, payload: str, options: DriverOptions) -> dict[str, str]:
-        """The stored JSON map is the field table."""
-        del options
-        try:
-            raw = json.loads(payload)
-        except json.JSONDecodeError as exc:
-            raise VarCandidateError(f"pdf cache is invalid: {exc}") from exc
-        if not isinstance(raw, dict):
-            raise VarCandidateError("pdf cache is not a mapping")
-        found: dict[str, str] = {}
-        for key, value in raw.items():
-            if isinstance(key, str) and isinstance(value, str) and value.strip():
-                found[key] = value
-        return found
-
-    def _info(self, path: Path) -> dict[str, str]:
-        meta = read_pdf_metadata(path)
-        if meta is None:
-            return {}
-        found: dict[str, str] = {}
-        created = pdf_date(meta.creation_date)
-        modified = pdf_date(meta.modification_date)
-        if created:
-            found["creation_date"] = created
-        if modified:
-            found["modification_date"] = modified
-        for key, attr in _PDF_TEXT:
-            text = self._text(getattr(meta, attr, None))
-            if text:
-                found[key] = text
-        return found
-
-    def _text(self, value: object) -> str | None:
-        if not isinstance(value, str):
-            return None
-        text = value.strip()
-        return text or None
-
-
-class ExiftoolDriver(MetadataDriver):
-    """exiftool -json -G. SourceFile and File: keys are dropped."""
-
-    identity = "exiftool"
-    binary = "exiftool"
-
-    def extract(self, file: MetadataFile, field: str, options: DriverOptions) -> str:
-        """Return one grouped tag. One JSON run is shared by later fields."""
-        return self.one_field(file, field, options, lambda: self._read(file, options))
-
-    def _read(self, file: MetadataFile, options: DriverOptions) -> tuple[str, dict[str, str]]:
-        timeout = options.run_timeout()
-        stdout = options.runner.run(
-            ["exiftool", "-json", "-G", str(file.absolute)],
-            timeout,
-        )
-        try:
-            raw = json.loads(stdout)
-        except json.JSONDecodeError as exc:
-            raise VarCandidateError(f"exiftool JSON is invalid: {exc}") from exc
-        return stdout, self._fields(raw)
-
-    def fields_from_payload(self, payload: str, options: DriverOptions) -> dict[str, str]:
-        """Parse the stored exiftool JSON the same way as a fresh run."""
-        del options
-        try:
-            raw = json.loads(payload)
-        except json.JSONDecodeError as exc:
-            raise VarCandidateError(f"exiftool JSON is invalid: {exc}") from exc
-        return self._fields(raw)
-
-    def _fields(self, raw: object) -> dict[str, str]:
-        document = raw[0] if isinstance(raw, list) and raw else raw
-        if not isinstance(document, dict):
-            raise VarCandidateError("exiftool did not return a mapping")
-        found: dict[str, str] = {}
-        for key, value in document.items():
-            if not isinstance(key, str) or key == "SourceFile" or key.startswith("File:"):
-                continue
-            if value is None or isinstance(value, (list, dict)):
-                continue
-            text = value.strip() if isinstance(value, str) else str(value).strip()
-            if text:
-                found[key] = text
-        return found
-
-
-class PdftotextDriver(MetadataDriver):
-    """pdftotext stdout. The only field is text, and it may be omitted."""
-
-    identity = "pdftotext"
-    extensions = ("pdf",)
-    mime_types = ("application/pdf",)
-    single_field = "text"
-    binary = "pdftotext"
-
-    def extract(self, file: MetadataFile, field: str, options: DriverOptions) -> str:
-        """Return stdout. The text field may be omitted."""
-        return self.one_field(file, field, options, lambda: self._read(file, options))
-
-    def _read(self, file: MetadataFile, options: DriverOptions) -> tuple[str, dict[str, str]]:
-        timeout = options.run_timeout()
-        stdout = options.runner.run(
-            ["pdftotext", "-q", "-enc", "UTF-8", str(file.absolute), "-"],
-            timeout,
-        )
-        text = stdout.strip()
-        fields = {"text": text} if text else {}
-        return stdout, fields
-
-    def fields_from_payload(self, payload: str, options: DriverOptions) -> dict[str, str]:
-        """The stored payload is stdout. The only field is text."""
-        del options
-        text = payload.strip()
-        return {"text": text} if text else {}
 
 
 class CommandDriver(MetadataDriver):

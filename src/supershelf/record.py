@@ -43,9 +43,9 @@ from supershelf.database import (
 from supershelf.defaults import PACKAGED
 from supershelf.errors import RecordConfigError, SupershelfError
 from supershelf.profile import ShelfProfile
-from supershelf.runs import ShelfRuns
-from supershelf.scan import InputFile, InputScanResult, KeptPath
-from supershelf.var_template import is_template
+from supershelf.scan.runs import ShelfRuns
+from supershelf.scan.walk import InputFile, InputScanResult, KeptPath
+from supershelf.template.environment import is_template
 from supershelf.vars import FileVars, VarPlan
 
 

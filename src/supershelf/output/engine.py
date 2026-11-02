@@ -1,4 +1,4 @@
-"""Plan and apply output drivers. The file driver is output_file."""
+"""Plan and apply output drivers. The file driver is output.drivers.file."""
 
 from __future__ import annotations
 
@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from supershelf.constants import (
+    EVENT_GENERATION,
+    EVENT_MISSING,
+    EVENT_MOVE,
+    EVENT_NEW,
+    EVENT_PRESENT,
+    EVENT_UNMATCHED,
+    EVENT_VARS,
     KEY_OUTPUT_MODULES,
     KEY_OUTPUTS,
     STATUS_DUPLICATE,
@@ -24,10 +31,10 @@ from supershelf.errors import (
     VarConfigError,
     VarResolveError,
 )
-from supershelf.match import Matcher
 from supershelf.profile import ShelfProfile
 from supershelf.record import LinkedMatch, RecordSession
-from supershelf.var_template import is_template
+from supershelf.scan.match import Matcher
+from supershelf.template.environment import is_template
 from supershelf.vars import VarPlan
 
 STATUS_WRITE = "write"
@@ -37,6 +44,16 @@ STATUS_CONFLICT = "conflict"
 SHARED_KEYS = frozenset({"name", "driver", "kinds", "when"})
 _PASSING = frozenset({STATUS_UNCHANGED, STATUS_REFRESH})
 _APPLY = frozenset({STATUS_WRITE, STATUS_REPLACE})
+_RECORD_TIP = "Run record status, then record run."
+_RECORD_GATE = {
+    EVENT_NEW: f"This file is not recorded. {_RECORD_TIP}",
+    EVENT_VARS: f"Kind, rule, or variables differ from the stored document. {_RECORD_TIP}",
+    EVENT_GENERATION: f"The file bytes changed. {_RECORD_TIP}",
+    EVENT_MOVE: f"The file moved. {_RECORD_TIP}",
+    EVENT_MISSING: f"The recorded file is missing from the walk. {_RECORD_TIP}",
+    EVENT_PRESENT: f"The file is back and is not stored as present. {_RECORD_TIP}",
+    EVENT_UNMATCHED: f"No rule matches this file. {_RECORD_TIP}",
+}
 _WHEN_TRUE = frozenset({"true", "yes", "1"})
 _WHEN_FALSE = frozenset({"false", "no", "0"})
 
@@ -71,6 +88,7 @@ class OutputAction:
     operation: str
     when: str
     dest: str
+    dest_root: Path | None = None
     document_id: int | None = None
     source_hash: str = ""
     previous: OutputPrevious | None = None
@@ -91,8 +109,17 @@ class OutputAction:
             "status": self.status,
             "operation": self.operation,
             "when": self.when,
-            "dest": self.dest,
+            "dest": self.shown_dest(),
         }
+
+    def shown_dest(self) -> str:
+        """Path under dest_root, or dest when that root is absent."""
+        if not self.dest or self.dest_root is None:
+            return self.dest
+        try:
+            return Path(self.dest).relative_to(self.dest_root).as_posix()
+        except ValueError:
+            return self.dest
 
 
 @dataclass
@@ -114,6 +141,7 @@ class OutputContext:
         status: str,
         operation: str,
         dest: str,
+        dest_root: Path | None = None,
         when: str = WhenText.TRUE,
         previous: OutputPrevious | None = None,
     ) -> OutputAction:
@@ -128,6 +156,7 @@ class OutputContext:
             operation=operation,
             when=when,
             dest=dest,
+            dest_root=dest_root,
             document_id=self.document_id,
             source_hash=self.match.row.file.hash,
             previous=previous,
@@ -211,7 +240,7 @@ class OutputModules:
     @staticmethod
     def load(section: Mapping[str, Any], registry: OutputRegistry) -> None:
         """Register file, then each module's DRIVERS, in list order."""
-        from supershelf.output_file import FileOutputDriver
+        from supershelf.output.drivers.file import FileOutputDriver
 
         registry.add(FileOutputDriver())
         raw = section.get(KEY_OUTPUT_MODULES)
@@ -407,6 +436,23 @@ class OutputProfile:
             ) from exc
 
 
+def _record_status_error(
+    profile: OutputProfile,
+    match: LinkedMatch,
+    advice: str | None = None,
+) -> OutputResolveError:
+    """Stop output until record run accepts this live status."""
+    status = match.row.status
+    if advice is None:
+        advice = _RECORD_GATE.get(status, _RECORD_TIP)
+    index = match.row.file.input_index
+    return OutputResolveError(
+        f"Profile {profile.shelf.name} input {index} "
+        f"{match.found.path} record status is {status}",
+        advice=advice,
+    )
+
+
 class OutputSession:
     """preview and run for the selected profiles."""
 
@@ -507,18 +553,10 @@ class OutputSession:
                 dest="",
             )
         if match.row.status not in _PASSING:
-            raise OutputResolveError(
-                f"Profile {profile.shelf.name} input {match.row.file.input_index} "
-                f"{match.found.path} is {match.row.status}",
-                advice="Run record run.",
-            )
+            raise _record_status_error(profile, match)
         document_id = match.row.document_id
         if document_id is None:
-            raise OutputResolveError(
-                f"Profile {profile.shelf.name} input {match.row.file.input_index} "
-                f"{match.found.path} is {match.row.status}",
-                advice="Run record run.",
-            )
+            raise _record_status_error(profile, match, advice=_RECORD_TIP)
         context = OutputContext(
             shelf=profile.shelf,
             match=match,

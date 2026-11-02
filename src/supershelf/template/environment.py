@@ -9,8 +9,8 @@ import jinja2
 
 from supershelf.constants import TEMPLATE_MARKERS
 from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
-from supershelf.template import ScopeObject
-from supershelf.var_commands import BuiltinCommands
+from supershelf.template.commands import BuiltinCommands
+from supershelf.template.render import ScopeObject
 
 
 def _finalize(value: object) -> object:

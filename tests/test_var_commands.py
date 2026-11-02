@@ -3,7 +3,7 @@
 import pytest
 
 from supershelf.errors import VarCandidateError
-from supershelf.var_template import VarEnvironment
+from supershelf.template.environment import VarEnvironment
 
 
 def test_regex_time_var_tries_formats_in_order() -> None:

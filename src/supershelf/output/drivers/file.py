@@ -25,7 +25,7 @@ from supershelf.constants import (
 )
 from supershelf.database import EventRow, OutputPrevious, ShelfDatabase
 from supershelf.errors import OutputConfigError, OutputResolveError, VarCandidateError, VarResolveError
-from supershelf.output import (
+from supershelf.output.engine import (
     SHARED_KEYS,
     STATUS_CONFLICT,
     STATUS_REPLACE,
@@ -180,7 +180,9 @@ class FileOutputDriver(OutputDriver):
         )
         present = dest.exists() or dest.is_symlink()
         if matched and self._disk_matches(operation, dest, source, source_hash):
-            return context.action(
+            return self._action(
+                prepared,
+                context,
                 status=STATUS_UNCHANGED,
                 operation=operation,
                 dest=dest_text,
@@ -188,7 +190,9 @@ class FileOutputDriver(OutputDriver):
         if matched and prior is not None:
             return self._conflict(prepared, context, dest_text, ours=True, prior=prior)
         if prior is not None and prior.destination == dest_text and present:
-            return context.action(
+            return self._action(
+                prepared,
+                context,
                 status=STATUS_REPLACE,
                 operation=operation,
                 dest=dest_text,
@@ -199,7 +203,9 @@ class FileOutputDriver(OutputDriver):
                 previous = OutputPrevious(False, True, claim.operation, claim.source_hash)
             else:
                 previous = OutputPrevious(False, False)
-            return context.action(
+            return self._action(
+                prepared,
+                context,
                 status=STATUS_WRITE,
                 operation=operation,
                 dest=dest_text,
@@ -218,17 +224,42 @@ class FileOutputDriver(OutputDriver):
     ) -> OutputAction:
         operation = prepared.operation
         if prepared.on_conflict == "skip":
-            return context.action(status=STATUS_SKIP, operation=operation, dest=dest_text)
+            return self._action(
+                prepared, context, status=STATUS_SKIP, operation=operation, dest=dest_text
+            )
         if prepared.on_conflict == "error":
-            return context.action(status=STATUS_CONFLICT, operation=operation, dest=dest_text)
+            return self._action(
+                prepared, context, status=STATUS_CONFLICT, operation=operation, dest=dest_text
+            )
         if ours and prior is not None:
             previous = OutputPrevious(True, True, prior.operation, prior.source_hash)
         else:
             previous = OutputPrevious(True, False)
-        return context.action(
+        return self._action(
+            prepared,
+            context,
             status=STATUS_REPLACE,
             operation=operation,
             dest=dest_text,
+            previous=previous,
+        )
+
+    def _action(
+        self,
+        prepared: PreparedFile,
+        context: OutputContext,
+        *,
+        status: str,
+        operation: str,
+        dest: str,
+        previous: OutputPrevious | None = None,
+    ) -> OutputAction:
+        """Plan one file action. dest stays absolute. The row prints under root."""
+        return context.action(
+            status=status,
+            operation=operation,
+            dest=dest,
+            dest_root=prepared.root,
             previous=previous,
         )
 

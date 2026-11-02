@@ -19,7 +19,7 @@ from pydantic import (
 
 from supershelf.constants import KEY_MATCH_RULES, KEY_RULE_VARS, LOGGER_NAME
 from supershelf.errors import SupershelfError
-from supershelf.scan import InputFile, InputScanResult
+from supershelf.scan.walk import InputFile, InputScanResult
 
 # Field name, model attribute, InputFile attribute, True when the pattern is a regex.
 _FIELDS = (

@@ -5,7 +5,7 @@ import json
 import pytest
 
 from supershelf.errors import VarConfigError
-from supershelf.var_schema import (
+from supershelf.vars import (
     CastMiss,
     KindSchemaSpec,
     VarCatalog,
@@ -13,7 +13,7 @@ from supershelf.var_schema import (
     VarState,
     cast_value,
 )
-from supershelf.var_template import VarEnvironment
+from supershelf.template.environment import VarEnvironment
 
 
 def _catalog(document: dict[str, object] | None = None, **kwargs: object) -> VarCatalog:

@@ -14,7 +14,7 @@ from supershelf.constants import (
     VAR_PROFILE,
 )
 from supershelf.errors import VarCandidateError
-from supershelf.match import FileMatch, Matcher
+from supershelf.scan.match import FileMatch, Matcher
 from supershelf.metadata.process import ProcessRunner
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan

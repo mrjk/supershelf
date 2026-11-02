@@ -18,7 +18,7 @@ from supershelf.constants import (
     SUFFIX_TYPES,
 )
 from supershelf.errors import SupershelfError
-from supershelf.template import Template
+from supershelf.template.render import Template
 
 
 def user_config_dir(environ: Mapping[str, str]) -> Path:

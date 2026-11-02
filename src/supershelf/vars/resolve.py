@@ -45,17 +45,18 @@ from supershelf.constants import (
 )
 from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
 from supershelf.kind_file import KindDateFormat, KindFiles, KindOverrideMode, KindRow
-from supershelf.match import FileMatch, Matcher
 from supershelf.metadata.driver import MetadataFile
 from supershelf.metadata.process import ProcessRunner
 from supershelf.metadata.registry import MetadataRegistry
 from supershelf.metadata.session import MetadataSession
-from supershelf.scan import InputFile
-from supershelf.template import ScopeObject, scope_field
-from supershelf.var_schema import (
+from supershelf.scan.match import FileMatch, Matcher
+from supershelf.scan.walk import InputFile
+from supershelf.template.environment import VarEnvironment, is_template
+from supershelf.template.render import ScopeObject, scope_field
+from supershelf.vars.catalog import VarCatalog
+from supershelf.vars.spec import (
     CastMiss,
     CastValue,
-    VarCatalog,
     VarState,
     cast_date_display,
     cast_value,
@@ -63,7 +64,6 @@ from supershelf.var_schema import (
     layer_source,
     reserved_var_name,
 )
-from supershelf.var_template import VarEnvironment, is_template
 
 
 class DateScope:

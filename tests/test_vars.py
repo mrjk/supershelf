@@ -8,7 +8,7 @@ import pytest
 from supershelf.cli import present_sources, present_vars
 from supershelf.constants import LOGGER_NAME
 from supershelf.errors import VarConfigError, VarResolveError
-from supershelf.match import FileMatch
+from supershelf.scan.match import FileMatch
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
 from tests.metadata_helpers import input_file as _file

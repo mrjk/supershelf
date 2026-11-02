@@ -11,12 +11,11 @@ from pathlib import Path
 from supershelf.constants import LOGGER_NAME, VAR_DATE
 from supershelf.errors import SupershelfError, VarConfigError
 from supershelf.kind_file import KindFiles, KindTable
-from supershelf.match import Matcher
 from supershelf.profile import ShelfProfile
-from supershelf.runs import ResolvedWalk, ShelfRuns
-from supershelf.scan import InputScanResult
-from supershelf.var_schema import VarCatalog, reserved_var_name
-from supershelf.vars import VarPlan
+from supershelf.scan.match import Matcher
+from supershelf.scan.runs import ResolvedWalk, ShelfRuns
+from supershelf.scan.walk import InputScanResult
+from supershelf.vars import VarCatalog, VarPlan, reserved_var_name
 
 
 logger = logging.getLogger(LOGGER_NAME)

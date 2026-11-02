@@ -4,7 +4,7 @@ import pytest
 
 from supershelf.errors import VarCandidateError, VarConfigError
 from supershelf.template import ScopeObject
-from supershelf.var_template import VarEnvironment
+from supershelf.template.environment import VarEnvironment
 from supershelf.vars import DateScope
 
 

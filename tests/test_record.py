@@ -27,9 +27,9 @@ from supershelf.record import (
     RecordIdentity,
     RecordPlan,
 )
-from supershelf.match import Matcher
 from supershelf.scan import KeptPath
-from supershelf.var_schema import VarState
+from supershelf.scan.match import Matcher
+from supershelf.vars import VarState
 from supershelf.vars import FileVars, VarPlan
 
 import pytest

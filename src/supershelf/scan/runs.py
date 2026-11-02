@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from supershelf.configs import ShelfConfigs
-from supershelf.match import Matcher
 from supershelf.profile import ShelfProfile
-from supershelf.scan import InputFile, InputScanResult, KeptPath
+from supershelf.scan.match import Matcher
+from supershelf.scan.walk import InputFile, InputScanResult, KeptPath
 from supershelf.vars import VarPlan
 
 
