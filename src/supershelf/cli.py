@@ -11,7 +11,7 @@ from clak.views import CompositeView, ListView
 
 from supershelf.configs import ShelfConfigs
 from supershelf.data import ShowTable, run_feed, run_prune, run_show
-from supershelf.constants import APP_NAME, INTERNAL_NAMES, LOGGER_NAME
+from supershelf.constants import APP_NAME, LOGGER_NAME
 from supershelf.domain_schema import DomainSchema
 from supershelf.match import (
     DETAIL_NO_PATTERNS,
@@ -153,11 +153,9 @@ _STRUCTURED_FORMATS = frozenset({"json", "yaml"})
 
 def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
     """Printed variables in table order: alphabetical by name."""
-    visible = resolved.items
-    if not show_all:
-        visible = tuple(
-            (name, value) for name, value in visible if name not in INTERNAL_NAMES
-        )
+    visible = list(resolved.items)
+    if show_all:
+        visible.extend(resolved.facts.items())
     return tuple(sorted(visible))
 
 
@@ -173,7 +171,7 @@ def present_vars(resolved: FileVars, fmt: str | None, *, show_all: bool = False)
 def present_sources(resolved: FileVars, *, show_all: bool = False) -> str:
     """Source labels for the table, one line per name in present_vars order."""
     return "\n".join(
-        ", ".join(resolved.sources[name])
+        ", ".join(resolved.source_labels(name))
         for name, _value in _table_pairs(resolved, show_all=show_all)
     )
 

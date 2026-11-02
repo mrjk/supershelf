@@ -6,33 +6,40 @@ import importlib
 import json
 import os
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from supershelf.common import config_section
 from supershelf.constants import (
-    INTERNAL_NAMES,
+    DATE_TEXT,
+    FIELD_CTIME,
+    FIELD_DIR,
+    FIELD_EXT,
+    FIELD_HASH,
+    FIELD_KIND,
+    FIELD_MTIME,
+    FIELD_NAME,
+    FIELD_PATH,
+    FIELD_RULE,
+    FIELD_STEM,
+    FILE_FIELDS,
+    KEY_DATABASE_FILE,
     KEY_DEFAULT_VARS,
     KEY_METADATA_DRIVER,
     KEY_VAR_MODULES,
+    MATCH_FIELDS,
     SOURCE_DEFAULT,
     SOURCE_FACT,
     SOURCE_KIND,
     SOURCE_RULE,
-    VAR_CTIME,
-    VAR_DATABASE_FILE,
-    VAR_FILE_DIR,
-    VAR_FILE_EXT,
-    VAR_FILE_HASH,
-    VAR_FILE_NAME,
-    VAR_FILE_PATH,
-    VAR_FILE_STEM,
+    VAR_CONFIG,
+    VAR_DATE,
+    VAR_FILE,
     VAR_FILTERS,
     VAR_GLOBALS,
-    VAR_KIND,
-    VAR_MTIME,
-    VAR_PROFILE_DIR,
-    VAR_RULE_NAME,
+    VAR_MATCH,
+    VAR_PROFILE,
 )
 from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
 from supershelf.kind_file import KindDateFormat, KindFiles, KindOverrideMode, KindRow
@@ -42,7 +49,7 @@ from supershelf.metadata.process import ProcessRunner
 from supershelf.metadata.registry import MetadataRegistry
 from supershelf.metadata.session import MetadataSession
 from supershelf.scan import InputFile
-from supershelf.var_commands import FileBinding
+from supershelf.template import scope_field
 from supershelf.var_schema import (
     CastMiss,
     CastValue,
@@ -51,17 +58,69 @@ from supershelf.var_schema import (
     cast_value,
     check_assignment_key,
     layer_source,
+    reserved_var_name,
 )
 from supershelf.var_template import VarEnvironment, is_template
+
+
+class DateScope:
+    """`__date__` in a Jinja scope. `str()` is YYYY-MM-DD. Fields follow `%Y-%m-%d`."""
+
+    def __init__(self, text: str) -> None:
+        parsed = datetime.strptime(text, DATE_TEXT)
+        self.Y = parsed.strftime("%Y")
+        self.m = parsed.strftime("%m")
+        self.d = parsed.strftime("%d")
+        self._text = parsed.strftime(DATE_TEXT)
+
+    def __str__(self) -> str:
+        return self._text
+
+
+def _file_namespace(file: InputFile) -> dict[str, str]:
+    values = {
+        FIELD_NAME: file.name,
+        FIELD_STEM: file.stem,
+        FIELD_EXT: file.extension,
+        FIELD_PATH: file.path,
+        FIELD_DIR: file.directory,
+        FIELD_HASH: (file.sha256 or "").lower(),
+        FIELD_CTIME: file.ctime or "",
+        FIELD_MTIME: file.mtime or "",
+    }
+    return {field: values[field] for field in FILE_FIELDS}
+
+
+def _match_namespace(kind: str, rule: str) -> dict[str, str]:
+    return {FIELD_KIND: kind, FIELD_RULE: rule}
+
+
+def _fact_lines(file_ns: Mapping[str, str], match_ns: Mapping[str, str]) -> dict[str, str]:
+    facts = {f"{VAR_FILE}.{field}": file_ns[field] for field in FILE_FIELDS}
+    facts.update({f"{VAR_MATCH}.{field}": match_ns[field] for field in MATCH_FIELDS})
+    return facts
+
+
+def _render_value(name: str, display: str) -> str | DateScope:
+    if name == VAR_DATE:
+        return DateScope(display)
+    return display
 
 
 class FileVars:
     """Resolved variables for one matched file."""
 
-    def __init__(self, kind: str, rule: str, states: tuple[tuple[str, VarState], ...]) -> None:
+    def __init__(
+        self,
+        kind: str,
+        rule: str,
+        states: tuple[tuple[str, VarState], ...],
+        facts: Mapping[str, str] | None = None,
+    ) -> None:
         self.kind = kind
         self.rule = rule
         self.states = states
+        self.facts = dict(facts or {})
 
     @property
     def items(self) -> tuple[tuple[str, str], ...]:
@@ -73,13 +132,19 @@ class FileVars:
         """Source labels for each set variable, in the order layers wrote it."""
         return {name: tuple(state.value_sources) for name, state in self.states}
 
+    def source_labels(self, name: str) -> tuple[str, ...]:
+        """Labels for one printed name. Namespace fields are facts."""
+        if name in self.facts:
+            return (SOURCE_FACT,)
+        return self.sources[name]
+
     def dump_vars(self, *, show_all: bool = False) -> dict[str, Any]:
         """JSON-ready values. Floats can differ from their display spelling."""
-        return {
-            name: state.model_dump(mode="json")
-            for name, state in self.states
-            if show_all or name not in INTERNAL_NAMES
-        }
+        dumped = {name: state.model_dump(mode="json") for name, state in self.states}
+        if show_all:
+            for name, value in self.facts.items():
+                dumped[name] = {"value": value, "value_sources": [SOURCE_FACT]}
+        return dumped
 
 
 class VarTable:
@@ -161,7 +226,6 @@ class VarPlan:
         self._kinds = kinds
         self._profile_scope = dict(profile_scope)
         self._session = session
-        self._pdf: dict[str, tuple[str | None, str | None]] = {}
 
     @property
     def catalog(self) -> VarCatalog:
@@ -246,20 +310,22 @@ class VarPlan:
             self._session.unbind(token)
 
     def _resolve_bound(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
+        file_ns = _file_namespace(file)
+        match_ns = _match_namespace(match.kind, match.rule)
         scope: dict[str, str] = {}
         states: dict[str, VarState] = {}
         order: list[str] = []
-        for key, value, label in self._fact_rows(file, match):
-            self._save_raw(key, value, label, scope, states, order, match, file.path)
-        binding = FileBinding(file.absolute, file.sha256 or "", file.ctime or "", file.mtime or "")
-        self._apply_defaults(scope, states, order, binding, match.kind)
+        for name, value in match.groups.items():
+            self._save_raw(name, value, SOURCE_FACT, scope, states, order, match, file.path)
+        self._apply_defaults(scope, states, order, file_ns, match_ns, match.kind)
         self._apply(
             self._rules.get(match.rule, VarTable.empty()),
             layer_source(SOURCE_RULE, match.rule),
             scope,
             states,
             order,
-            binding,
+            file_ns,
+            match_ns,
             match.kind,
         )
         self._apply_cells(
@@ -276,7 +342,7 @@ class VarPlan:
             for key in order
             if key in states and states[key].value is not None
         )
-        return FileVars(states[VAR_KIND].display, match.rule, chosen)
+        return FileVars(match.kind, match.rule, chosen, _fact_lines(file_ns, match_ns))
 
     @property
     def metadata(self) -> MetadataRegistry:
@@ -287,7 +353,7 @@ class VarPlan:
         """JSON object stored on a document. Identity columns are omitted."""
         body: dict[str, dict[str, object]] = {}
         for name, state in resolved.states:
-            if name in INTERNAL_NAMES:
+            if reserved_var_name(name):
                 continue
             if state.value is None:
                 continue
@@ -306,17 +372,19 @@ class VarPlan:
 
     def render_file(self, source: str, resolved: FileVars, file: InputFile) -> str:
         """Render one template with this file's display strings."""
-        scope = dict(self._profile_scope)
-        for name, state in resolved.states:
-            if state.value is not None:
-                scope[name] = state.display
-        binding = FileBinding(
-            file.absolute,
-            file.sha256 or "",
-            file.ctime or "",
-            file.mtime or "",
+        scope = {
+            name: state.display
+            for name, state in resolved.states
+            if state.value is not None
+        }
+        return self._environment.render(
+            source,
+            self._render_scope(
+                scope,
+                _file_namespace(file),
+                _match_namespace(resolved.kind, resolved.rule),
+            ),
         )
-        return self._environment.render(source, scope, binding, self._pdf)
 
     def commit(self) -> None:
         """Create or append kind rows after every file in this plan has resolved."""
@@ -342,7 +410,8 @@ class VarPlan:
         scope: dict[str, str],
         states: dict[str, VarState],
         order: list[str],
-        binding: FileBinding,
+        file_ns: Mapping[str, str],
+        match_ns: Mapping[str, str],
         kind: str,
     ) -> None:
         for key in self._catalog.names_for(kind):
@@ -352,8 +421,7 @@ class VarPlan:
             cast = self._first(
                 key,
                 candidates,
-                self._render_scope(scope),
-                binding,
+                self._render_scope(scope, file_ns, match_ns),
                 kind,
             )
             if cast is None:
@@ -367,25 +435,33 @@ class VarPlan:
         scope: dict[str, str],
         states: dict[str, VarState],
         order: list[str],
-        binding: FileBinding,
+        file_ns: Mapping[str, str],
+        match_ns: Mapping[str, str],
         kind: str,
     ) -> None:
         for key in table.keys:
             cast = self._first(
                 key,
                 table.candidates[key],
-                self._render_scope(scope),
-                binding,
+                self._render_scope(scope, file_ns, match_ns),
                 kind,
             )
             if cast is None:
                 continue
             self._save(key, cast, label, scope, states, order)
 
-    def _render_scope(self, scope: Mapping[str, str]) -> dict[str, Any]:
-        """Profile names, then the display strings written so far."""
-        render_scope = dict(self._profile_scope)
-        render_scope.update(scope)
+    def _render_scope(
+        self,
+        scope: Mapping[str, str],
+        file_ns: Mapping[str, str],
+        match_ns: Mapping[str, str],
+    ) -> dict[str, Any]:
+        """Profile names, file and match objects, then display strings written so far."""
+        render_scope: dict[str, Any] = dict(self._profile_scope)
+        render_scope[VAR_FILE] = dict(file_ns)
+        render_scope[VAR_MATCH] = dict(match_ns)
+        for name, value in scope.items():
+            render_scope[name] = _render_value(name, value)
         return render_scope
 
     def _first(
@@ -393,14 +469,13 @@ class VarPlan:
         key: str,
         candidates: tuple[object, ...],
         scope: Mapping[str, Any],
-        binding: FileBinding,
         kind: str,
     ) -> CastValue | None:
         spec = self._catalog.effective(kind, key)
         for source in candidates:
             try:
                 if isinstance(source, str):
-                    rendered = self._environment.render(source, scope, binding, self._pdf)
+                    rendered = self._environment.render(source, scope)
                     cast = cast_value(spec, rendered, allow_typed=False)
                 else:
                     cast = cast_value(spec, source, allow_typed=True)
@@ -470,28 +545,6 @@ class VarPlan:
             advice=advice,
         )
 
-    def _fact_rows(self, file: InputFile, match: FileMatch) -> list[tuple[str, str, str]]:
-        ext = file.extension
-        values = {
-            VAR_KIND: match.kind,
-            VAR_RULE_NAME: match.rule,
-            VAR_CTIME: file.ctime or "",
-            VAR_MTIME: file.mtime or "",
-            VAR_FILE_HASH: file.sha256 or "",
-            VAR_FILE_NAME: file.name,
-            VAR_FILE_STEM: file.stem,
-            VAR_FILE_EXT: ext,
-            VAR_FILE_PATH: file.path,
-            VAR_FILE_DIR: file.directory,
-        }
-        rows = [(name, values[name], SOURCE_FACT) for name in INTERNAL_NAMES]
-        seen = {name for name, _value, _label in rows}
-        for name, value in match.groups.items():
-            if name in seen:
-                continue
-            rows.append((name, value, SOURCE_FACT))
-        return rows
-
     def _require_metadata(self, file: InputFile, match: FileMatch) -> None:
         if file.ctime is None or file.mtime is None or file.sha256 is None:
             raise VarResolveError(
@@ -557,14 +610,14 @@ class VarPlan:
 
     @staticmethod
     def _profile_dir(profile_scope: Mapping[str, Any]) -> Path:
-        raw = profile_scope.get(VAR_PROFILE_DIR, "")
+        raw = scope_field(profile_scope, VAR_PROFILE, FIELD_DIR)
         if not isinstance(raw, str) or not raw:
             return Path(".")
         return Path(raw)
 
     @staticmethod
     def _database_file(profile_scope: Mapping[str, Any]) -> Path | None:
-        raw = profile_scope.get(VAR_DATABASE_FILE, "")
+        raw = scope_field(profile_scope, VAR_CONFIG, KEY_DATABASE_FILE)
         if not isinstance(raw, str) or not raw:
             return None
         return Path(raw)

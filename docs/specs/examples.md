@@ -160,7 +160,7 @@ match_rules:
 outputs:
   - name: books
     path: "{{ __config__.root_dir }}/output/books" # Profile path template. Relative paths resolve from __config__.root_dir.
-    layout: "{{ __date__[0:4] }}/{{ __date__[5:7] }}/{{ vendor }}.{{ __file__.ext }}" # Jinja. Omitted layout is {{ __file__.path }}.
+    layout: "{{ __date__.Y }}/{{ __date__.m }}/{{ vendor }}.{{ __file__.ext }}" # Jinja. Omitted layout is {{ __file__.path }}.
     operation: copy # copy, symlink, or hardlink. Omitted is copy.
     on_conflict: error # error, skip, or overwrite. A file this profile did not write.
     kinds:

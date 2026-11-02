@@ -34,34 +34,8 @@ _PDF_TEXT = (
 )
 
 
-class FsDriver(MetadataDriver):
-    """Walk strings already stored on the file. No cache row."""
-
-    identity = "fs"
-    ignores_enable = True
-    accepts_timeout = False
-    writes_cache = False
-
-    def extract(self, file: MetadataFile, field: str, options: DriverOptions) -> str:
-        """Return one walk string. A blank value is a miss."""
-        del options
-        values = {
-            "ctime": file.ctime,
-            "mtime": file.mtime,
-            "hash": file.sha256,
-            "name": file.name,
-            "stem": file.stem,
-            "ext": file.extension,
-            "path": file.relative,
-            "dir": file.directory,
-        }
-        if field not in values:
-            raise VarCandidateError(f"fs has no {field}")
-        return values[field]
-
-
 class PdfDriver(MetadataDriver):
-    """PDF info via pypdf. Dates are YYYY-MM-DD. This does not touch pdf_cdate()."""
+    """PDF info via pypdf. Dates are YYYY-MM-DD."""
 
     identity = "pdf"
     extensions = ("pdf",)

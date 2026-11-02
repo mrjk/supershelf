@@ -29,15 +29,19 @@ from supershelf.constants import (
     KIND_MODE_DISABLED,
     KIND_MODE_MANUAL,
     KIND_OVERRIDE_MODES,
+    FIELD_DATE_FORMAT,
+    FIELD_KIND,
+    FIELD_PATH,
     LOGGER_NAME,
+    VAR_CONFIG,
     VAR_DATE,
-    VAR_DEFAULT_DATE_FORMAT,
     VAR_INPUT,
-    VAR_KIND,
+    VAR_MATCH,
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import VarConfigError, VarResolveError
 from supershelf.match import FileMatch
+from supershelf.template import scope_field
 from supershelf.var_schema import VarCatalog, check_assignment_key
 
 
@@ -103,7 +107,7 @@ class KindDateFormat:
                 raw = user_raw
                 label = "config.default_date_format"
             else:
-                scoped = profile_scope.get(VAR_DEFAULT_DATE_FORMAT)
+                scoped = scope_field(profile_scope, VAR_CONFIG, FIELD_DATE_FORMAT)
                 raw = PACKAGED.default_date_format if scoped is None else scoped
                 label = "config.default_date_format"
         if not isinstance(raw, str) or not raw.strip():
@@ -990,8 +994,8 @@ class KindFiles:
             self._logger.debug("No kind_overrides_config for kind %s", kind)
             return None
         scope = dict(self._profile_scope)
-        scope[VAR_KIND] = kind
-        scope[VAR_INPUT] = {"path": str(input_dir)}
+        scope[VAR_MATCH] = {FIELD_KIND: kind}
+        scope[VAR_INPUT] = {FIELD_PATH: str(input_dir)}
         rendered: list[Path] = []
         for template in self._templates:
             path = self._render_path(template, scope)

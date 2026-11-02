@@ -5,6 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from supershelf.constants import (
+    FIELD_DIR,
+    FIELD_NAME,
+    KEY_DATABASE_FILE,
+    KEY_ROOT_DIR,
+    VAR_CONFIG,
+    VAR_PROFILE,
+)
 from supershelf.errors import VarCandidateError
 from supershelf.match import FileMatch, Matcher
 from supershelf.metadata.process import ProcessRunner
@@ -70,16 +78,21 @@ def var_plan(
 ) -> VarPlan:
     """One plan named work. `database` adds the profile dir and database path."""
     matcher = Matcher.from_document(document, "work")
-    full: dict[str, object] = {
-        "__root_dir__": str(root),
-        "__profile__": "work",
-    }
+    profile: dict[str, object] = {FIELD_NAME: "work"}
+    config: dict[str, object] = {KEY_ROOT_DIR: str(root)}
     if profile_dir or database:
-        full["__profile_dir__"] = str(root)
+        profile[FIELD_DIR] = str(root)
     if database:
-        full["__database_file__"] = str(root / "profile.work.sqlite")
+        config[KEY_DATABASE_FILE] = str(root / "profile.work.sqlite")
+    full: dict[str, object] = {VAR_PROFILE: profile, VAR_CONFIG: config}
     if scope:
-        full.update(scope)
+        for key, value in scope.items():
+            if key == VAR_PROFILE and isinstance(value, dict):
+                profile.update(value)
+            elif key == VAR_CONFIG and isinstance(value, dict):
+                config.update(value)
+            else:
+                full[key] = value
     return VarPlan.from_document(
         document,
         "work",

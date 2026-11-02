@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from supershelf.constants import VAR_DEFAULT_DATE_FORMAT
+from supershelf.constants import FIELD_DATE_FORMAT, VAR_CONFIG, VAR_PROFILE
 from supershelf.defaults import PACKAGED, load_packaged
 from supershelf.errors import SupershelfError, VarConfigError
 from supershelf.kind_file import KindCsvSep, KindDateFormat, KindFiles, KindOverrideMode
@@ -32,7 +32,10 @@ def _kinds(section: dict[str, object], root: Path) -> KindFiles:
     return KindFiles.from_section(
         section,
         root,
-        {"__root_dir__": str(root), "__profile__": "work"},
+        {
+            VAR_CONFIG: {"root_dir": str(root)},
+            VAR_PROFILE: {"name": "work"},
+        },
         PACKAGED.kind_overrides_mode,
         KindDateFormat.from_section({}, {}),
         True,
@@ -42,17 +45,17 @@ def _kinds(section: dict[str, object], root: Path) -> KindFiles:
 def test_shipped_defaults_match_the_architecture() -> None:
     assert PACKAGED.profile == "default"
     assert PACKAGED.default_date_format == "%Y-%m-%d"
-    assert PACKAGED.root_dir == "{{ __profile_dir__ }}"
-    assert PACKAGED.database_file == "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
-    assert PACKAGED.cache_file == "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+    assert PACKAGED.root_dir == "{{ __profile__.dir }}"
+    assert PACKAGED.database_file == "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite"
+    assert PACKAGED.cache_file == "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache"
     assert PACKAGED.record_identity == "path"
     assert PACKAGED.kind_overrides_mode == "auto"
     assert PACKAGED.kind_overrides_sep == ","
     assert PACKAGED.kind_overrides_config == [
-        "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv",
-        "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml",
-        "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml",
-        "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml",
+        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv",
+        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml",
+        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml",
+        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml",
     ]
     assert PACKAGED.input_depth == 0
     assert PACKAGED.input_follow_symlinks is True
@@ -100,7 +103,7 @@ def test_null_profile_values_use_the_packaged_defaults(tmp_path: Path) -> None:
     assert nulled.root_dir == omitted.root_dir
     assert nulled.database_file == omitted.database_file
     assert nulled.cache_file == omitted.cache_file
-    assert nulled.scope[VAR_DEFAULT_DATE_FORMAT] == PACKAGED.default_date_format
+    assert nulled.scope["__config__"][FIELD_DATE_FORMAT] == PACKAGED.default_date_format
 
 
 def test_empty_date_format_and_root_dir_do_not_fall_back(tmp_path: Path) -> None:
@@ -133,7 +136,7 @@ def test_kind_date_format_falls_back_only_when_unset() -> None:
     assert (
         KindDateFormat.from_section(
             {"default_date_format": None},
-            {VAR_DEFAULT_DATE_FORMAT: "%d/%m/%Y"},
+            {"__config__": {FIELD_DATE_FORMAT: "%d/%m/%Y"}},
         ).text
         == "%d/%m/%Y"
     )

@@ -6,22 +6,22 @@ Built-in facts below are type `text`. `__date__` is type `date`. A user name wit
 
 ## Printed facts
 
-These are set from the file and the match. Assignments cannot replace them. `__kind__` stays the kind from the match rule. `scan vars` prints them only with `--all`.
+These are set from the file and the match. Assignments cannot replace them. `__match__.kind` stays the kind from the match rule. `scan vars` prints them only with `--all`.
 
 | Name | Value |
 | --- | --- |
-| `__kind__` | Kind from the winning rule. |
-| `__rule_name__` | Winning rule name. |
-| `__ctime__` | Stored UTC ISO-8601 ctime. |
-| `__mtime__` | Stored UTC ISO-8601 mtime. |
-| `__file_hash__` | Lowercase sha256 of the file bytes. |
-| `__file_name__` | Filename. |
-| `__file_stem__` | Filename without the last suffix. `archive.tar.gz` is `archive.tar`. |
-| `__file_ext__` | Last suffix without the dot. `archive.tar.gz` is `gz`. Empty when there is no suffix. |
-| `__file_path__` | Path relative to the input, with `/` separators. |
-| `__file_dir__` | Directory relative to the input. Empty in the input directory. |
+| `__match__.kind` | Kind from the winning rule. |
+| `__match__.rule` | Winning rule name. |
+| `__file__.ctime` | Stored UTC ISO-8601 ctime. |
+| `__file__.mtime` | Stored UTC ISO-8601 mtime. |
+| `__file__.hash` | Lowercase sha256 of the file bytes. |
+| `__file__.name` | Filename. |
+| `__file__.stem` | Filename without the last suffix. `archive.tar.gz` is `archive.tar`. |
+| `__file__.ext` | Last suffix without the dot. `archive.tar.gz` is `gz`. Empty when there is no suffix. |
+| `__file__.path` | Path relative to the input, with `/` separators. |
+| `__file__.dir` | Directory relative to the input. Empty in the input directory. |
 
-Named regex groups are stored in pattern order and printed with the other names. The table sorts every name alphabetically. A group name that starts with `__` stops the command before the walk. A group that reuses an internal name is dropped.
+Named regex groups are stored in pattern order and printed with the other names. The table sorts every name alphabetically. A group name that starts with `__` stops the command before the walk.
 
 ## Document date
 
@@ -31,41 +31,40 @@ Named regex groups are stored in pattern order and printed with the other names.
 
 `__date__` is not an internal. The filename does not set it. In `default_vars` and rule `vars`, an empty string does not count as success. A candidate list that misses leaves an earlier value in place. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. `data feed` writes `__date__` with that format. A `date` var that is not `__date__` stays `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
 
+`{{ __date__ }}` is that `YYYY-MM-DD` string. In a Jinja template the same value also has `Y`, `m`, and `d`: `%Y`, `%m`, and `%d`. `{{ __date__.Y }}-{{ __date__.m }}` is the year and the month. The printed value and `vars_json` stay the full date.
+
 ## Profile scope
 
-These names are in scope for path templates and variable templates. They are not printed as their own rows. An assignment cannot reuse one of them. A name that starts with `__` and is not a managed variable stops the command with "is not a supershelf variable". The managed names are the internal facts and `__date__`.
+`__profile__` and `__config__` are objects. Read a field. They are not printed. A layer cannot set them. `__date__` is the only assignable name that starts with `__`.
+
+These fields are in profile path templates (`root_dir`, `database_file`, `cache_file`, `inputs.path`, and an output `path`):
 
 | Name | Value |
 | --- | --- |
-| `__profile__` | Profile name. Alias of `__profile_name__`. |
-| `__profile_name__` | Profile name. |
-| `__profile_type__` | `toml` or `yaml`. |
-| `__profile_path__` | Absolute path of the config file. |
-| `__profile_dir__` | Directory of the config file. |
-| `__profile_file__` | Filename of the config file. |
-| `__default_date_format__` | `config.default_date_format`. |
-| `__config_data__` | The parsed config file. Dotted keys read nested mappings. |
-| `__root_dir__` | Rendered root directory. |
-| `__database_file__` | Rendered database path. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `--dry-run` does not. |
-| `__cache_file__` | Rendered cache path. The file is not created. |
+| `__profile__.name` | Profile name. |
+| `__profile__.type` | `toml` or `yaml`. |
+| `__profile__.path` | Absolute path of the config file. |
+| `__profile__.dir` | Directory of the config file. |
+| `__profile__.file` | Filename of the config file. |
+| `__profile__.document` | The parsed config file. Dotted keys read nested mappings. |
+| `__config__.date_format` | `config.default_date_format`. |
+| `__config__.root_dir` | Rendered root directory. |
+| `__config__.database_file` | Rendered database path. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `--dry-run` does not. |
+| `__config__.cache_file` | Rendered cache path. The file is not created. |
 
-Kind-file path templates also see:
+`__file__`, `__match__`, `__input__`, and `__date__` are not in those path templates.
 
-| Name | Value |
-| --- | --- |
-| `__kind__` | The rule kind. |
-| `__input__.path` | Absolute path of that input directory. |
+Kind-file path templates also see `__match__.kind` and `__input__.path`. They do not see `__match__.rule` or `__file__`. A relative kind path and a relative input path resolve from `__config__.root_dir`. A relative `root_dir`, `database_file`, or `cache_file` resolves from the profile directory.
 
-`__kind__` and `__input__.path` are not in the general profile scope. An `inputs` path cannot read them.
+Variable templates and output `when` and `layout` see `__file__` and the full `__match__` (`kind` and `rule`). They do not see `__input__`.
 
 ## Who may assign a name
 
 | Name | `default_vars` | Rule `vars` | Kind file |
 | --- | --- | --- | --- |
-| `__kind__` | no | no | no |
-| other internals | no | no | no |
+| a namespace root | no | no | no |
 | `__date__` | yes | yes | yes |
 | a name that does not start with `__` | yes | yes | yes |
 | any other name that starts with `__` | no | no | no |
 
-A variable name matches `[A-Za-z_][A-Za-z0-9_]*`.
+A variable name matches `[A-Za-z_][A-Za-z0-9_]*`. A key cannot contain a dot.

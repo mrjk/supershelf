@@ -71,7 +71,7 @@ def test_later_layer_replaces_and_keeps_first_position(tmp_path: Path) -> None:
     assert values["owner"] == "DEFAULT"
     names = list(values)
     assert names.index("vendor") < names.index("extra")
-    assert "__root_dir__" not in values
+    assert "__config__.root_dir" not in values
 
 
 def test_list_keeps_the_first_success(tmp_path: Path) -> None:
@@ -140,15 +140,15 @@ def test_filename_stem_does_not_set_the_document_date(tmp_path: Path) -> None:
     plan = _plan(
         {"match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}]},
         tmp_path,
-        {"__default_date_format__": "%Y-%m-%d"},
     )
-    dated = _values(
-        plan,
-        file=_file("bank2000/phone/2025-07-18.pdf"),
-        match=_match("bank2000/phone/2025-07-18.pdf"),
+    file = _file("bank2000/phone/2025-07-18.pdf")
+    resolved = plan.resolve(
+        file,
+        _match("bank2000/phone/2025-07-18.pdf"),
+        Path("/in"),
     )
-    assert dated["__file_stem__"] == "2025-07-18"
-    assert "__date__" not in dated
+    assert resolved.facts["__file__.stem"] == "2025-07-18"
+    assert "__date__" not in dict(resolved.items)
     assert "__date__" not in _values(plan)
 
 
@@ -166,7 +166,7 @@ def test_missed_layer_keeps_the_previous_date(tmp_path: Path) -> None:
             ],
         },
         tmp_path,
-        {"__default_date_format__": "%Y%m%d"},
+        {"__config__.date_format": "%Y%m%d"},
     )
     resolved = plan.resolve(_file("20250718.pdf"), _match("20250718.pdf"), Path("/in"))
     assert dict(resolved.items)["__date__"] == "2020-01-01"
@@ -184,7 +184,7 @@ def test_missed_layer_keeps_the_previous_date(tmp_path: Path) -> None:
             ],
         },
         tmp_path,
-        {"__default_date_format__": "%Y%m%d"},
+        {"__config__.date_format": "%Y%m%d"},
     )
     assert "__date__" not in _values(
         unset,
@@ -252,17 +252,46 @@ def test_kind_csv_and_extension(tmp_path: Path) -> None:
     plan = _plan(
         {
             "config": {
-                "kind_overrides_config": ["{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv"]
+                "kind_overrides_config": ["{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv"]
             },
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
-        {"__root_dir__": str(tmp_path)},
+        {"__config__.root_dir": str(tmp_path)},
     )
-    values = _values(plan, file=_file("archive.tar.gz"), match=_match("archive.tar.gz"))
+    resolved = plan.resolve(_file("archive.tar.gz"), _match("archive.tar.gz"), Path("/in"))
+    values = dict(resolved.items)
     assert values["owner"] == "ada"
-    assert values["__file_ext__"] == "gz"
-    assert "__root_dir__" not in values
+    assert resolved.facts["__file__.ext"] == "gz"
+    assert "__config__.root_dir" not in values
+
+
+def test_kind_path_cannot_read_the_rule_or_the_file(tmp_path: Path) -> None:
+    rules = [{"name": "notes", "kind": "note", "filename_glob": "**"}]
+    with pytest.raises(VarConfigError, match="Unknown template key"):
+        _plan(
+            {
+                "config": {
+                    "kind_overrides_config": [
+                        "{{ __config__.root_dir }}/{{ __match__.rule }}.csv"
+                    ]
+                },
+                "match_rules": rules,
+            },
+            tmp_path,
+        ).resolve(_file(), _match(), Path("/in"))
+    with pytest.raises(VarConfigError, match="Unknown template name '__file__'"):
+        _plan(
+            {
+                "config": {
+                    "kind_overrides_config": [
+                        "{{ __config__.root_dir }}/{{ __file__.name }}.csv"
+                    ]
+                },
+                "match_rules": rules,
+            },
+            tmp_path,
+        ).resolve(_file(), _match(), Path("/in"))
 
 
 def test_omitted_kind_overrides_config_logs_the_default_paths(
@@ -317,12 +346,12 @@ def test_kind_file_load_is_logged_once(
     plan = _plan(
         {
             "config": {
-                "kind_overrides_config": ["{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv"]
+                "kind_overrides_config": ["{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv"]
             },
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
-        {"__root_dir__": str(tmp_path)},
+        {"__config__.root_dir": str(tmp_path)},
     )
     _values(plan)
     _values(plan, file=_file("b.txt"), match=_match("b.txt"))
@@ -345,14 +374,14 @@ def test_kind_file_search_logs_each_candidate_once(
         {
             "config": {
                 "kind_overrides_config": [
-                    "{{ __root_dir__ }}/kinds/{{ __kind__ }}.toml",
-                    "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                    "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.toml",
+                    "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 ]
             },
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
-        {"__root_dir__": str(tmp_path)},
+        {"__config__.root_dir": str(tmp_path)},
     )
     _values(plan)
     _values(plan, file=_file("b.txt"), match=_match("b.txt"))
@@ -372,11 +401,11 @@ def test_kind_file_search_logs_a_cached_file_for_the_next_kind(
     shared.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
     plan = _plan(
         {
-            "config": {"kind_overrides_config": ["{{ __root_dir__ }}/shared.csv"]},
+            "config": {"kind_overrides_config": ["{{ __config__.root_dir }}/shared.csv"]},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
-        {"__root_dir__": str(tmp_path)},
+        {"__config__.root_dir": str(tmp_path)},
     )
     _values(plan)
     _values(plan, match=_match(kind="invoice", rule="notes"))
@@ -410,15 +439,15 @@ def test_overrides_key_is_rejected(tmp_path: Path, overrides: object) -> None:
 def test_profile_scope_is_readable_and_not_printed(tmp_path: Path) -> None:
     plan = _plan(
         {
-            "default_vars": {"where": "{{ __root_dir__ }}"},
+            "default_vars": {"where": "{{ __config__.root_dir }}"},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
-        {"__root_dir__": "/data"},
+        {"__config__": {"root_dir": "/data"}},
     )
     values = _values(plan)
     assert values["where"] == "/data"
-    assert "__root_dir__" not in values
+    assert "__config__.root_dir" not in values
 
 
 def test_custom_module_and_a_name_clash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -438,7 +467,7 @@ def test_custom_module_and_a_name_clash(tmp_path: Path, monkeypatch: pytest.Monk
     assert _values(plan)["name"] == "AB"
 
     (tmp_path / "clashmod.py").write_text(
-        "GLOBALS = {'file': lambda value: value}\n",
+        "GLOBALS = {'meta': lambda value: value}\n",
         encoding="utf-8",
     )
     with pytest.raises(VarConfigError, match="already defined"):
@@ -471,7 +500,7 @@ def _kind_document(path: str, **config: object) -> dict[str, object]:
 def test_kind_row_is_literal_and_follows_the_rule(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,owner,vendor\na.txt,{{ missing }},FromKind\n", encoding="utf-8")
-    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path)
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     values = _values(plan)
     assert values["owner"] == "{{ missing }}"
     assert values["vendor"] == "FromKind"
@@ -482,7 +511,7 @@ def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
     kind.write_text("PATH,__date__\na.txt,25/04/2026\nb.txt,\n", encoding="utf-8")
     plan = _plan(
         _kind_document(
-            "{{ __root_dir__ }}/note.csv",
+            "{{ __config__.root_dir }}/note.csv",
             kind_overrides_date_format="%d/%m/%Y",
         ),
         tmp_path,
@@ -497,9 +526,9 @@ def test_kind_date_cell_is_not_taken_from_the_stem(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,__date__\n2025-07-18.pdf,2024-05-29\n", encoding="utf-8")
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv"),
+        _kind_document("{{ __config__.root_dir }}/note.csv"),
         tmp_path,
-        {"__default_date_format__": "%Y-%m-%d"},
+        {"__config__.date_format": "%Y-%m-%d"},
     )
     values = _values(
         plan,
@@ -515,7 +544,7 @@ def test_bad_kind_date_stops_and_writes_nothing(tmp_path: Path) -> None:
     original = kind.read_bytes()
     plan = _plan(
         _kind_document(
-            "{{ __root_dir__ }}/note.csv",
+            "{{ __config__.root_dir }}/note.csv",
             kind_overrides_date_format="%d/%m/%Y",
         ),
         tmp_path,
@@ -529,7 +558,7 @@ def test_bad_kind_date_stops_and_writes_nothing(tmp_path: Path) -> None:
 def test_auto_appends_only_when_the_file_exists(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_bytes(b"PATH,owner\na.txt,ada")
-    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path)
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     values = _values(plan, file=_file("b.txt"), match=_match("b.txt"))
     assert values["owner"] == "DEFAULT-rule"
     plan.commit()
@@ -538,7 +567,7 @@ def test_auto_appends_only_when_the_file_exists(tmp_path: Path) -> None:
     assert text.endswith(b"\nb.txt,\n")
 
     missing = tmp_path / "other.csv"
-    skipped = _plan(_kind_document("{{ __root_dir__ }}/other.csv"), tmp_path)
+    skipped = _plan(_kind_document("{{ __config__.root_dir }}/other.csv"), tmp_path)
     _values(skipped)
     skipped.commit()
     assert missing.exists() is False
@@ -547,7 +576,7 @@ def test_auto_appends_only_when_the_file_exists(tmp_path: Path) -> None:
 def test_empty_kind_file_is_filled_in_auto(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("\n\n", encoding="utf-8")
-    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path)
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     _values(plan)
     plan.commit()
     assert kind.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
@@ -557,7 +586,7 @@ def test_manual_reads_and_does_not_append(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,owner\n", encoding="utf-8")
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="manual"),
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_mode="manual"),
         tmp_path,
     )
     _values(plan)
@@ -567,7 +596,7 @@ def test_manual_reads_and_does_not_append(tmp_path: Path) -> None:
 
 def test_always_creates_the_first_template(tmp_path: Path) -> None:
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv", kind_overrides_mode="always"),
+        _kind_document("{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv", kind_overrides_mode="always"),
         tmp_path,
     )
     values = _values(plan)
@@ -576,7 +605,7 @@ def test_always_creates_the_first_template(tmp_path: Path) -> None:
     created = tmp_path / "kinds" / "note.csv"
     assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
     again = _plan(
-        _kind_document("{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv", kind_overrides_mode="always"),
+        _kind_document("{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv", kind_overrides_mode="always"),
         tmp_path,
     )
     _values(again)
@@ -588,7 +617,7 @@ def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
     plan = _plan(
         {
             **_kind_document(
-                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 kind_overrides_mode="always",
             ),
             "vars_schema": {
@@ -609,7 +638,7 @@ def test_always_creates_kind_schema_local_names(tmp_path: Path) -> None:
     plan = _plan(
         {
             **_kind_document(
-                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 kind_overrides_mode="always",
             ),
             "vars_schema": {
@@ -637,7 +666,7 @@ def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
     plan = _plan(
         {
             **_kind_document(
-                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 kind_overrides_mode="always",
             ),
             "vars_schema": {
@@ -658,7 +687,7 @@ def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
     plan = _plan(
         {
             **_kind_document(
-                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 kind_overrides_mode="always",
             ),
             "vars_schema": {"amount": {"type": "float"}},
@@ -676,7 +705,7 @@ def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> No
     plan = _plan(
         {
             **_kind_document(
-                "{{ __root_dir__ }}/kinds/{{ __kind__ }}.csv",
+                "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 kind_overrides_mode="always",
             ),
             "vars_schema": {
@@ -698,7 +727,7 @@ def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
     kind.write_text("\n\n", encoding="utf-8")
     plan = _plan(
         {
-            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
             "vars_schema": {"amount": {"type": "float"}},
         },
         tmp_path,
@@ -716,7 +745,7 @@ def test_missing_schema_columns_are_appended_on_the_right(tmp_path: Path) -> Non
     )
     plan = _plan(
         {
-            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
             "vars_schema": {
                 "amount": {"type": "text"},
                 "vendor": {"type": "text"},
@@ -741,7 +770,7 @@ def test_added_columns_keep_quoted_cell_text(tmp_path: Path) -> None:
     kind.write_bytes(b'PATH,note\r\na.txt,"hello\nworld"\r\n')
     plan = _plan(
         {
-            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
             "vars_schema": {"vendor": {"type": "text"}},
         },
         tmp_path,
@@ -756,7 +785,7 @@ def test_semicolon_schema_columns_use_the_separator(tmp_path: Path) -> None:
     kind.write_text("PATH;amount\na.txt;12,50\n", encoding="utf-8")
     plan = _plan(
         {
-            **_kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep=";"),
+            **_kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_sep=";"),
             "vars_schema": {"vendor": {"type": "text"}},
         },
         tmp_path,
@@ -772,7 +801,7 @@ def test_manual_does_not_add_schema_columns(tmp_path: Path) -> None:
     kind.write_text(original, encoding="utf-8")
     plan = _plan(
         {
-            **_kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="manual"),
+            **_kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_mode="manual"),
             "vars_schema": {"vendor": {"type": "text"}},
         },
         tmp_path,
@@ -792,7 +821,7 @@ def test_dry_run_does_not_add_schema_columns(
     kind.write_text(original, encoding="utf-8")
     plan = _plan(
         {
-            **_kind_document("{{ __root_dir__ }}/note.csv"),
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
             "vars_schema": {"vendor": {"type": "text"}},
         },
         tmp_path,
@@ -814,7 +843,7 @@ def test_disabled_ignores_an_existing_kind_file(
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="disabled"),
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_mode="disabled"),
         tmp_path,
     )
     values = _values(plan)
@@ -827,7 +856,7 @@ def test_disabled_ignores_an_existing_kind_file(
 def test_flag_wins_over_env_and_config(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="always"),
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_mode="always"),
         tmp_path,
         mode="manual",
         environ={"SUPERSHELF_KIND_OVERRIDES_MODE": "always"},
@@ -851,13 +880,13 @@ def test_yaml_and_toml_rows_are_literal(tmp_path: Path) -> None:
         "- path: a.txt\n  vars:\n    owner: ada\n",
         encoding="utf-8",
     )
-    yaml_plan = _plan(_kind_document("{{ __root_dir__ }}/note.yaml"), tmp_path)
+    yaml_plan = _plan(_kind_document("{{ __config__.root_dir }}/note.yaml"), tmp_path)
     assert _values(yaml_plan)["owner"] == "ada"
     (tmp_path / "note.toml").write_text(
         '[[rows]]\npath = "b.txt"\n\n[rows.vars]\nowner = "bea"\n',
         encoding="utf-8",
     )
-    toml_plan = _plan(_kind_document("{{ __root_dir__ }}/note.toml"), tmp_path)
+    toml_plan = _plan(_kind_document("{{ __config__.root_dir }}/note.toml"), tmp_path)
     assert _values(toml_plan, file=_file("b.txt"), match=_match("b.txt"))["owner"] == "bea"
 
 
@@ -868,7 +897,7 @@ def test_dry_run_logs_and_does_not_write(
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
     kind = tmp_path / "note.csv"
     kind.write_text("PATH\n", encoding="utf-8")
-    plan = _plan(_kind_document("{{ __root_dir__ }}/note.csv"), tmp_path, dry_run=True)
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path, dry_run=True)
     _values(plan)
     plan.commit()
     assert kind.read_text(encoding="utf-8") == "PATH\n"
@@ -880,7 +909,7 @@ def test_always_refuses_a_parent_that_is_a_file(tmp_path: Path) -> None:
     blocker.write_text("x", encoding="utf-8")
     plan = _plan(
         _kind_document(
-            "{{ __root_dir__ }}/blocked/note.csv",
+            "{{ __config__.root_dir }}/blocked/note.csv",
             kind_overrides_mode="always",
         ),
         tmp_path,
@@ -898,7 +927,7 @@ def test_duplicate_kind_path_keeps_the_first_row(
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,owner\na.txt,ada\na.txt,bea\n", encoding="utf-8")
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_mode="manual"),
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_mode="manual"),
         tmp_path,
     )
     assert _values(plan)["owner"] == "ada"
@@ -912,7 +941,7 @@ def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None
         encoding="utf-8",
     )
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep=";"),
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_sep=";"),
         tmp_path,
     )
     with pytest.raises(VarConfigError, match="first column is 'path'") as caught:
@@ -929,7 +958,7 @@ def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     plan = _plan(
-        _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep=";"),
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_sep=";"),
         tmp_path,
     )
     values = _values(
@@ -943,7 +972,7 @@ def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:
 def test_kind_overrides_sep_rejects_a_slash(tmp_path: Path) -> None:
     with pytest.raises(VarConfigError, match="kind_overrides_sep '/'") as caught:
         _plan(
-            _kind_document("{{ __root_dir__ }}/note.csv", kind_overrides_sep="/"),
+            _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_sep="/"),
             tmp_path,
         )
     assert caught.value.advice is not None
@@ -955,7 +984,7 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
     kind.write_text("PATH,vendor\na.txt,KindCo\n", encoding="utf-8")
     plan = _plan(
         {
-            "config": {"kind_overrides_config": ["{{ __root_dir__ }}/note.csv"]},
+            "config": {"kind_overrides_config": ["{{ __config__.root_dir }}/note.csv"]},
             "default_vars": {"vendor": "UNKNOWN"},
             "match_rules": [
                 {
@@ -976,11 +1005,11 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
         "rule:notes",
         f"kind:{kind}",
     )
-    assert resolved.sources["__kind__"] == ("fact",)
+    assert resolved.source_labels("__match__.kind") == ("fact",)
     text = str(present_vars(resolved, None))
-    assert "__kind__:" not in text
+    assert "__match__.kind:" not in text
     shown = str(present_vars(resolved, None, show_all=True))
-    assert "__kind__:" in shown
+    assert "__match__.kind:" in shown
     assert "file_ctime:" not in shown
     lines = text.splitlines()
     source_lines = present_sources(resolved).splitlines()
@@ -991,9 +1020,9 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
     vendor_at = lines.index("vendor: KindCo")
     assert source_lines[vendor_at] == ", ".join(resolved.sources["vendor"])
     assert "sources:" not in text
-    assert "__kind__" not in present_vars(resolved, "json")
+    assert "__match__.kind" not in present_vars(resolved, "json")
     assert present_vars(resolved, "json")["vendor"]["value"] == "KindCo"
-    assert present_vars(resolved, "json", show_all=True)["__kind__"]["value"] == "note"
+    assert present_vars(resolved, "json", show_all=True)["__match__.kind"]["value"] == "note"
 
 
 def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> None:
@@ -1244,7 +1273,7 @@ def test_kind_cell_cast_failure_stops_the_file(tmp_path: Path) -> None:
     kind.write_text("PATH,amount\na.txt,EUR12.50\n", encoding="utf-8")
     plan = _plan(
         {
-            "config": {"kind_overrides_config": ["{{ __root_dir__ }}/note.csv"]},
+            "config": {"kind_overrides_config": ["{{ __config__.root_dir }}/note.csv"]},
             "vars_schema": {"amount": {"type": "float"}},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "a.txt"}],
         },

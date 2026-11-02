@@ -37,11 +37,10 @@ def test_implicit_text_stores_the_rendered_string() -> None:
     assert cast.display == "Bank2000"
 
 
-def test_builtin_text_is_locked_and_date_can_take_a_default() -> None:
+def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
     catalog = _catalog(
         {
             "vars_schema": {
-                "__kind__": {"desc": "Matched kind", "unit": "label"},
                 "__date__": {
                     "desc": "Document date",
                     "mandatory": True,
@@ -51,25 +50,23 @@ def test_builtin_text_is_locked_and_date_can_take_a_default() -> None:
             }
         }
     )
-    kind = catalog.spec("__kind__")
     dated = catalog.spec("__date__")
 
-    assert kind.desc == "Matched kind"
-    assert kind.unit == "label"
-    assert kind.type == "text"
-    assert kind.internal is True
-    assert kind.mandatory is True
     assert dated.type == "date"
     assert dated.internal is False
     assert dated.mandatory is True
     assert dated.candidates == ("2026-04-25",)
+    with pytest.raises(VarConfigError, match="not a supershelf variable"):
+        _catalog({"vars_schema": {"__kind__": {"desc": "Matched kind", "unit": "label"}}})
+    with pytest.raises(VarConfigError, match="not a supershelf variable"):
+        _catalog({"vars_schema": {"__file_name__": {"desc": "Filename"}}})
 
 
 @pytest.mark.parametrize(
     ("document", "match"),
     [
-        ({"vars_schema": {"__kind__": {"type": "text"}}}, "cannot set type"),
-        ({"vars_schema": {"__kind__": {"internal": False}}}, "cannot set internal"),
+        ({"vars_schema": {"__kind__": {"type": "text"}}}, "not a supershelf variable"),
+        ({"vars_schema": {"__kind__": {"internal": False}}}, "not a supershelf variable"),
         ({"vars_schema": {"__date__": {"type": "date"}}}, "cannot set type"),
         ({"vars_schema": {"__date__": {"internal": False}}}, "cannot set internal"),
         ({"vars_schema": {"__custom__": {"type": "text"}}}, "not a supershelf variable"),
@@ -89,7 +86,7 @@ def test_builtin_text_is_locked_and_date_can_take_a_default() -> None:
             },
             "vars_schema.default and default_vars",
         ),
-        ({"default_vars": {"__custom__": "x"}}, "not a supershelf variable"),
+        ({"default_vars": {"__custom__": "x"}}, "cannot set __custom__"),
         ({"default_vars": {"amount": 12}}, "string or a list of strings"),
         ({"vars_schema": {"opens": {"type": "time", "default": "15:4"}}}, "cannot be cast"),
         (
@@ -452,7 +449,6 @@ def test_domain_schema_uses_kind_properties() -> None:
                     "default": 1.5,
                     "validation": {"ge": 0, "allowed": [1.5, 2.5]},
                 },
-                "__kind__": {"desc": "Matched kind"},
             },
             "kind_schema": {
                 "invoice": {
@@ -489,7 +485,6 @@ def test_domain_schema_without_kinds_lists_declared_names() -> None:
             "vars_schema": {
                 "vendor": {"type": "text"},
                 "__date__": {"desc": "Document date"},
-                "__kind__": {"desc": "Matched kind"},
             }
         }
     ).document()

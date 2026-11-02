@@ -311,6 +311,10 @@ Source is who writes a value. Availability is where a template can read it. A na
   The command continues. mandatory after the last layer stops the file when the value is still unset.
   A fact or a kind-file cell that cannot cast stops the file. There is no next candidate for those.
 - __date__, when set, is a calendar date YYYY-MM-DD. A candidate that renders to anything else fails, and the next candidate is tried.
+  The stored value, the printed value, and vars_json stay that string.
+  In a Jinja template the same value is an object. `{{ __date__ }}` is `YYYY-MM-DD`.
+  The fields are `Y`, `m`, and `d`, the `%Y`, `%m`, and `%d` parts of that date.
+  `{{ __date__.Y }}` is the four-digit year. There is no string slicing.
   Supershelf uses this date as the document date, including for output paths.
   This step does not write outputs. Behavior 5 does. A layout that uses __date__ fails when __date__ was omitted.
 - Shape errors and template syntax errors fail the command before the walk.
@@ -1110,6 +1114,7 @@ The profile sqlite file is ignored when it sits inside an input, same as record.
   A segment that is empty, `.`, or `..` stops the command.
   A slash inside a variable becomes another directory.
   The joined path must stay inside `path`. The extension is whatever the layout writes. `{{ __file__.ext }}` is the last suffix.
+  `{{ __date__ }}` is `YYYY-MM-DD`. `Y`, `m`, and `d` are the `%Y`, `%m`, and `%d` fields.
   A template that uses `__date__` fails when `__date__` was omitted.
 - `operation` is `copy`, `symlink`, or `hardlink`. Omitted, it is `copy`. Any other word stops the command.
 - `on_conflict` is `error`, `skip`, or `overwrite`. Omitted, it is `error`. Any other word stops the command.

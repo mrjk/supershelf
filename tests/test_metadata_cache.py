@@ -191,14 +191,14 @@ def test_profile_without_meta_leaves_sqlite_absent(tmp_path: Path) -> None:
     assert _database(tmp_path).exists() is False
 
 
-def test_fs_and_a_rejected_file_write_nothing(tmp_path: Path) -> None:
+def test_a_rejected_pdf_read_writes_nothing(tmp_path: Path) -> None:
     note = tmp_path / "note.txt"
     note.write_text("x", encoding="utf-8")
     runner = FakeRunner()
     plan = _plan(
         {
             "default_vars": {
-                "name": '{{ meta("fs", "name") }}',
+                "name": "{{ __file__.name }}",
                 "author": ['{{ meta("pdf", "author") }}', "NONE"],
             }
         },

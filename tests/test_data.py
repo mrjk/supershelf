@@ -92,7 +92,7 @@ def _count(path: Path, table: str) -> int:
 
 _FEED = """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 kind_overrides_date_format = "%d/%m/%Y"
 
 [vars_schema.vendor]
@@ -191,7 +191,7 @@ def test_ambiguous_kind_and_var_name(
         tmp_path,
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [vars_schema.invoice]
 type = "text"
@@ -245,7 +245,7 @@ def test_disabled_mode_still_writes_the_first_template(
         """\
 [config]
 kind_overrides_mode = "disabled"
-kind_overrides_config = ["{{ __root_dir__ }}/kinds/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/kinds/invoice.csv"]
 
 [default_vars]
 vendor = "Bank2000"
@@ -320,7 +320,7 @@ def test_shared_path_stops_when_values_differ(
         tmp_path / "profile.work.toml",
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [[inputs]]
 path = "one"
@@ -332,7 +332,7 @@ path = "two"
 name = "bill"
 kind = "invoice"
 glob = "**"
-vars.vendor = "{{ __file_hash__ }}"
+vars.vendor = "{{ __file__.hash }}"
 """,
     )
 
@@ -355,7 +355,7 @@ def test_yaml_rewrite_keeps_the_later_row(
         tmp_path,
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.yaml"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.yaml"]
 
 [default_vars]
 vendor = "Bank2000"
@@ -410,7 +410,7 @@ def test_no_schema_feeds_visible_names(
         tmp_path,
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/note.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/note.csv"]
 kind_overrides_date_format = "%d/%m/%Y"
 
 [default_vars]
@@ -464,7 +464,7 @@ def test_cache_is_written_before_a_no(
         tmp_path / "profile.work.toml",
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [default_vars]
 author = '{{ meta("pdf", "author") }}'
@@ -510,7 +510,7 @@ def test_dry_run_creates_nothing(
         tmp_path / "profile.work.toml",
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [default_vars]
 author = '{{ meta("pdf", "author") }}'
@@ -657,7 +657,7 @@ def test_show_prints_one_table_per_kind(
         tmp_path,
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/{{ __kind__ }}.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/{{ __match__.kind }}.csv"]
 
 [vars_schema.vendor]
 type = "text"
@@ -720,7 +720,7 @@ def test_show_known_kind_with_no_files_prints_the_title(
         tmp_path,
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [[inputs]]
 path = "inbox"
@@ -755,7 +755,7 @@ def test_show_can_write_the_meta_cache(
         tmp_path / "profile.work.toml",
         """\
 [config]
-kind_overrides_config = ["{{ __root_dir__ }}/invoice.csv"]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [default_vars]
 author = '{{ meta("pdf", "author") }}'

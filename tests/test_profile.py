@@ -14,10 +14,9 @@ def test_omitted_paths_use_the_config_directory(tmp_path: Path) -> None:
     root = tmp_path.resolve()
 
     assert profile.name == "work"
-    assert profile.scope["__profile__"] == "work"
-    assert profile.scope["__profile_name__"] == "work"
-    assert profile.scope["__profile_dir__"] == str(root)
-    assert profile.scope["__profile_file__"] == "profile.work.toml"
+    assert profile.scope["__profile__"]["name"] == "work"
+    assert profile.scope["__profile__"]["dir"] == str(root)
+    assert profile.scope["__profile__"]["file"] == "profile.work.toml"
     assert profile.default_date_format == PACKAGED.default_date_format
     assert profile.root_dir == root
     assert profile.database_file == root / "profile.work.sqlite"
@@ -32,7 +31,7 @@ def test_relative_root_dir_is_joined_before_later_paths(tmp_path: Path) -> None:
     assert profile.root_dir == (tmp_path / "data").resolve()
     assert profile.database_file == (tmp_path / "data" / "profile.work.sqlite").resolve()
     assert profile.cache_file == (tmp_path / "data" / "profile.work.cache").resolve()
-    assert profile.scope["__root_dir__"] == str(profile.root_dir)
+    assert profile.scope["__config__"]["root_dir"] == str(profile.root_dir)
 
 
 def test_default_date_format_is_not_templated(tmp_path: Path) -> None:

@@ -14,11 +14,14 @@ from typing import Any
 from supershelf.common import render_user_path
 from supershelf.constants import (
     EVENT_OUTPUT,
+    FIELD_PATH,
+    KEY_ROOT_DIR,
     OP_COPY,
     OP_HARDLINK,
     OP_SYMLINK,
     OUTPUT_OPERATIONS,
-    VAR_FILE_PATH,
+    VAR_CONFIG,
+    VAR_FILE,
 )
 from supershelf.database import EventRow, OutputPrevious, ShelfDatabase
 from supershelf.errors import OutputConfigError, OutputResolveError, VarCandidateError, VarResolveError
@@ -37,7 +40,8 @@ from supershelf.profile import ShelfProfile
 
 _FILE_KEYS = SHARED_KEYS | {"path", "layout", "operation", "on_conflict"}
 _CONFLICTS = frozenset({"error", "skip", "overwrite"})
-_DEFAULT_LAYOUT = "{{ " + VAR_FILE_PATH + " }}"
+_DEFAULT_LAYOUT = "{{ " + VAR_FILE + "." + FIELD_PATH + " }}"
+_ROOT_NAME = VAR_CONFIG + "." + KEY_ROOT_DIR
 _HASH_CHUNK = 1024 * 1024
 
 
@@ -72,7 +76,7 @@ class FileOutputDriver(OutputDriver):
         if not isinstance(path, str) or not path.strip():
             raise OutputConfigError(
                 f"Output {label!r} path is required",
-                advice="Set path to a profile path template. A relative path resolves from __root_dir__.",
+                advice=f"Set path to a profile path template. A relative path resolves from {_ROOT_NAME}.",
             )
         self._word(spec, "layout", label, required=False)
         self._choice(spec, "operation", label, OUTPUT_OPERATIONS, OP_COPY)
@@ -87,7 +91,7 @@ class FileOutputDriver(OutputDriver):
             profile.root_dir,
             empty_message=f"Output {name!r} path is empty",
             error=OutputConfigError,
-            advice="Set path to a directory under __root_dir__.",
+            advice=f"Set path to a directory under {_ROOT_NAME}.",
             resolve=True,
         )
         if root.exists() and not root.is_dir():

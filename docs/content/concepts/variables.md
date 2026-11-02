@@ -2,7 +2,7 @@
 
 `scan vars` takes the kept files, then the matched set, and prints one row per matched file. Columns: `profile`, `input`, `path`, `kind`, `rule`, `vars`, `sources`.
 
-`kind` is `__kind__` from the match rule. `rule` stays the match rule name. `vars` is one cell. Each set variable is one line: the name, `: `, then the display string. Names are sorted alphabetically. An unset variable is left out. `sources` is the next column. It has one line per name, in that same order. Each line is the labels that wrote the name, joined by `, `. `csv` uses those same two cells. `--format json` and `--format yaml` omit the `sources` column. They replace `vars` with one object per name: `value` is the Python value, and `value_sources` is the label list. `display` is not in the object. A float can have `value` `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling for both `value` and the table.
+`kind` is `__match__.kind` from the match rule. `rule` stays the match rule name. `vars` is one cell. Each set variable is one line: the name, `: `, then the display string. Names are sorted alphabetically. An unset variable is left out. `sources` is the next column. It has one line per name, in that same order. Each line is the labels that wrote the name, joined by `, `. `csv` uses those same two cells. `--format json` and `--format yaml` omit the `sources` column. They replace `vars` with one object per name: `value` is the Python value, and `value_sources` is the label list. `display` is not in the object. A float can have `value` `12.5` while the table shows `12.50`. `date`, `time`, and `datetime` use the accepted spelling for both `value` and the table.
 
 Source labels are `fact`, `default`, `rule:<rule name>`, and `kind:<kind file path>`. A later write appends a label. It keeps the earlier ones. The last label is the winner. A layer that misses does not add a label and does not remove earlier ones.
 
@@ -22,15 +22,15 @@ Profile scope from [Paths](paths.md) is available to templates. It is not printe
 
 Internal facts stay in scope for templates. `scan vars` prints them only with `--all`:
 
-- `__kind__`: the kind from matching
-- `__rule_name__`: the match rule name
-- `__ctime__` and `__mtime__`: the stored UTC ISO-8601 timestamps, not `default_date_format`
-- `__file_hash__`: lowercase sha256
-- `__file_name__`: the filename
-- `__file_stem__`: the filename without its last suffix. `archive.tar.gz` stores `archive.tar`
-- `__file_ext__`: the last suffix without the leading dot. `archive.tar.gz` stores `gz`. A name with no suffix stores an empty string. A leading dot, as in `.gitignore`, is not a suffix, so the extension is empty and the stem is the whole name
-- `__file_path__`: the path relative to the input, with `/` separators
-- `__file_dir__`: the directory relative to the input. Empty when the file sits in the input directory
+- `__match__.kind`: the kind from matching
+- `__match__.rule`: the match rule name
+- `__file__.ctime` and `__file__.mtime`: the stored UTC ISO-8601 timestamps, not `default_date_format`. They do not satisfy type `date`
+- `__file__.hash`: lowercase sha256
+- `__file__.name`: the filename
+- `__file__.stem`: the filename without its last suffix. `archive.tar.gz` stores `archive.tar`
+- `__file__.ext`: the last suffix without the leading dot. `archive.tar.gz` stores `gz`. A name with no suffix stores an empty string. A leading dot, as in `.gitignore`, is not a suffix, so the extension is empty and the stem is the whole name
+- `__file__.path`: the path relative to the input, with `/` separators
+- `__file__.dir`: the directory relative to the input. Empty when the file sits in the input directory
 
 Named groups from the winning regex are facts. They are stored in the order the pattern declared them. The table sorts every printed name alphabetically.
 
@@ -42,9 +42,9 @@ Assignments are the user layers. Later wins on the same key. Each layer is appli
 2. `match_rules` `vars` for the winning rule.
 3. The kind-file row for that path. See [Kind files](kind-files.md). This is the last assignment layer.
 
-`default_vars` and rule `vars` must not set an internal name. A kind-file row must not either. `__kind__` stays the kind from the match rule.
+`default_vars` and rule `vars` must not set a namespace root. A layer may set `__date__` and names that do not start with `__`. A kind-file row follows the same rule. The kind stays `__match__.kind` from the match rule.
 
-`__date__` is not an internal. Any of these layers may set it. The filename does not. A stem that is a date stays `__file_stem__`. To use it, write a candidate such as `{{ regex_time_var(__file_stem__, __default_date_format__) }}`. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
+`__date__` is not an internal. Any of these layers may set it. The filename does not. A stem that is a date stays `__file__.stem`. To use it, write a candidate such as `{{ regex_time_var(__file__.stem, __config__.date_format) }}`. A kind-file `__date__` cell is parsed into `YYYY-MM-DD`. The other layers use candidates.
 
 Omitted `default_vars`, omitted rule `vars`, or no kind-file cells for that path means that layer is empty.
 
@@ -56,7 +56,7 @@ A later write replaces the display string and keeps the name's earlier source la
 
 `type` is `text`, `int`, `float`, `bool`, `date`, `time`, or `datetime`, in lower case. `date` is `YYYY-MM-DD`. `time` is `HH:MM` or `HH:MM:SS`. `datetime` is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`, and a set value always includes a clock. No timezone and no fractional seconds. Seconds stay in the display only when they were written. `15:04` and `15:04:00` match as the same clock in `allowed` and in range checks. A bool accepts `true`, `yes`, and `1`, or `false`, `no`, and `0`, in any case. The display is `true` or `false`. An int display drops a leading `+` and leading zeros, so `007` prints as `7`.
 
-Built-in facts are `text`, except `__date__`, which is `date`. `__ctime__` and `__mtime__` stay `text`, because they include fractional seconds and a UTC offset. A user entry may set `desc` and `unit` on a locked built-in. On `__date__` it may also set `mandatory`, `default`, and `validation`. A new name that starts with `__` stops the command. `internal: true` on a user name stops the command.
+`__date__` is type `date`. The file and match fields are not catalog entries. `vars_schema.__date__` may set `desc`, `unit`, `mandatory`, `default`, and `validation`. It cannot set `type` or `internal`. A name that starts with `__` and is not `__date__` stops the command. `internal: true` on a user name stops the command.
 
 Other keys on a user entry: `desc`, `unit`, `mandatory` (default false), `default`, and `validation`. Unknown keys stop the command. `mandatory` is checked after the last layer. `None` fails the file. An empty text string is set, so it passes.
 

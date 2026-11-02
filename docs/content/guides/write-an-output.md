@@ -7,11 +7,11 @@ Add an output to that profile:
 ```toml
 [[outputs]]
 name = "books"
-path = "{{ __root_dir__ }}/output/books"
-layout = "{{ vendor }}/{{ __file_name__ }}"
+path = "{{ __config__.root_dir }}/output/books"
+layout = "{{ vendor }}/{{ __file__.name }}"
 ```
 
-`path` is rendered once. A relative path resolves from `__root_dir__`. `layout` runs per file. Omitted, the input-relative path is kept. `operation` omitted means `copy`.
+`path` is rendered once. A relative path resolves from `__config__.root_dir`. `layout` runs per file. Omitted, the input-relative path is kept. `operation` omitted means `copy`.
 
 Preview the plan. This creates no directory and no output event:
 

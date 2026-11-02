@@ -18,7 +18,6 @@ from supershelf.metadata.driver import (
 from supershelf.metadata.drivers import (
     CommandDriver,
     ExiftoolDriver,
-    FsDriver,
     PdfDriver,
     PdftotextDriver,
 )
@@ -27,7 +26,6 @@ _GENERIC = "supershelf.meta_driver"
 _RESERVED = frozenset({"driver", "enable", "timeout", "ext", "mime"})
 _API = ("available", "accepts", "extract")
 _BUILTINS: dict[str, type[MetadataDriver]] = {
-    "fs": FsDriver,
     "pdf": PdfDriver,
     "exiftool": ExiftoolDriver,
     "pdftotext": PdftotextDriver,

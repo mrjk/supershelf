@@ -12,30 +12,28 @@ from supershelf.common import config_section as read_config_section
 from supershelf.common import render_user_path
 from supershelf.configs import ShelfConfig
 from supershelf.constants import (
+    FIELD_DATE_FORMAT,
+    FIELD_DIR,
+    FIELD_DOCUMENT,
+    FIELD_FILE,
+    FIELD_NAME,
+    FIELD_PATH,
+    FIELD_TYPE,
     KEY_CACHE_FILE,
     KEY_DATABASE_FILE,
     KEY_DEFAULT_DATE_FORMAT,
     KEY_ROOT_DIR,
-    VAR_CACHE_FILE,
-    VAR_CONFIG_DATA,
-    VAR_DATABASE_FILE,
-    VAR_DEFAULT_DATE_FORMAT,
+    VAR_CONFIG,
     VAR_PROFILE,
-    VAR_PROFILE_DIR,
-    VAR_PROFILE_FILE,
-    VAR_PROFILE_NAME,
-    VAR_PROFILE_PATH,
-    VAR_PROFILE_TYPE,
-    VAR_ROOT_DIR,
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
 from supershelf.scan import InputScanResult, InputScanner
 
 _PATH_STEPS = (
-    (KEY_ROOT_DIR, VAR_ROOT_DIR),
-    (KEY_DATABASE_FILE, VAR_DATABASE_FILE),
-    (KEY_CACHE_FILE, VAR_CACHE_FILE),
+    KEY_ROOT_DIR,
+    KEY_DATABASE_FILE,
+    KEY_CACHE_FILE,
 )
 
 
@@ -61,25 +59,27 @@ class ShelfProfile:
         section = read_config_section(document)
         directory = shelf_config.path.parent
         date_format = cls._date_format(section)
+        config_scope: dict[str, Any] = {FIELD_DATE_FORMAT: date_format}
         scope: dict[str, Any] = {
-            VAR_PROFILE_NAME: shelf_config.profile,
-            VAR_PROFILE: shelf_config.profile,
-            VAR_PROFILE_TYPE: shelf_config.type,
-            VAR_PROFILE_PATH: str(shelf_config.path),
-            VAR_PROFILE_DIR: str(directory),
-            VAR_PROFILE_FILE: shelf_config.path.name,
-            VAR_DEFAULT_DATE_FORMAT: date_format,
-            VAR_CONFIG_DATA: document,
+            VAR_PROFILE: {
+                FIELD_NAME: shelf_config.profile,
+                FIELD_TYPE: shelf_config.type,
+                FIELD_PATH: str(shelf_config.path),
+                FIELD_DIR: str(directory),
+                FIELD_FILE: shelf_config.path.name,
+                FIELD_DOCUMENT: document,
+            },
+            VAR_CONFIG: config_scope,
         }
         rendered: dict[str, Path] = {}
-        for config_key, scope_key in _PATH_STEPS:
+        for config_key in _PATH_STEPS:
             path = cls._render_path(
                 cls._path_template(section, config_key),
                 scope,
                 directory,
                 label=f"config.{config_key}",
             )
-            scope[scope_key] = str(path)
+            config_scope[config_key] = str(path)
             rendered[config_key] = path
         return cls(
             name=shelf_config.profile,

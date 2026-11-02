@@ -352,7 +352,7 @@ def test_scan_vars_named_file_lists_only_that_path(
     assert "vendor: Bank2000" in plain
     assert "sources:" not in plain
     assert "| sources |" in plain
-    assert "__kind__:" not in plain
+    assert "__match__.kind:" not in plain
     assert "file_ctime:" not in plain
     assert "file_mtime:" not in plain
     assert "b.txt" not in plain
@@ -361,7 +361,7 @@ def test_scan_vars_named_file_lists_only_that_path(
     app = App(parse=False)
     app.dispatch(["-v", "scan", "vars", "--all", "a.txt"])
     shown = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
-    assert "__kind__:" in shown
+    assert "__match__.kind:" in shown
     assert "vendor: Bank2000" in shown
     assert "file_ctime:" not in shown
     assert "file_mtime:" not in shown
@@ -510,7 +510,7 @@ def test_scan_vars_logs_a_kind_file_at_vv(
     _write(
         tmp_path / "profile.work.toml",
         "[config]\nprofile = 'work'\n"
-        "kind_overrides_config = ['{{ __root_dir__ }}/note.csv']\n\n"
+        "kind_overrides_config = ['{{ __config__.root_dir }}/note.csv']\n\n"
         "[[inputs]]\npath = 'inbox'\n\n"
         "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
     )
@@ -540,7 +540,7 @@ def test_scan_vars_manual_flag_does_not_append(
     _write(
         tmp_path / "profile.work.toml",
         "[config]\nprofile = 'work'\n"
-        "kind_overrides_config = ['{{ __root_dir__ }}/note.csv']\n\n"
+        "kind_overrides_config = ['{{ __config__.root_dir }}/note.csv']\n\n"
         "[[inputs]]\npath = 'inbox'\n\n"
         "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
     )
@@ -584,7 +584,7 @@ def test_scan_vars_dry_run_does_not_append(
     _write(
         tmp_path / "profile.work.toml",
         "[config]\nprofile = 'work'\n"
-        "kind_overrides_config = ['{{ __root_dir__ }}/note.csv']\n\n"
+        "kind_overrides_config = ['{{ __config__.root_dir }}/note.csv']\n\n"
         "[[inputs]]\npath = 'inbox'\n\n"
         "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
     )

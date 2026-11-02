@@ -24,7 +24,6 @@ from pydantic import (
 
 from supershelf.constants import (
     DATE_TEXT,
-    INTERNAL_NAMES,
     KEY_DEFAULT_VARS,
     KEY_KIND_SCHEMA,
     KEY_VARS_SCHEMA,
@@ -53,12 +52,9 @@ _DATETIME_TEXT = re.compile(
 _BOOL_TRUE = frozenset({"true", "yes", "1"})
 _BOOL_FALSE = frozenset({"false", "no", "0"})
 _TIME_FORMATS = ("%H:%M:%S", "%H:%M")
-_LOCKED_BUILTINS = frozenset(INTERNAL_NAMES)
-_MANAGED = _LOCKED_BUILTINS | {VAR_DATE}
-_LOCKED_KEYS = frozenset({"type", "internal", "mandatory", "default", "validation"})
 _DATE_LOCKED_KEYS = frozenset({"type", "internal"})
 _DATE_KEYS = frozenset({"desc", "unit", "mandatory", "default", "validation"})
-_BUILTIN_KEYS = frozenset({"desc", "unit"})
+_RESERVED_ADVICE = "A layer may set __date__ and names that do not start with __."
 _LENGTH_TYPES = frozenset({TYPE_TEXT, TYPE_DATE, TYPE_TIME, TYPE_DATETIME})
 _RANGE_TYPES = frozenset({TYPE_INT, TYPE_FLOAT, TYPE_DATE, TYPE_TIME, TYPE_DATETIME})
 _VALIDATION_KEYS = frozenset(
@@ -733,10 +729,10 @@ class KindCatalog:
         label = f"kind_schema.{kind}.vars_schema.{name}"
         check_var_name(name, label)
         key = str(name)
-        if key in _LOCKED_BUILTINS:
+        if reserved_var_name(key):
             raise VarConfigError(
                 f"{label} is reserved",
-                advice="Locked internals stay on the profile. Do not list them under kind_schema.",
+                advice=_RESERVED_ADVICE,
             )
         written = entry.model_dump(exclude_unset=True, by_alias=True)
         ref = written.pop("schema", None)
@@ -747,7 +743,7 @@ class KindCatalog:
                 f"{label} needs schema",
                 advice="Point schema at a vars_schema name, or at __date__.",
             )
-        if ref in _LOCKED_BUILTINS:
+        if reserved_var_name(ref):
             raise VarConfigError(
                 f"{label} schema {ref} is reserved",
                 advice="Point schema at a vars_schema name, or at __date__.",
@@ -865,7 +861,7 @@ class VarCatalog:
         """Declared user names. Locked internals are left out. __date__ stays when declared."""
         rows: list[tuple[str, VarSpec]] = []
         for name in self._declared:
-            if name in _LOCKED_BUILTINS:
+            if reserved_var_name(name):
                 continue
             rows.append((name, self._specs[name]))
         return tuple(rows)
@@ -915,11 +911,7 @@ class VarCatalog:
 
     @staticmethod
     def _builtins() -> dict[str, VarSpec]:
-        specs: dict[str, VarSpec] = {}
-        for name in INTERNAL_NAMES:
-            specs[name] = VarSpec(type=TYPE_TEXT, internal=True, mandatory=True)
-        specs[VAR_DATE] = VarSpec(type=TYPE_DATE, internal=False, mandatory=False)
-        return specs
+        return {VAR_DATE: VarSpec(type=TYPE_DATE, internal=False, mandatory=False)}
 
     @classmethod
     def _load_schema(
@@ -942,7 +934,7 @@ class VarCatalog:
                     f"{label} must be a mapping",
                     advice="Set type, desc, unit, mandatory, default, or validation.",
                 )
-            if name in _MANAGED:
+            if name == VAR_DATE:
                 specs[name] = cls._overlay_builtin(name, specs[name], body, compile_source)
                 declared.append(str(name))
                 continue
@@ -963,14 +955,9 @@ class VarCatalog:
         compile_source: Callable[[str], None] | None,
     ) -> VarSpec:
         label = f"vars_schema.{name}"
-        if name == VAR_DATE:
-            allowed = _DATE_KEYS
-            forbidden = _DATE_LOCKED_KEYS
-            advice = "On __date__, set desc, unit, mandatory, default, or validation."
-        else:
-            allowed = _BUILTIN_KEYS
-            forbidden = _LOCKED_KEYS
-            advice = "On a built-in, set desc or unit. The type stays fixed."
+        allowed = _DATE_KEYS
+        forbidden = _DATE_LOCKED_KEYS
+        advice = "On __date__, set desc, unit, mandatory, default, or validation."
         blocked = [key for key in forbidden if key in raw]
         if blocked:
             joined = ", ".join(blocked)
@@ -1009,7 +996,7 @@ class VarCatalog:
             )
         payload = dict(raw)
         if "internal" not in payload:
-            payload["internal"] = name.startswith("__")
+            payload["internal"] = False
         return VarSpec.load(
             payload,
             label=label,
@@ -1035,10 +1022,10 @@ class VarCatalog:
             label = f"default_vars.{name}"
             check_var_name(name, label)
             key = str(name)
-            if key in _LOCKED_BUILTINS:
+            if reserved_var_name(key):
                 raise VarConfigError(
                     f"default_vars cannot set {key}",
-                    advice="__kind__ stays the kind from the match rule. Other internal names are fixed.",
+                    advice=_RESERVED_ADVICE,
                 )
             spec = specs.get(key)
             if spec is None:
@@ -1059,16 +1046,12 @@ class VarCatalog:
     @staticmethod
     def _implicit(name: str, label: str) -> VarSpec:
         check_var_name(name, label)
-        if name.startswith("__") and name not in _MANAGED:
+        if reserved_var_name(name):
             raise VarConfigError(
                 f"{label} is not a supershelf variable",
                 advice="Do not declare names that start with __. Those are reserved.",
             )
-        return VarSpec(
-            type=TYPE_TEXT,
-            mandatory=False,
-            internal=name.startswith("__"),
-        )
+        return VarSpec(type=TYPE_TEXT, mandatory=False, internal=False)
 
 
 def layer_source(prefix: str, detail: str) -> str:
@@ -1098,13 +1081,18 @@ def check_var_name(name: object, label: str) -> None:
         )
 
 
+def reserved_var_name(name: str) -> bool:
+    """A namespace root, or any other name that starts with __ except __date__."""
+    return name.startswith("__") and name != VAR_DATE
+
+
 def check_assignment_key(key: object, label: str) -> None:
-    """Reject a name that is not a variable, or a locked internal."""
+    """Reject a name that is not a variable, or a namespace root."""
     check_var_name(key, f"{label} key {key!r}")
-    if isinstance(key, str) and key in INTERNAL_NAMES:
+    if isinstance(key, str) and reserved_var_name(key):
         raise VarConfigError(
             f"{label} cannot set {key}",
-            advice="__kind__ stays the kind from the match rule. Other internal names are fixed.",
+            advice=_RESERVED_ADVICE,
         )
 
 

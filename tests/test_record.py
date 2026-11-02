@@ -692,7 +692,7 @@ def test_snapshot_keeps_date_and_drops_identity_facts(tmp_path: Path) -> None:
         "work",
         Matcher.from_document({}, "work"),
         tmp_path,
-        {"__root_dir__": str(tmp_path), "__profile__": "work"},
+        {"__profile__": {"name": "work"}, "__config__": {"root_dir": str(tmp_path)}},
     )
     resolved = FileVars(
         "bill",

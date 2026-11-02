@@ -9,7 +9,14 @@ import jinja2
 
 from supershelf.constants import TEMPLATE_MARKERS
 from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
-from supershelf.var_commands import BuiltinCommands, FileBinding
+from supershelf.var_commands import BuiltinCommands
+
+
+def _finalize(value: object) -> object:
+    """A namespace object with no field fails the candidate. Strings and bools pass."""
+    if isinstance(value, Mapping):
+        raise VarCandidateError("A namespace needs a field")
+    return value
 
 
 def is_template(source: str) -> bool:
@@ -41,6 +48,7 @@ class VarEnvironment:
         self._env = jinja2.Environment(
             undefined=jinja2.StrictUndefined,
             autoescape=False,
+            finalize=_finalize,
         )
         self._compiled: dict[str, jinja2.Template] = {}
         self._names: set[str] = set()
@@ -65,20 +73,13 @@ class VarEnvironment:
         """Compile a candidate now, so a syntax error fails before the walk."""
         self._template(source)
 
-    def render(
-        self,
-        source: str,
-        scope: Mapping[str, Any],
-        file: FileBinding,
-        pdf_cache: dict[str, tuple[str | None, str | None]],
-    ) -> str:
+    def render(self, source: str, scope: Mapping[str, Any]) -> str:
         """Render one candidate. A miss raises VarCandidateError."""
         if self._is_literal(source):
             return source
         template = self._template(source)
         if template is None:
             return source
-        token = self._commands.bind(file, pdf_cache)
         try:
             rendered = template.render(dict(scope))
         except VarCandidateError:
@@ -90,8 +91,6 @@ class VarEnvironment:
                 f"Var template failed: {exc}",
                 advice="Check the template and custom commands.",
             ) from exc
-        finally:
-            self._commands.unbind(token)
         if not isinstance(rendered, str):
             raise VarCandidateError("A var template must render to a string")
         return rendered

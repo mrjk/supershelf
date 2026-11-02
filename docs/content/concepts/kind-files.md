@@ -9,15 +9,15 @@ A kind file stores one row per path for one kind. `scan vars` reads that row aft
 `config.kind_overrides_config` is an optional list of path templates. They use the [path template language](paths.md). Omitted, the list is:
 
 ```text
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml
-{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml
+{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv
+{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml
+{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml
+{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml
 ```
 
 An empty list means no kind files. Nothing is created or appended.
 
-Each path is rendered with the profile scope, `__kind__` set to the rule kind, and `__input__.path` set to the absolute input directory. A relative result is resolved from `__root_dir__`. The first path that exists and is a file wins. A missing path tries the next. None found means no row, unless the mode is `always`. A path that exists and is not a file stops the command. A symlink to a file is that file. A bad suffix, or content that does not parse, stops the command. The next path is not tried.
+Each path is rendered with the profile scope, `__match__.kind` set to the rule kind, and `__input__.path` set to the absolute input directory. A relative result is resolved from `__config__.root_dir`. The first path that exists and is a file wins. A missing path tries the next. None found means no row, unless the mode is `always`. A path that exists and is not a file stops the command. A symlink to a file is that file. A bad suffix, or content that does not parse, stops the command. The next path is not tried.
 
 The rule kind picks the file.
 
@@ -60,7 +60,7 @@ A cell is one stored string. It is not a candidate list, and it is not compiled 
 
 A cell that sets an existing key keeps that key's first position and replaces the stored string. A new key is appended. CSV uses column order. TOML and YAML use key order inside `vars`.
 
-A row must not set an internal name. `__date__` is allowed. `__kind__` stays the kind from the match rule.
+A row must not set a name that starts with `__`, except `__date__`. The kind stays `__match__.kind` from the match rule.
 
 Unmatched files have no kind, so they get no row. Files the walk skipped get no row.
 

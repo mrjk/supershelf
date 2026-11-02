@@ -1,4 +1,4 @@
-"""metadata_driver load rules and the fs driver."""
+"""metadata_driver load rules."""
 
 from pathlib import Path
 
@@ -36,16 +36,11 @@ def _values(plan: VarPlan, **kwargs: object) -> dict[str, str]:
 
 
 def _assert_builtin_defaults(plan: VarPlan) -> None:
-    fs = plan.metadata.entry("fs")
     pdf = plan.metadata.entry("pdf")
     exif = plan.metadata.entry("exiftool")
     text = plan.metadata.entry("pdftotext")
-    assert fs is not None and pdf is not None and exif is not None and text is not None
-    assert fs.driver.ignores_enable is True
-    assert fs.driver.extensions == ()
-    assert fs.driver.mime_types == ()
-    assert fs.options.enable == "auto"
-    assert fs.options.timeout is None
+    assert pdf is not None and exif is not None and text is not None
+    assert plan.metadata.entry("fs") is None
     assert pdf.driver.ignores_enable is True
     assert pdf.driver.extensions == ("pdf",)
     assert pdf.driver.mime_types == ("application/pdf",)
@@ -94,7 +89,7 @@ def test_disabling_exiftool_keeps_pdf(tmp_path: Path) -> None:
 
 def test_unknown_builtin_option_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(VarConfigError, match="unknown option"):
-        _plan({"metadata_driver": {"fs": {"nope": 1}}}, tmp_path)
+        _plan({"metadata_driver": {"pdf": {"nope": 1}}}, tmp_path)
 
 
 def test_unknown_name_without_driver_is_rejected(tmp_path: Path) -> None:
@@ -112,8 +107,8 @@ def test_zero_timeout_on_pdftotext_is_rejected(tmp_path: Path) -> None:
         _plan({"metadata_driver": {"pdftotext": {"timeout": 0}}}, tmp_path)
 
 
-def test_timeout_on_fs_is_rejected(tmp_path: Path) -> None:
-    with pytest.raises(VarConfigError, match="timeout"):
+def test_fs_without_a_driver_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(VarConfigError, match="no driver"):
         _plan({"metadata_driver": {"fs": {"timeout": 30}}}, tmp_path)
 
 
@@ -133,11 +128,11 @@ def test_literal_unknown_meta_driver_fails_at_load(tmp_path: Path) -> None:
         )
 
 
-def test_regex_group_wins_without_calling_fs(tmp_path: Path) -> None:
+def test_regex_group_wins_without_calling_the_driver(tmp_path: Path) -> None:
     plan = _plan(
         {
             "default_vars": {
-                "author": ["{{ author }}", '{{ meta("fs", "name") }}'],
+                "author": ["{{ author }}", '{{ meta("pdf", "author") }}'],
             },
             "match_rules": [
                 {
@@ -157,20 +152,19 @@ def test_regex_group_wins_without_calling_fs(tmp_path: Path) -> None:
     assert values["author"] == "Ada"
 
 
-def test_fs_returns_walk_strings(tmp_path: Path) -> None:
+def test_file_fields_are_template_values(tmp_path: Path) -> None:
     plan = _plan(
         {
             "default_vars": {
-                "name": '{{ meta("fs", "name") }}',
-                "stem": '{{ meta("fs", "stem") }}',
-                "ext": '{{ meta("fs", "ext") }}',
-                "path": '{{ meta("fs", "path") }}',
-                "folder": '{{ meta("fs", "dir") }}',
-                "digest": '{{ meta("fs", "hash") }}',
-                "created": '{{ meta("fs", "ctime") }}',
-                "modified": '{{ meta("fs", "mtime") }}',
-                "root": ['{{ meta("fs", "dir") }}', "ROOT"],
-                "missing": ['{{ meta("fs", "nope") }}', "FALLBACK"],
+                "name": "{{ __file__.name }}",
+                "stem": "{{ __file__.stem }}",
+                "ext": "{{ __file__.ext }}",
+                "path": "{{ __file__.path }}",
+                "folder": "{{ __file__.dir }}",
+                "digest": "{{ __file__.hash }}",
+                "created": "{{ __file__.ctime }}",
+                "modified": "{{ __file__.mtime }}",
+                "missing": ["{{ __file__.nope }}", "FALLBACK"],
             },
         },
         tmp_path,
@@ -187,7 +181,7 @@ def test_fs_returns_walk_strings(tmp_path: Path) -> None:
     assert values["modified"] == nested.mtime
     assert values["missing"] == "FALLBACK"
     top = _values(plan)
-    assert top["root"] == "ROOT"
+    assert top["folder"] == ""
 
 
 def test_profile_without_meta_does_not_create_the_database(tmp_path: Path) -> None:
@@ -196,8 +190,8 @@ def test_profile_without_meta_does_not_create_the_database(tmp_path: Path) -> No
         {"default_vars": {"owner": "Ada"}},
         tmp_path,
         scope={
-            "__profile_dir__": str(tmp_path),
-            "__database_file__": str(database),
+            "__profile__": {"dir": str(tmp_path)},
+            "__config__": {"database_file": str(database)},
         },
     )
     assert _values(plan)["owner"] == "Ada"

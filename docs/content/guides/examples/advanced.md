@@ -39,8 +39,8 @@ Northline Telecom stores `08292025`, read with `%m%d%Y`, which is `2025-08-29`. 
 
     [default_vars]
     __date__ = [
-      '{{ pdf_cdate() }}',
-      '{{ pdf_mdate() }}',
+      '{{ meta("pdf", "creation_date") }}',
+      '{{ meta("pdf", "modification_date") }}',
     ]
 
     [[match_rules]]
@@ -114,8 +114,8 @@ Northline Telecom stores `08292025`, read with `%m%d%Y`, which is `2025-08-29`. 
 
     default_vars:
       __date__:
-        - '{{ pdf_cdate() }}'
-        - '{{ pdf_mdate() }}'
+        - '{{ meta("pdf", "creation_date") }}'
+        - '{{ meta("pdf", "modification_date") }}'
 
     match_rules:
       - name: northline

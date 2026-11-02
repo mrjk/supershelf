@@ -19,9 +19,9 @@ These keys live under `config`.
 | --- | --- | --- | --- |
 | `profile` | string | from the filename, or `default` | Profile name when the filename is not `profile.NAME.*`. See [Profiles](../concepts/profiles.md). |
 | `default_date_format` | string | `%Y-%m-%d` | `strftime` pattern for mtime and ctime in `scan files`. Not a template. |
-| `root_dir` | string | `{{ __profile_dir__ }}` | Path template. Relative results resolve from the config directory. |
-| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `output run` opens an existing file when an output event would be appended and does not create a missing file. `--dry-run` does not create or migrate it. `scan files`, `scan kinds`, and `data prune` do not. |
-| `cache_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` | Path template. Rendered, not created. |
+| `root_dir` | string | `{{ __profile__.dir }}` | Path template. Relative results resolve from the config directory. |
+| `database_file` | string | `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite` | Path template. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `output run` opens an existing file when an output event would be appended and does not create a missing file. `--dry-run` does not create or migrate it. `scan files`, `scan kinds`, and `data prune` do not. |
+| `cache_file` | string | `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache` | Path template. Rendered, not created. |
 | `record_identity` | string or list of strings | `path` | `path`, `hash`, or a list of those steps. A bare `path` means path then hash. A bare `hash` means hash then path. A list does not expand. `""` and `[]` are invalid and do not fall back. See [Record](../concepts/record.md). |
 | `var_modules` | list of strings | none | Importable modules. See [Modules](../concepts/modules.md). |
 | `output_modules` | list of strings | none | Importable output driver modules. Omitted, null, and `[]` add no drivers. See [Output](../concepts/output.md). |
@@ -64,7 +64,7 @@ Unknown keys on an input stop the command.
 | `kinds` | list of strings | every matched kind. `[]` selects no file |
 | `when` | string | `true` |
 | `path` | string | required for the file driver. Profile path template. |
-| `layout` | string | `{{ __file_path__ }}` |
+| `layout` | string | `{{ __file__.path }}` |
 | `operation` | `copy`, `symlink`, or `hardlink` | `copy` |
 | `on_conflict` | `error`, `skip`, or `overwrite` | `error` |
 

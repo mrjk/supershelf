@@ -9,6 +9,14 @@ from typing import Any
 from supershelf.errors import SupershelfError
 
 
+def scope_field(scope: Mapping[str, Any], root: str, field: str) -> Any:
+    """One published namespace field, or None when that root or field is absent."""
+    found = scope.get(root)
+    if not isinstance(found, Mapping):
+        return None
+    return found.get(field)
+
+
 class Template:
     """Render `{{ name }}` placeholders against one scope."""
 

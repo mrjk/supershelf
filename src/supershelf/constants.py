@@ -88,48 +88,45 @@ SOURCE_DEFAULT = "default"
 SOURCE_RULE = "rule"
 SOURCE_KIND = "kind"
 
-VAR_KIND = "__kind__"
-VAR_RULE_NAME = "__rule_name__"
-VAR_CTIME = "__ctime__"
-VAR_MTIME = "__mtime__"
-VAR_FILE_HASH = "__file_hash__"
-VAR_FILE_NAME = "__file_name__"
-VAR_FILE_STEM = "__file_stem__"
-VAR_FILE_EXT = "__file_ext__"
-VAR_FILE_PATH = "__file_path__"
-VAR_FILE_DIR = "__file_dir__"
 VAR_DATE = "__date__"
+VAR_PROFILE = "__profile__"
+VAR_CONFIG = "__config__"
+VAR_FILE = "__file__"
+VAR_MATCH = "__match__"
 VAR_INPUT = "__input__"
+NAMESPACE_ROOTS = (VAR_PROFILE, VAR_CONFIG, VAR_FILE, VAR_MATCH, VAR_INPUT)
 
-INTERNAL_NAMES = (
-    VAR_KIND,
-    VAR_RULE_NAME,
-    VAR_CTIME,
-    VAR_MTIME,
-    VAR_FILE_HASH,
-    VAR_FILE_NAME,
-    VAR_FILE_STEM,
-    VAR_FILE_EXT,
-    VAR_FILE_PATH,
-    VAR_FILE_DIR,
+FIELD_NAME = "name"
+FIELD_TYPE = "type"
+FIELD_PATH = "path"
+FIELD_DIR = "dir"
+FIELD_FILE = "file"
+FIELD_DOCUMENT = "document"
+FIELD_DATE_FORMAT = "date_format"
+FIELD_STEM = "stem"
+FIELD_EXT = "ext"
+FIELD_HASH = "hash"
+FIELD_CTIME = "ctime"
+FIELD_MTIME = "mtime"
+FIELD_KIND = "kind"
+FIELD_RULE = "rule"
+FILE_FIELDS = (
+    FIELD_NAME,
+    FIELD_STEM,
+    FIELD_EXT,
+    FIELD_PATH,
+    FIELD_DIR,
+    FIELD_HASH,
+    FIELD_CTIME,
+    FIELD_MTIME,
 )
+MATCH_FIELDS = (FIELD_KIND, FIELD_RULE)
+
 # Stored dates are YYYY-MM-DD. Display uses the packaged or configured format.
 DATE_TEXT = "%Y-%m-%d"
 
 VAR_GLOBALS = "GLOBALS"
 VAR_FILTERS = "FILTERS"
-
-VAR_PROFILE = "__profile__"
-VAR_PROFILE_NAME = "__profile_name__"
-VAR_PROFILE_TYPE = "__profile_type__"
-VAR_PROFILE_PATH = "__profile_path__"
-VAR_PROFILE_DIR = "__profile_dir__"
-VAR_PROFILE_FILE = "__profile_file__"
-VAR_DEFAULT_DATE_FORMAT = "__default_date_format__"
-VAR_CONFIG_DATA = "__config_data__"
-VAR_ROOT_DIR = "__root_dir__"
-VAR_DATABASE_FILE = "__database_file__"
-VAR_CACHE_FILE = "__cache_file__"
 
 SINGLETON_STEM = APP_NAME
 PROFILE_PREFIX = "profile."

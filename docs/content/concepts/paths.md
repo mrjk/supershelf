@@ -12,11 +12,11 @@ These `config` keys are rendered in order. After each one, a relative result is 
 
 | Key | Scope name | Default |
 | --- | --- | --- |
-| `root_dir` | `__root_dir__` | `{{ __profile_dir__ }}` |
-| `database_file` | `__database_file__` | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` |
-| `cache_file` | `__cache_file__` | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` |
+| `root_dir` | `__config__.root_dir` | `{{ __profile__.dir }}` |
+| `database_file` | `__config__.database_file` | `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite` |
+| `cache_file` | `__config__.cache_file` | `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache` |
 
-`~` is expanded. An empty result stops the command. A relative `database_file` such as `state.sqlite` is resolved from the config directory, not from `root_dir`. To place it under the root, write `{{ __root_dir__ }}/state.sqlite`.
+`~` is expanded. An empty result stops the command. A relative `database_file` such as `state.sqlite` is resolved from the config directory, not from `root_dir`. To place it under the root, write `{{ __config__.root_dir }}/state.sqlite`.
 
 `config.default_date_format` is a plain string. It is not a template. The default is `%Y-%m-%d`. It formats mtime and ctime in `scan files`. The stored timestamps used by variables stay UTC ISO-8601.
 
@@ -24,8 +24,8 @@ These `config` keys are rendered in order. After each one, a relative result is 
 
 ## Other paths
 
-`inputs.path` uses this same language, with the profile scope. A relative result is resolved from `__root_dir__`.
+`inputs.path` uses this same language, with the profile scope. A relative result is resolved from `__config__.root_dir`.
 
-`kind_overrides_config` uses it too. For that render, the scope also has `__kind__` and `__input__.path`. `__input__.path` is the absolute input directory. A relative result is resolved from `__root_dir__`. Those two names are not part of the general profile scope, so an input path cannot read them.
+`kind_overrides_config` uses it too. For that render, the scope also has `__match__.kind` and `__input__.path`. `__input__.path` is the absolute input directory. A relative result is resolved from `__config__.root_dir`. Those two names are not part of the general profile scope, so an input path cannot read them.
 
 The names available in the profile scope are listed in [Variable names](../reference/variable-names.md).

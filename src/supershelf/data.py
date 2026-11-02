@@ -8,14 +8,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from supershelf.constants import INTERNAL_NAMES, LOGGER_NAME, VAR_DATE
+from supershelf.constants import LOGGER_NAME, VAR_DATE
 from supershelf.errors import SupershelfError, VarConfigError
 from supershelf.kind_file import KindFiles, KindTable
 from supershelf.match import Matcher
 from supershelf.profile import ShelfProfile
 from supershelf.runs import ResolvedWalk, ShelfRuns
 from supershelf.scan import InputScanResult
-from supershelf.var_schema import VarCatalog
+from supershelf.var_schema import VarCatalog, reserved_var_name
 from supershelf.vars import VarPlan
 
 
@@ -605,7 +605,7 @@ def _visible_by_kind(resolved: tuple[_Resolved, ...]) -> dict[tuple[str, str], t
     for item in resolved:
         names = found.setdefault((item.profile, item.kind), set())
         for name in item.values:
-            if name in INTERNAL_NAMES:
+            if reserved_var_name(name):
                 continue
             names.add(name)
     return {key: tuple(sorted(names)) for key, names in found.items()}
@@ -659,7 +659,7 @@ def _is_var(catalog: VarCatalog, name: str) -> bool:
 
 
 def _reject_internal(name: str, label: str) -> None:
-    if name not in INTERNAL_NAMES:
+    if not reserved_var_name(name):
         return
     raise VarConfigError(
         f"{label} cannot select {name}",

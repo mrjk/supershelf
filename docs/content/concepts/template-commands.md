@@ -2,7 +2,7 @@
 
 Variable templates can call these commands. They are registered on every profile. A user module cannot replace these names. See [Modules](modules.md).
 
-A miss raises `VarCandidateError`. That fails the current candidate only, so the next string in the list can run. The call needs parentheses. `pdf_cdate` without `()` is the command object, not the date.
+A miss raises `VarCandidateError`. That fails the current candidate only, so the next string in the list can run. The call needs parentheses.
 
 ## regex_time_var
 
@@ -22,26 +22,14 @@ A miss raises `VarCandidateError`. That fails the current candidate only, so the
 {{ regex_replace(account, "[0-9]{4}$", "") }}
 ```
 
-## file
-
-`file("ctime")` and `file("mtime")` return the same UTC ISO-8601 timestamps as `__ctime__` and `__mtime__`. Any other argument fails the candidate. The result includes the time. It is not rewritten to `YYYY-MM-DD`, so it does not satisfy `__date__` by itself.
-
-## pdf_cdate and pdf_mdate
-
-`pdf_cdate()` and `pdf_mdate()` read the PDF creation and modification dates. The result is `YYYY-MM-DD`. A file that is not a PDF, a missing date, or an unreadable file fails the candidate.
-
-The file is opened only when a candidate calls one of these. Both dates for one file hash are read once for that profile. Another profile in the same command reads the file again. A failed read is cached too, so a later candidate in that profile does not open the file again.
-
-`meta()` reads other fields from the file. See [Limits](limits.md).
-
 ## meta
 
 `meta(driver, field)` returns one metadata field. `field` may be omitted only for a driver whose only result is text, such as `pdftotext`.
 
 ```jinja
-{{ meta("fs", "name") }}
+{{ meta("pdf", "creation_date") }}
 {{ meta("pdf", "author") }}
 {{ meta("pdftotext") }}
 ```
 
-A disabled driver, a file the driver does not accept, a missing field, or a tool failure fails that candidate. The next string in the list can run. `pdf_cdate()` and `pdf_mdate()` do not use this cache.
+PDF dates are `creation_date` and `modification_date`. Both are `YYYY-MM-DD`. File strings are `__file__` fields, not a driver. A disabled driver, a file the driver does not accept, a missing field, or a tool failure fails that candidate. The next string in the list can run. A cache miss can create `database_file`.

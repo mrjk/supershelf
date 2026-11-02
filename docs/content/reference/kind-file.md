@@ -74,7 +74,7 @@ A name under `vars` must match `[A-Za-z_][A-Za-z0-9_]*`. TOML rejects a duplicat
 
 ## Names
 
-A row must not set an internal name. `__date__` is allowed. `__kind__` is not.
+A row must not set a name that starts with `__`, except `__date__`. `__match__.kind` is not a column.
 
 Two rows with the same path: a warning, the first row is kept, and the later row stays in the file.
 

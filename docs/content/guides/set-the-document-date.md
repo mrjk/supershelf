@@ -1,6 +1,6 @@
 # Set the document date
 
-`__date__` is the document date. When it is set, the value is a calendar date `YYYY-MM-DD`. An output layout can slice that string, for example `{{ __date__[0:4] }}`. A layout that uses `__date__` fails when `__date__` was omitted. See [Output](../concepts/output.md).
+`__date__` is the document date. When it is set, the value is a calendar date `YYYY-MM-DD`. A layout can read `{{ __date__.Y }}`, `{{ __date__.m }}`, and `{{ __date__.d }}` (`%Y`, `%m`, and `%d`). `{{ __date__ }}` is the full date. A layout that uses `__date__` fails when `__date__` was omitted. See [Output](../concepts/output.md).
 
 The commands used below are documented in [Template commands](../concepts/template-commands.md).
 
@@ -12,9 +12,9 @@ Put the fallback list on `default_vars`, then let a rule try its own captured da
     [default_vars]
     __date__ = [
       '{{ regex_time_var(date, "%Y%m%d") }}',
-      '{{ pdf_cdate() }}',
-      '{{ pdf_mdate() }}',
-      '{{ file("ctime") }}',
+      '{{ meta("pdf", "creation_date") }}',
+      '{{ meta("pdf", "modification_date") }}',
+      '{{ __file__.ctime }}',
     ]
 
     [[match_rules]]
@@ -35,9 +35,9 @@ Put the fallback list on `default_vars`, then let a rule try its own captured da
     default_vars:
       __date__:
         - '{{ regex_time_var(date, "%Y%m%d") }}'
-        - '{{ pdf_cdate() }}'
-        - '{{ pdf_mdate() }}'
-        - '{{ file("ctime") }}'
+        - '{{ meta("pdf", "creation_date") }}'
+        - '{{ meta("pdf", "modification_date") }}'
+        - '{{ __file__.ctime }}'
 
     match_rules:
       - name: bank2000_statement
@@ -51,9 +51,9 @@ Put the fallback list on `default_vars`, then let a rule try its own captured da
 
 `regex_time_var` reads the string already stored as `date` and returns `YYYY-MM-DD`. For `REL_20260425_ab12cd34.pdf` that is `2026-04-25`. The rule list tries that first. `{{ __date__ }}` reads the string the earlier layer kept. It does not run the earlier candidate list again.
 
-`pdf_cdate()` and `pdf_mdate()` read PDF info and also return `YYYY-MM-DD`. The file is opened only when a candidate calls one of them.
+`meta("pdf", "creation_date")` and `meta("pdf", "modification_date")` return `YYYY-MM-DD`. The file is opened only when a candidate calls `meta()`.
 
-`file("ctime")` returns the stored UTC timestamp, such as `2026-04-25T16:28:00+00:00`. That text is not `YYYY-MM-DD`, so the `__date__` check fails this candidate. In the list above it is the last `default_vars` candidate, so that layer ends. On its own it does not become `__date__`. `file("mtime")` is the same kind of timestamp.
+`{{ __file__.ctime }}` is the stored UTC timestamp, such as `2026-04-25T16:28:00+00:00`. That text is not `YYYY-MM-DD`, so the `__date__` check fails this candidate. In the list above it is the last `default_vars` candidate, so that layer ends. On its own it does not become `__date__`. `{{ __file__.mtime }}` is the same kind of timestamp.
 
 A `__date__` candidate that renders to anything else fails, and the next candidate is tried. If every candidate in that layer misses, the earlier value stays. When no layer sets `__date__`, it is omitted and the command continues. The same rule applies to every other variable. The filename does not set `__date__`. `mandatory: true` stops the file when the value is still unset after the last layer.
 

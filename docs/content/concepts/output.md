@@ -41,9 +41,9 @@ A file has to pass `kinds` and `when`, and its record status has to be `unchange
 
 `driver` defaults to `file`.
 
-`path` is a profile path template, rendered once. A relative path resolves from `__root_dir__`. The directory is created only on a real write.
+`path` is a profile path template, rendered once. A relative path resolves from `__config__.root_dir`. The directory is created only on a real write.
 
-`layout` is Jinja. Omitted, it is `{{ __file_path__ }}`, so the input-relative path is kept. The rendered text is split on `/`. A segment that is empty, `.`, or `..` stops the command. An absolute path stops the command. The result has to stay inside `path`. `{{ __file_ext__ }}` is the last suffix. `{{ __date__[0:4] }}` is the year when `__date__` is set. A layout that uses `__date__` fails when `__date__` was omitted.
+`layout` is Jinja. Omitted, it is `{{ __file__.path }}`, so the input-relative path is kept. The rendered text is split on `/`. A segment that is empty, `.`, or `..` stops the command. An absolute path stops the command. The result has to stay inside `path`. `{{ __file__.ext }}` is the last suffix. `{{ __date__ }}` is `YYYY-MM-DD`. `Y`, `m`, and `d` are `%Y`, `%m`, and `%d`. A layout that uses `__date__` fails when `__date__` was omitted.
 
 `operation` is `copy`, `symlink`, or `hardlink`. Omitted, it is `copy`. `copy` keeps file metadata. `symlink` points at the absolute source path. `hardlink` links that path. A cross-device hardlink stops the command. The tip says to use `copy`.
 

@@ -15,9 +15,9 @@ def test_render_allows_spaces_inside_braces() -> None:
 
 
 def test_render_reads_dotted_dict_keys() -> None:
-    scope = {"__config_data__": {"config": {"root_dir": "data"}}}
+    scope = {"__profile__": {"document": {"config": {"root_dir": "data"}}}}
 
-    assert Template(scope).render("{{ __config_data__.config.root_dir }}") == "data"
+    assert Template(scope).render("{{ __profile__.document.config.root_dir }}") == "data"
 
 
 def test_render_does_not_render_substituted_text_again() -> None:

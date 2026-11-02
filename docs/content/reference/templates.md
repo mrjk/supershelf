@@ -7,8 +7,8 @@ Supershelf has two template languages. Path settings use the small language. Var
 Used by `config.root_dir`, `config.database_file`, `config.cache_file`, `inputs.path`, and each `kind_overrides_config` entry.
 
 ```text
-{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite
-{{ __config_data__.config.profile }}
+{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite
+{{ __profile__.document.config.profile }}
 ```
 
 - Replaces `{{ name }}` and `{{ name.key }}` once.
@@ -32,7 +32,8 @@ Bank2000
 ```
 
 - Jinja, with strict undefined names and `autoescape` off.
-- The result must be a string.
+- The result must be a string. A namespace with no field fails that candidate.
+- `{{ __date__ }}` is `YYYY-MM-DD`. `Y`, `m`, and `d` are `%Y`, `%m`, and `%d`.
 - An unknown name fails that candidate. The next candidate in the list can run.
 - A syntax error stops the command when the template is loaded.
 - Each distinct source is compiled once for that profile. Another profile in the same command compiles it again.

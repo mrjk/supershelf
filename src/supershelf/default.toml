@@ -1,19 +1,19 @@
 [config]
 profile = "default"
 default_date_format = "%Y-%m-%d"
-root_dir = "{{ __profile_dir__ }}"
-database_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
-cache_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+root_dir = "{{ __profile__.dir }}"
+database_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite"
+cache_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache"
 record_identity = "path"
 kind_overrides_mode = "auto"
 # kind_overrides_date_format is unset (None) and falls back to default_date_format
 # var_modules is unset (None): no modules
 kind_overrides_sep = ","
 kind_overrides_config = [
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv",
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml",
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml",
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml",
 ]
 input_depth = 0
 input_follow_symlinks = true

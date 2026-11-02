@@ -30,7 +30,7 @@ glob = "**"
 _BOOKS = """
 [[outputs]]
 name = "books"
-path = "{{ __root_dir__ }}/output/books"
+path = "{{ __config__.root_dir }}/output/books"
 """
 
 
@@ -120,7 +120,7 @@ def test_yaml_bool_when_stops(
     (inbox / "a.pdf").write_bytes(b"bank-2000")
     (tmp_path / "profile.work.yaml").write_text(
         "inputs:\n  - path: inbox\nmatch_rules:\n  - name: bill\n    glob: '**'\n"
-        "outputs:\n  - name: books\n    path: '{{ __root_dir__ }}/output/books'\n    when: true\n",
+        "outputs:\n  - name: books\n    path: '{{ __config__.root_dir }}/output/books'\n    when: true\n",
         encoding="utf-8",
     )
     app = App(parse=False)
@@ -184,7 +184,7 @@ def test_preview_and_dry_run_write_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _isolate(monkeypatch, tmp_path)
-    _write(tmp_path, extra=_BOOKS + 'layout = "{{ vendor }}/{{ __file_name__ }}"\n')
+    _write(tmp_path, extra=_BOOKS + 'layout = "{{ vendor }}/{{ __file__.name }}"\n')
     app = App(parse=False)
     app.dispatch(["record", "run"])
     capsys.readouterr()
@@ -205,7 +205,7 @@ def test_run_copies_and_second_run_is_unchanged(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _isolate(monkeypatch, tmp_path)
-    inbox = _write(tmp_path, extra=_BOOKS + 'layout = "{{ vendor }}/{{ __file_name__ }}"\n')
+    inbox = _write(tmp_path, extra=_BOOKS + 'layout = "{{ vendor }}/{{ __file__.name }}"\n')
     app = App(parse=False)
     app.dispatch(["record", "run"])
     capsys.readouterr()
@@ -385,12 +385,12 @@ def test_two_outputs_cannot_share_a_destination(
     extra = """
 [[outputs]]
 name = "books"
-path = "{{ __root_dir__ }}/output/books"
+path = "{{ __config__.root_dir }}/output/books"
 layout = "same.pdf"
 
 [[outputs]]
 name = "cards"
-path = "{{ __root_dir__ }}/output/books"
+path = "{{ __config__.root_dir }}/output/books"
 layout = "same.pdf"
 """
     _write(tmp_path, extra=extra)
@@ -464,7 +464,7 @@ def test_when_template_casts_bool_words_and_rejects_other_text(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _isolate(monkeypatch, tmp_path)
-    _write(tmp_path, extra=_BOOKS + "when = '{{ __kind__ == \"bill\" }}'\n")
+    _write(tmp_path, extra=_BOOKS + "when = '{{ __match__.kind == \"bill\" }}'\n")
     app = App(parse=False)
     app.dispatch(["record", "run"])
     capsys.readouterr()
@@ -472,7 +472,7 @@ def test_when_template_casts_bool_words_and_rejects_other_text(
     assert "true" in capsys.readouterr().out
     path = tmp_path / "profile.work.toml"
     text = path.read_text(encoding="utf-8")
-    path.write_text(text.replace('{{ __kind__ == "bill" }}', "{{ vendor }}"), encoding="utf-8")
+    path.write_text(text.replace('{{ __match__.kind == "bill" }}', "{{ vendor }}"), encoding="utf-8")
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run"])
     assert caught.value.code == 1

@@ -6,7 +6,7 @@ Each item is a mapping. Unknown keys stop the command. The fields are `path`, `i
 
 ## The path
 
-`path` is required and uses the [path template language](paths.md). A relative path is resolved from `__root_dir__`.
+`path` is required and uses the [path template language](paths.md). A relative path is resolved from `__config__.root_dir`.
 
 If the path exists and is not a directory, the command stops. If the directory is missing, Supershelf logs a warning and skips that input. The input keeps its 1-based position, so a later input is still index 2 when the first was skipped. The skipped input adds no rows.
 
