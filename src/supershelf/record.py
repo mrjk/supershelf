@@ -777,13 +777,19 @@ class _ProfileRun:
         ignored: set[tuple[str, str]] = set()
         kept: set[tuple[str, str]] = set()
         database_path = self.shelf.database_file.resolve()
+        cache_path = self.shelf.cache_file.resolve()
         for result in scans:
             input_path = str(result.config.path)
             for found in result.results:
                 kept_paths.append(found.path)
                 location = (input_path, found.path)
-                if found.absolute.resolve() == database_path:
+                absolute = found.absolute.resolve()
+                if absolute == database_path:
                     self._logger.warning("Skipping database file %s", database_path)
+                    ignored.add(location)
+                    continue
+                if absolute == cache_path:
+                    self._logger.warning("Skipping cache file %s", cache_path)
                     ignored.add(location)
                     continue
                 kept.add(location)
@@ -792,7 +798,8 @@ class _ProfileRun:
         def accept(found: InputFile) -> bool:
             if not selector.matches(found.path):
                 return False
-            return found.absolute.resolve() != database_path
+            absolute = found.absolute.resolve()
+            return absolute != database_path and absolute != cache_path
 
         walk = ShelfRuns([self.shelf]).resolved(
             None,

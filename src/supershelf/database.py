@@ -666,59 +666,6 @@ class ShelfDatabase:
             connection.rollback()
             raise self._write_error(exc) from exc
 
-    def read_content_meta(
-        self,
-        digest: str,
-        driver: str,
-        options_key: str,
-    ) -> tuple[str | None, str | None] | None:
-        """One cache row, or None when the table or the row is absent."""
-        if self._connection is None or not self._has_table("content_meta"):
-            return None
-        row = self._connection.execute(
-            """
-            SELECT payload, error FROM content_meta
-            WHERE hash = ? AND driver = ? AND options_key = ?
-            """,
-            (digest, driver, options_key),
-        ).fetchone()
-        if row is None:
-            return None
-        payload = None if row["payload"] is None else str(row["payload"])
-        error = None if row["error"] is None else str(row["error"])
-        return payload, error
-
-    def store_content_meta(
-        self,
-        digest: str,
-        driver: str,
-        options_key: str,
-        payload: str | None,
-        error: str | None,
-        extracted_at: str,
-    ) -> None:
-        """Insert a cache row. An existing row is left as it is."""
-        with self._transaction() as connection:
-            self._ensure_hash(digest)
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO content_meta
-                  (hash, driver, options_key, payload, error, extracted_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (digest, driver, options_key, payload, error, extracted_at),
-            )
-
-    def _has_table(self, name: str) -> bool:
-        connection = self._connection
-        if connection is None:
-            return False
-        row = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (name,),
-        ).fetchone()
-        return row is not None
-
     def _apply_change(
         self,
         change: DatabaseChange,

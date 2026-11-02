@@ -2,9 +2,9 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` stays unused. This step does not write an output tree. Behavior 5 does.
+`supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` is the metadata cache in behavior 2.3.3. This step does not write an output tree. Behavior 5 does.
 
-`scan vars`, `record run`, `data feed`, and `data show` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `scan inspect`, `schema`, `profiles`, and `data prune` do not. `record run` also creates it when a document row would change. `data feed` and `data show` do not insert a document or an event. A feed prompt answer of no can leave the cache, and a schema 1 file already migrated to schema 2.
+`scan vars`, `record run`, `data feed`, and `data show` create `cache_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `scan inspect`, `schema`, `profiles`, `data prune`, `record status`, and `output` do not. `record run` creates `database_file` when a document row would change. `data feed` and `data show` do not insert a document or an event. A feed prompt answer of no leaves `cache_file` in place and does not open the sqlite file.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. `record` does not call the kind-file commit, so it does not create or append a kind file.
 

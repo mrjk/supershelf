@@ -1,4 +1,4 @@
-"""content_meta. Tools are faked. sqlite is the real file."""
+"""Metadata cache file. Tools are faked. The JSON file is real."""
 
 import json
 import sqlite3
@@ -28,6 +28,10 @@ def _values(plan: VarPlan, file: InputFile) -> dict[str, str]:
 
 def _database(root: Path) -> Path:
     return root / "profile.work.sqlite"
+
+
+def _cache(root: Path) -> Path:
+    return root / "profile.work.cache"
 
 
 def _author_document() -> dict[str, object]:
@@ -98,7 +102,21 @@ def _count(path: Path, table: str) -> int:
     return int(row[0])
 
 
-def test_version_one_migrates_when_the_cache_misses(tmp_path: Path) -> None:
+def _stored(root: Path) -> dict[str, object]:
+    document = json.loads(_cache(root).read_text(encoding="utf-8"))
+    assert document["version"] == 1
+    entries = document["entries"]
+    assert len(entries) == 1
+    drivers = next(iter(entries.values()))
+    assert len(drivers) == 1
+    options = next(iter(drivers.values()))
+    assert len(options) == 1
+    row = next(iter(options.values()))
+    assert isinstance(row, dict)
+    return row
+
+
+def test_cache_miss_does_not_migrate_version_one(tmp_path: Path) -> None:
     database = _database(tmp_path)
     _version_one(database)
     path = tmp_path / "scan.pdf"
@@ -106,15 +124,14 @@ def test_version_one_migrates_when_the_cache_misses(tmp_path: Path) -> None:
     runner = _runner()
     plan = _plan(_author_document(), tmp_path, runner)
     assert _values(plan, _file("scan.pdf", path))["author"] == "Ada"
-    assert _version(database) == "2"
-    assert "content_meta" in _table_names(database)
+    assert _version(database) == "1"
+    assert "content_meta" not in _table_names(database)
     assert _count(database, "documents") == 1
     assert _count(database, "events") == 1
-    raw = sqlite3.connect(database)
-    row = raw.execute("SELECT payload, error FROM content_meta").fetchone()
-    raw.close()
-    assert row[1] is None
-    assert "Ada" in row[0]
+    row = _stored(tmp_path)
+    assert row["error"] is None
+    assert isinstance(row["payload"], str)
+    assert "Ada" in row["payload"]
     assert len(_tool_calls(runner)) == 1
 
 
@@ -126,6 +143,7 @@ def test_dry_run_does_not_create_a_missing_database(tmp_path: Path) -> None:
     assert _values(plan, _file("scan.pdf", path))["author"] == "Ada"
     assert len(_tool_calls(runner)) == 1
     assert _database(tmp_path).exists() is False
+    assert _cache(tmp_path).exists() is False
 
 
 def test_dry_run_does_not_migrate_version_one(tmp_path: Path) -> None:
@@ -141,24 +159,23 @@ def test_dry_run_does_not_migrate_version_one(tmp_path: Path) -> None:
     assert "content_meta" not in _table_names(database)
     assert _count(database, "documents") == 1
     assert _count(database, "events") == 1
+    assert _cache(tmp_path).exists() is False
 
 
-def test_same_hash_reads_the_row_and_does_not_spawn(tmp_path: Path) -> None:
+def test_same_hash_reads_the_entry_and_does_not_spawn(tmp_path: Path) -> None:
     path = tmp_path / "scan.pdf"
     path.write_bytes(b"%PDF-1.4\n")
     first = _runner()
     plan = _plan(_author_document(), tmp_path, first)
     assert _values(plan, _file("scan.pdf", path, digest="abc"))["author"] == "Ada"
-    database = _database(tmp_path)
-    assert _count(database, "documents") == 0
-    assert _count(database, "events") == 0
-    assert _count(database, "content_meta") == 1
+    assert _database(tmp_path).exists() is False
+    assert _stored(tmp_path)["payload"]
     second = _runner()
     again = _plan(_author_document(), tmp_path, second)
     other = _file("copy.pdf", path, digest="abc")
     assert _values(again, other)["author"] == "Ada"
     assert _tool_calls(second) == []
-    assert _count(database, "content_meta") == 1
+    assert len(json.loads(_cache(tmp_path).read_text(encoding="utf-8"))["entries"]) == 1
 
 
 def test_stored_error_does_not_spawn_again(tmp_path: Path) -> None:
@@ -169,17 +186,15 @@ def test_stored_error_does_not_spawn_again(tmp_path: Path) -> None:
     document = {"default_vars": {"author": ['{{ meta("exiftool", "PDF:Author") }}', "UNKNOWN"]}}
     plan = _plan(document, tmp_path, first)
     assert _values(plan, _file("scan.pdf", path))["author"] == "UNKNOWN"
-    database = _database(tmp_path)
-    raw = sqlite3.connect(database)
-    row = raw.execute("SELECT payload, error FROM content_meta").fetchone()
-    raw.close()
-    assert row[0] is None
-    assert row[1]
+    row = _stored(tmp_path)
+    assert row["payload"] is None
+    assert row["error"]
     second = _runner()
     second.codes["exiftool"] = 2
     again = _plan(document, tmp_path, second)
     assert _values(again, _file("other.pdf", path, digest="abc"))["author"] == "UNKNOWN"
     assert _tool_calls(second) == []
+    assert _database(tmp_path).exists() is False
 
 
 def test_profile_without_meta_leaves_sqlite_absent(tmp_path: Path) -> None:
@@ -189,6 +204,7 @@ def test_profile_without_meta_leaves_sqlite_absent(tmp_path: Path) -> None:
     plan = _plan({"default_vars": {"title": "Note"}}, tmp_path, runner)
     assert _values(plan, _file("note.txt", path))["title"] == "Note"
     assert _database(tmp_path).exists() is False
+    assert _cache(tmp_path).exists() is False
 
 
 def test_a_rejected_pdf_read_writes_nothing(tmp_path: Path) -> None:
@@ -209,3 +225,4 @@ def test_a_rejected_pdf_read_writes_nothing(tmp_path: Path) -> None:
     assert values["name"] == "note.txt"
     assert values["author"] == "NONE"
     assert _database(tmp_path).exists() is False
+    assert _cache(tmp_path).exists() is False

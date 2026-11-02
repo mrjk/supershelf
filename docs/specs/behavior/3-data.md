@@ -8,8 +8,9 @@ Behavior. Index: [README](../README.md).
   There is no --quick and no path filter.
 - It does not read or write documents, events, or vars_json, and it does not append a record event.
   Resolution does not read vars_json. Behavior 4 owns those tables.
-  cache_file stays unused. content_meta is not that path.
+  cache_file is the metadata cache in 2.3.3. data feed and data show may write it. data prune does not.
   It does not create an output tree.
+  It does not create or migrate the sqlite file.
 - Profile selection is the same as the other commands: --config and --profile.
 - Say var, not field. A field is a match-rule slot, such as regex or filename_glob.
   The feed flag is --var.
@@ -45,16 +46,16 @@ Behavior. Index: [README](../README.md).
 - Duplicate path rows: update the first, leave the later row, and keep the warning from 2.3.2.
   A rewrite must not drop that later row.
 - --dry-run prints the same summary the prompt would show, asks nothing, and writes nothing.
-  It does not create the sqlite file, and it does not migrate it.
+  It does not create the sqlite file, and it does not migrate it. It does not create cache_file.
 - A resolve error writes no kind file.
-  A content_meta row already stored during that resolve stays.
+  A cache entry already stored during that resolve stays.
 - data feed and data prune edit kind-file cells and columns only.
   Those writes are not database rows.
-  Feed resolves like scan vars. When a candidate calls meta(), feed uses the content_meta rules in 2.3.3.
+  Feed resolves like scan vars. When a candidate calls meta(), feed uses the cache rules in 2.3.3.
   That cache write happens while the preview is computed, before Continue?
-  A no leaves the cache in place, including a schema 1 file migrated to schema 2, and does not edit the kind file.
+  A no leaves cache_file in place and does not edit the kind file. It does not create or migrate the sqlite file.
   The prompt guards kind-file edits only.
-  Prune does not render templates, so it does not open the database.
+  Prune does not render templates, so it does not open the cache or the database.
 - A feed or prune can change what the next record run resolves.
   That run may append a vars event. data does not write the event.
   A kind cell filled by feed is later labeled kind:<path>, not rule:<name>.
@@ -66,7 +67,7 @@ Behavior. Index: [README](../README.md).
   --force writes without asking.
   The prompt names which kinds, vars, or purges are enabled.
 - data show does not write kind files and does not prompt.
-  It may write content_meta, as in 3.4.
+  It may write cache_file, as in 3.4.
 
 ### Cases
 
@@ -80,9 +81,9 @@ Not a terminal. `data feed` with no `--force` and no `--dry-run` stops and tells
 
 Documents left alone. `data feed` fills an empty `vendor` cell. No document row and no event is written. The next `record run` may append `vars`. The new source label is `kind:<path>`.
 
-Cache before the prompt. A candidate calls `meta()` and `content_meta` misses. The preview creates or migrates the sqlite file and inserts the cache row, then asks `Continue?`. No leaves that cache and does not edit the kind file.
+Cache before the prompt. A candidate calls `meta()` and the cache misses. The preview creates `cache_file` and stores the entry, then asks `Continue?`. No leaves that cache and does not edit the kind file. The sqlite file is not created.
 
-Dry run. `data feed --dry-run` prints the summary and does not create, migrate, or insert `content_meta`.
+Dry run. `data feed --dry-run` prints the summary and does not create `cache_file`.
 
 ## 3.2 data feed
 
@@ -198,8 +199,8 @@ Missing word. `--missing` drops a kind-file row for a path that is not matched a
 - Prints the live resolve. It does not read documents, events, or vars_json.
   It does not write kind files and it does not prompt.
   A recorded document is not required. A file that was never recorded is still shown.
-  When a candidate calls meta(), show uses the content_meta rules in 2.3.3.
-  A real show may create or migrate the sqlite file. --dry-run does not.
+  When a candidate calls meta(), show uses the cache rules in 2.3.3.
+  A real show may create cache_file. --dry-run does not. It does not create the sqlite file.
 - One table per profile and kind, because each kind has its own columns.
   It does not return one merged row list.
   A title line names the profile, the kind, and the kind file path when there is one.

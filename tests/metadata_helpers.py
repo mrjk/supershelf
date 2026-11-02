@@ -8,6 +8,7 @@ from pathlib import Path
 from supershelf.constants import (
     FIELD_DIR,
     FIELD_NAME,
+    KEY_CACHE_FILE,
     KEY_DATABASE_FILE,
     KEY_ROOT_DIR,
     VAR_CONFIG,
@@ -84,6 +85,7 @@ def var_plan(
         profile[FIELD_DIR] = str(root)
     if database:
         config[KEY_DATABASE_FILE] = str(root / "profile.work.sqlite")
+        config[KEY_CACHE_FILE] = str(root / "profile.work.cache")
     full: dict[str, object] = {VAR_PROFILE: profile, VAR_CONFIG: config}
     if scope:
         for key, value in scope.items():

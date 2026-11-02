@@ -1,4 +1,4 @@
-"""Metadata for one profile. The bag is checked before sqlite."""
+"""Metadata for one profile. The bag is checked before the cache file."""
 
 from __future__ import annotations
 
@@ -52,14 +52,14 @@ class MetadataSession(FieldCache):
         registry: MetadataRegistry,
         runner: CommandRunner,
         *,
-        database: Path | None = None,
+        cache: Path | None = None,
         dry_run: bool = False,
     ) -> None:
         self._registry = registry
         self._runner = runner
         self._logger = logging.getLogger(LOGGER_NAME)
         self._rows: dict[tuple[str, str, str], CachedMeta] = {}
-        self._store = ContentMetaCache(database, dry_run=dry_run)
+        self._store = ContentMetaCache(cache, dry_run=dry_run)
         self._mime: dict[str, str | None] = {}
         self._file_missing = False
 
@@ -114,7 +114,7 @@ class MetadataSession(FieldCache):
         driver_name: str,
         options_key: str,
     ) -> tuple[str | None, str | None] | None:
-        """A sqlite row, after the in-memory bag misses."""
+        """A cache entry, after the in-memory bag misses."""
         return self._store.read(digest, driver_name, options_key)
 
     def remember_loaded(
@@ -124,7 +124,7 @@ class MetadataSession(FieldCache):
         options_key: str,
         found: CachedMeta,
     ) -> None:
-        """Keep a row that was already stored. This does not write sqlite."""
+        """Keep an entry that was already stored. This does not write the cache file."""
         self._rows[(digest, driver_name, options_key)] = found
 
     def remember_success(

@@ -1,6 +1,7 @@
 """data feed, data prune, and data show."""
 
 import io
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -491,12 +492,14 @@ glob = "**"
     assert kind.read_text(encoding="utf-8") == original
     raw = sqlite3.connect(database)
     version = raw.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0]
-    cached = raw.execute("SELECT COUNT(*) FROM content_meta").fetchone()[0]
+    tables = {row[0] for row in raw.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     documents = raw.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
     raw.close()
-    assert version == "2"
-    assert cached == 1
+    assert version == "1"
+    assert "content_meta" not in tables
     assert documents == 1
+    cache = json.loads((tmp_path / "profile.work.cache").read_text(encoding="utf-8"))
+    assert "Bank2000" in json.dumps(cache)
 
 
 def test_dry_run_creates_nothing(
@@ -535,6 +538,7 @@ glob = "**"
     assert "1 cell" in err
     assert kind.read_text(encoding="utf-8") == original
     assert (tmp_path / "profile.work.sqlite").exists() is False
+    assert (tmp_path / "profile.work.cache").exists() is False
     assert list(tmp_path.glob("*.sqlite*")) == []
 
 
@@ -775,5 +779,6 @@ glob = "**"
     _dispatch(["data", "show"])
 
     assert kind.read_text(encoding="utf-8") == "PATH,author\na.pdf,\n"
-    assert _count(tmp_path / "profile.work.sqlite", "content_meta") == 1
-    assert _count(tmp_path / "profile.work.sqlite", "documents") == 0
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+    cache = json.loads((tmp_path / "profile.work.cache").read_text(encoding="utf-8"))
+    assert "Bank2000" in json.dumps(cache)

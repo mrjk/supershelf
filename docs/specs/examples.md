@@ -16,8 +16,8 @@ config:
   root_dir: "{{ __profile__.dir }}" # Default. Directory of the config file.
 
   # Default paths
-  database_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite" # 4. record run creates this when a row would change. scan vars and record run also create it when meta() misses the cache. --dry-run does not. scan files and scan kinds do not.
-  cache_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache" # Rendered. Nothing writes it.
+  database_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite" # 4. record run creates this when a row would change. A meta() miss does not. --dry-run does not. scan files and scan kinds do not.
+  cache_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache" # 2.3.3. JSON metadata cache. scan vars, record run, data feed, and data show create it when meta() misses. --dry-run does not.
   record_identity: path # 4.2. Bare path means path then hash. Bare hash means hash then path. A list does not expand. Omitted uses path.
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See 2.3.1.
   #   - my_package.supershelf_vars

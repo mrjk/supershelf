@@ -4,7 +4,7 @@ Architecture. Index: [README](../README.md).
 
 Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `2`. Foreign keys are on. Rows are never deleted. `ShelfDatabase.append_output` appends an output event. Behavior 5 is the command that calls it.
 
-A read accepts schema `1` and schema `2`. Schema `1` has no `content_meta`. A read does not migrate it, and a cache read is a miss. A write migrates schema `1` to schema `2`: create `content_meta`, then set `schema_version` to `2`. Documents and events stay. Any other version is rejected. The tip names `database_file`.
+A read accepts schema `1` and schema `2`. Schema `1` has no `content_meta`. A read does not migrate it. A write migrates schema `1` to schema `2`: create `content_meta`, then set `schema_version` to `2`. Documents and events stay. Any other version is rejected. The tip names `database_file`. `content_meta` is not a cache. A metadata miss does not open this file. Behavior 2.3.3 stores payloads in `cache_file`.
 
 ## 3.1 Tables
 
@@ -38,7 +38,7 @@ A partial unique index on `(input_path, path)` applies where `presence` is not `
 
 Indexes: `events.hash`, `events.destination`.
 
-`content_meta` is one parsed payload per content hash, driver name, and `options_key`. Behavior 2.3.3. `hash` references `contents`. `payload` is raw tool stdout, or the `pdf` driver's JSON map. `error` is set when the tool or the parse failed, and `payload` is then null. `extracted_at` is UTC ISO-8601. A hash may exist here before any document. This table does not insert a document or an event. A driver that does not accept the file does not write a row. There is no `fs` driver.
+`content_meta` is unused. Schema 2 still creates it, and a version 1 write still adds it, so old files open. Nothing reads or writes the rows. Columns stay: `hash` references `contents`, `driver`, `options_key`, `payload`, `error`, `extracted_at`. The metadata cache is `cache_file` in behavior 2.3.3. There is no `fs` driver.
 
 `refresh` updates `mtime`, `ctime`, and `input_index` on the document and does not insert an event.
 
@@ -50,7 +50,7 @@ Each binding is `type`, `value`, `display`, and `value_sources`. `value` is the 
 
 ## 3.3 Decision order
 
-The observed set is the walked inputs, then PATH. Documents whose input directory was not walked are left as they are. Documents outside PATH are left as they are. The database file is ignored.
+The observed set is the walked inputs, then PATH. Documents whose input directory was not walked are left as they are. Documents outside PATH are left as they are. The database file and the cache file are ignored.
 
 The list for each document is behavior 4.2. A file reserved in an earlier step cannot be taken later. Inside a step, documents run in id order.
 
@@ -85,7 +85,7 @@ When this profile wrote the previous destination, `ours` is true and the object 
 
 A missing file opened for reading is an empty previous state. The file is not created. A real read of an existing file uses SQLite read-only mode.
 
-`record run` opens for write when a row would change, when the stored identity rule differs and the file already exists, or when `meta()` misses the cache on a real run. `record status` does not. `--dry-run` does not create the file and does not migrate schema `1`. The identity key is updated in the record transaction. A failure rolls that transaction back. The schema created for a new file stays.
+`record run` opens for write when a row would change, or when the stored identity rule differs and the file already exists. `record status` does not. `--dry-run` does not create the file and does not migrate schema `1`. A `meta()` miss does not open the file. The identity key is updated in the record transaction. A failure rolls that transaction back. The schema created for a new file stays.
 
 `RecordConfigError` is a bad `record_identity` word or list, on the flag, the environment variable, the profile, or a match rule. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
 

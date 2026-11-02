@@ -31,6 +31,10 @@ class DatabaseError(SupershelfError):
     """The profile sqlite file cannot be read or written."""
 
 
+class CacheError(SupershelfError):
+    """The profile metadata cache cannot be read or written."""
+
+
 class OutputConfigError(SupershelfError):
     """A bad output item, output module, or literal when. Exit 2."""
 

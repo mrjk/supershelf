@@ -94,7 +94,7 @@ class CachedMeta:
 
 
 class FieldCache:
-    """The session bag extract reads. sqlite is checked after this bag misses."""
+    """The session bag extract reads. The cache file is checked after this bag misses."""
 
     def cached(self, digest: str, driver_name: str, options_key: str) -> CachedMeta | None:
         """The bag entry, or None when this process has not stored it."""
@@ -107,7 +107,7 @@ class FieldCache:
         driver_name: str,
         options_key: str,
     ) -> tuple[str | None, str | None] | None:
-        """A sqlite row as payload and error, or None when the cache misses."""
+        """A cache entry as payload and error, or None when the cache misses."""
         del digest, driver_name, options_key
         return None
 
@@ -118,7 +118,7 @@ class FieldCache:
         options_key: str,
         found: CachedMeta,
     ) -> None:
-        """Keep a row that was already stored. This does not write sqlite."""
+        """Keep an entry that was already stored. This does not write the cache file."""
         del digest, driver_name, options_key, found
 
     def remember_success(

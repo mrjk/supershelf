@@ -25,7 +25,7 @@ from supershelf.constants import (
     FIELD_RULE,
     FIELD_STEM,
     FILE_FIELDS,
-    KEY_DATABASE_FILE,
+    KEY_CACHE_FILE,
     KEY_DEFAULT_VARS,
     KEY_METADATA_DRIVER,
     KEY_VAR_MODULES,
@@ -633,7 +633,7 @@ class VarPlan:
         session = MetadataSession(
             registry,
             tool,
-            database=cls._database_file(profile_scope),
+            cache=cls._cache_file(profile_scope),
             dry_run=dry_run,
         )
         environment.bind_metadata(registry, session)
@@ -647,8 +647,8 @@ class VarPlan:
         return Path(raw)
 
     @staticmethod
-    def _database_file(profile_scope: Mapping[str, Any]) -> Path | None:
-        raw = scope_field(profile_scope, VAR_CONFIG, KEY_DATABASE_FILE)
+    def _cache_file(profile_scope: Mapping[str, Any]) -> Path | None:
+        raw = scope_field(profile_scope, VAR_CONFIG, KEY_CACHE_FILE)
         if not isinstance(raw, str) or not raw:
             return None
         return Path(raw)
