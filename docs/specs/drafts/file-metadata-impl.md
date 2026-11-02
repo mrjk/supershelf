@@ -1,6 +1,8 @@
 # File metadata implementation
 
-Build order for [file-metadata.md](file-metadata.md). That draft is the product rule. This file says which Python to write, in three review slices. Do not implement a later slice in the same change as an earlier one.
+Status: behavior 2.3.3 dropped `fs`, `file()`, `pdf_cdate()`, and `pdf_mdate()`. This file is the old build order. It is not the rule.
+
+Build order for [file-metadata.md](file-metadata.md). The slices below are that old order. Do not implement a later slice in the same change as an earlier one.
 
 Leave `pdf_cdate()`, `pdf_mdate()`, and `file()` on [var_commands.py](../../../src/supershelf/var_commands.py). They keep `_pdf` in [vars.py](../../../src/supershelf/vars.py) `VarPlan._pdf`. They do not read `content_meta`.
 

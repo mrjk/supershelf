@@ -1,6 +1,6 @@
 # 2.3.3 File metadata
 
-Status: the shipped drivers live in [behavior.md](../behavior.md) 2.3.3, and `content_meta` lives in [architecture.md](../architecture.md) section 3. This draft keeps `pdfinfo`, `mutool`, `ffprobe`, `mediainfo`, `zipinfo`, and `strings`.
+Status: behavior 2.3.3 dropped `fs`, `file()`, `pdf_cdate()`, and `pdf_mdate()`. The paragraphs below are the old draft. They are not the rule. The shipped drivers live in [behavior.md](../behavior.md) 2.3.3, and `content_meta` lives in [architecture.md](../architecture.md) section 3. This draft keeps `pdfinfo`, `mutool`, `ffprobe`, `mediainfo`, `zipinfo`, and `strings`.
 
 The goal is to read metadata, and text, from a kept file by calling an external program or a small Python driver. The result is an ordinary variable. There is no `metadata_fields` key.
 

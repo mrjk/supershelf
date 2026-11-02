@@ -35,15 +35,15 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
     - A supershelf.toml in this directory is not a profile source.
   - If none found, fail.
 - Check consistency and prepare:
-  - __profile__ is %PROFILE_NAME when the filename has one.
+  - The profile name is %PROFILE_NAME when the filename has one.
     If config.profile is a different non-empty string, warn that it is ignored.
     The same name does not warn. A blank config.profile is treated as unset.
-  - If the filename has no %PROFILE_NAME, __profile__ is config.profile when that is set, otherwise default.
-  - Write config.profile = __profile__ on the stored dict.
+  - If the filename has no %PROFILE_NAME, the profile name is config.profile when that is set, otherwise default.
+  - Write config.profile to that profile name on the stored dict.
   - If two files resolve to the same profile, warn and keep the first.
 - App is inited:
   - config_list is one or more ShelfConfig:
-    - profile: __profile__
+    - profile: the profile name
     - type: toml or yaml
     - path: config file path
     - config: parsed file contents
@@ -55,41 +55,29 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
 
 ## 2 Profile initialization
 
+Source is who writes a value. Availability is where a template can read it. A name in this step is not a variable a layer can assign, and it is not printed.
+
 - supershelf profiles only lists profile, type, and path. It does not build a ShelfProfile.
 - A command that needs rendered paths, such as scan, creates one ShelfProfile per selected ShelfConfig.
-  - Read config dict:
-    - setup vars:
-      - base:
-        - __profile_name__ = profile name from the loader
-        - __profile__ = alias of __profile_name__
-        - __default_date_format__ = Direct value, not templated. scan files uses it to show mtime and ctime.
-      - template config values in this order:
-        - root_dir
-        - database_file
-        - cache_file
-      - After each value is rendered, a relative path is resolved from __profile_dir__, then stored before the next value is rendered.
-      - Built-in defaults when the key is omitted:
-        - default_date_format = '%Y-%m-%d'
-        - root_dir = "{{ __profile_dir__ }}"
-        - database_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
-        - cache_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
-
-  - User Exposed Var Scope as template. Common values use flat keys. Dot notation remains for inner config, such as __config_data__.
-    # Main
-    - __profile__ # Alias of __profile_name__
-    - __default_date_format__
-    # Core config
-    - __root_dir__
-    - __database_file__
-    - __cache_file__
-    # Profile vars
-    - __profile_name__ # Profile name
-    - __profile_type__
-    - __profile_path__ # Full path of the config file, from /
-    - __profile_dir__ # Full directory of the config file
-    - __profile_file__ # Filename of the config file
-    # Config vars
-    - __config_data__ # Allow access to any config parameter, actually allow to self reference this file.
+- Profile load writes `__profile__` before any path template. Read a field. The object with no field is not a string, so the command stops.
+  - `__profile__.name`: the profile name from section 1. This replaces `__profile__` and `__profile_name__`.
+  - `__profile__.type`: `toml` or `yaml`
+  - `__profile__.path`: absolute path of the config file
+  - `__profile__.dir`: directory of the config file
+  - `__profile__.file`: filename of the config file
+  - `__profile__.document`: the parsed profile file. Dotted keys walk nested mappings. This replaces `__config_data__`.
+- `__config__.date_format` is `config.default_date_format`. It is a plain string, not a template. `scan files` uses it to show mtime and ctime. Omitted, it is `%Y-%m-%d`. It is published before the path templates below.
+- Then render these config keys, in order. After each one, resolve a relative path from `__profile__.dir`, store the absolute path on `__config__`, and publish it before the next template.
+  - `root_dir` becomes `__config__.root_dir`
+  - `database_file` becomes `__config__.database_file`
+  - `cache_file` becomes `__config__.cache_file`
+- Built-in defaults when the key is omitted:
+  - `root_dir = "{{ __profile__.dir }}"`
+  - `database_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite"`
+  - `cache_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache"`
+- Available here: `__profile__` and the `__config__` fields already published. Not available: `__file__`, `__match__`, `__input__`, and `__date__`.
+- This is the scope for `config.root_dir`, `config.database_file`, `config.cache_file`, `inputs.path`, and an output `path`.
+- An old flat name, such as `__root_dir__` or `__profile_dir__`, is unknown and stops the command. There is no alias.
 
 ## 2.1 Scan files
 
@@ -108,7 +96,7 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
 - Each selected profile is scanned on its own. Profiles do not share results.
 - scan files only prints. It does not create the database file or the cache file.
 - For each input, get the path value, and template render it.
-- If that path is relative, resolve it from __root_dir__. Relative input paths are resolved when the input is processed.
+- If that path is relative, resolve it from `__config__.root_dir`. Relative input paths are resolved when the input is processed.
 - The input path must be a valid path. If it exists and is not a directory, that is an error.
 - If the input directory is missing, log a warning and skip that input.
 - Get parameters depth, include, exclude, and follow_symlinks.
@@ -226,12 +214,15 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
     Columns: profile, input, path, kind, rule, vars.
   - input is the 1-based index in that profile's inputs list, same as scan kinds.
   - path is relative to the input directory.
-  - kind is the match-rule kind. rule stays the match rule name. Nothing else may set __kind__.
+  - kind is the match-rule kind. rule stays the match rule name. Nothing else may set the match kind.
   - vars is one cell. Each final key is one line: the name, ": ", then the value.
     File order follows the walk. Inside the cell, the lines are
     regex groups in pattern order, then assignment keys in first-seen order.
-    Internal facts are omitted unless --all is set.
-    A fact replaced by an assignment is printed once, with the final value, in its fact position.
+    `__file__` and `__match__` fields are omitted unless --all is set.
+    With --all, each field is one line. The name is the dotted form, such as `__file__.name`.
+    The source label is `fact`.
+    `__profile__`, `__config__`, and `__input__` are never printed.
+    A regex group replaced by an assignment is printed once, with the final value, in its fact position.
   - Log the same unmatched-file warning as scan kinds, once per file. Do not log it again.
   - -vv logs each kind_overrides_config candidate the first time a kind and input try it.
     A missing path logs that path and the kind. The winning file logs when it is first loaded.
@@ -249,25 +240,28 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
 - Facts and assignments are different sets.
 - Facts are the base scope. An assignment of the same name shadows that fact for later templates and replaces the printed value.
   While a key is being rendered, a reference to itself still sees the previous layer, so the fact stays visible when no earlier assignment set that name.
-- Profile scope from step 2 is a fact. It is available to templates. It is not printed.
-  Kind path templates below add __kind__ and __input__.path for that render only.
-- Internals are facts. They stay in scope for templates. scan vars prints them only with --all:
-  - __kind__: the kind from step 2.2. Nothing else may set it.
-  - __rule_name__: the match rule name
-  - __ctime__ and __mtime__: the stored UTC ISO-8601 timestamps from the walk, not default_date_format
-  - __file_hash__: lowercase sha256
-  - __file_name__ and __file_stem__: InputFile.name and InputFile.stem
-  - __file_ext__: InputFile.suffix without the leading dot. No suffix stores an empty string. archive.tar.gz stores gz.
-  - __file_path__: path relative to the input, with / separators
-  - __file_dir__: directory relative to the input. Empty when the file sits in the input directory
-- The filename does not set __date__. A stem that is a date stays __file_stem__.
+- Source and availability for a variable template:
+  - Step 2 is already in scope: `__profile__` and `__config__`. They are not printed. A layer cannot set those roots.
+  - The walk writes `__file__`. The match writes `__match__`. Both are in scope for variable templates, and for output `when` and `layout`. They are not in path templates. `scan vars` prints their fields only with `--all`.
+  - `__input__` is not in a variable template. Kind-file path templates are the only place that reads it.
+  - `__date__`, regex groups, and other assigned names appear only after the layer that set them.
+- `__file__` fields. Read a field. The object with no field fails that candidate. Empty `.ext` and `.dir` are `""`, which is set.
+  - `__file__.name` and `__file__.stem`: InputFile.name and InputFile.stem. `archive.tar.gz` stores stem `archive.tar`.
+  - `__file__.ext`: the last suffix without the leading dot. No suffix stores `""`. `archive.tar.gz` stores `gz`. A leading dot, as in `.gitignore`, is not a suffix.
+  - `__file__.path`: path relative to the input, with `/` separators
+  - `__file__.dir`: directory relative to the input. Empty when the file sits in the input directory.
+  - `__file__.hash`: lowercase sha256
+  - `__file__.ctime` and `__file__.mtime`: the stored UTC ISO-8601 timestamps from the walk, not `default_date_format`. They are text. They do not satisfy type `date`.
+- `__match__.kind` is the kind from step 2.2. `__match__.rule` is the match rule name. Nothing may set `__match__`. It does not change the rule.
+- The filename does not set `__date__`. A stem that is a date stays `__file__.stem`.
   A profile that wants that date writes a candidate, such as
-  {{ regex_time_var(__file_stem__, __default_date_format__) }}.
+  `{{ regex_time_var(__file__.stem, __config__.date_format) }}`.
+  A PDF date is `{{ meta("pdf", "creation_date") }}` or `{{ meta("pdf", "modification_date") }}`.
   Later layers may replace a date an earlier layer wrote.
-  {{__date__}} in the next layer reads the string the earlier layer kept.
+  `{{ __date__ }}` in the next layer reads the string the earlier layer kept.
 - Named groups from the winning regex are facts. Unnamed groups stay ignored.
-  A group name that starts with __ is a config error before the walk.
-  A group cannot replace an internal or a profile key.
+  A group name that starts with `__` is a config error before the walk.
+  A group cannot be a namespace root.
 - Assignments are the user layers. Later wins on the same key. Each layer is applied before the next one starts.
   Var tables are rendered. The per-file row is stored as text. 2.3.2.
   1. default_vars
@@ -276,11 +270,11 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
      One literal string per cell. It replaces a value the rule already stored.
      It does not change what the rule template already read.
      This is the last assignment layer.
-- default_vars and rule vars must not set an internal name.
-  A per-file row must not either. 2.3.2.
-  __date__ is not an internal.
-- Nothing may set __kind__. It stays the kind from step 2.2. It does not change rule.
-  default_vars, rule vars, and a kind-file row must not set it.
+- A layer may set `__date__` and names that do not start with `__`.
+  A namespace root (`__file__`, `__match__`, `__profile__`, `__config__`, `__input__`) is a config error.
+  Any other name that starts with `__` is a config error.
+  A key cannot contain a dot, so a layer cannot write `__file__.name` or `__match__.kind`.
+  This applies to `default_vars`, rule `vars`, and a kind-file row. 2.3.2.
 - overrides is not a profile key. A present overrides key is a config error, including an empty list.
   Per-file values belong in the kind file.
   kind_overrides_mode, kind_overrides_date_format, kind_overrides_sep, and kind_overrides_config stay.
@@ -305,9 +299,10 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
 - A candidate with no {{, {%, or {# is a literal string. It is not compiled.
   Any other candidate is a Jinja2 template. Profile path templates stay the step 2 language and are not Jinja.
 - Each distinct var template source is compiled once per process. Rendered results are not cached.
-  PDF info for one file hash is read once per process.
 - Jinja uses StrictUndefined. An unknown name fails that candidate. autoescape is off.
   The rendered result is stored as a string.
+  An old flat name, such as `__file_name__` or `__kind__`, is unknown and fails that candidate. There is no alias.
+  Rendering `__file__`, `__match__`, `__profile__`, or `__config__` with no field fails that candidate.
 - A string candidate is rendered once. Failure aborts that candidate.
 - Inserted strings are not rendered again.
 - An empty string is a success for text. For every other type, empty or whitespace is a miss.
@@ -317,7 +312,7 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
   A fact or a kind-file cell that cannot cast stops the file. There is no next candidate for those.
 - __date__, when set, is a calendar date YYYY-MM-DD. A candidate that renders to anything else fails, and the next candidate is tried.
   Supershelf uses this date as the document date, including for output paths.
-  This step does not write outputs. A later output that uses __date__ fails when __date__ was omitted.
+  This step does not write outputs. Behavior 5 does. A layout that uses __date__ fails when __date__ was omitted.
 - Shape errors and template syntax errors fail the command before the walk.
   The kind file is checked when it is first loaded.
 - A broken Jinja template is a config error when that template is loaded.
@@ -335,21 +330,22 @@ What the commands do. Types, cast, and packaged defaults are in [architecture.md
   regex_time_var(date, "%Y%m%d") reads the group date. It does not read __date__.
 - regex_replace(name, "pattern", "replacement") runs a substitution on that string.
   Backreferences are allowed. No match fails the candidate. Three arguments are required.
-- pdf_cdate() and pdf_mdate() read the PDF info dates. The result is YYYY-MM-DD.
-  The call needs parentheses. Bare pdf_cdate is the command, not the date.
-  Not a PDF, no such date, or an unreadable file fails the candidate.
-  The file is read only when a candidate calls one of these.
-- file("ctime") and file("mtime") return the same ISO timestamps as the aliases above.
-  Any other argument fails the candidate.
+- A function stays only when it transforms text or fetches a value that is not already in scope.
+  `regex_time_var`, `regex_replace`, and `meta` are those functions.
+  `file()`, `pdf_cdate()`, and `pdf_mdate()` are removed. There is no alias.
+  File strings are `__file__` fields. PDF dates are `meta("pdf", "creation_date")` and `meta("pdf", "modification_date")`. 2.3.3.
 - kind_overrides_config is an optional list of path templates.
   Omitted uses this list, in order:
-  - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv
-  - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml
-  - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml
-  - {{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml
+  - `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv`
+  - `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml`
+  - `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml`
+  - `{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml`
   An empty list means no kind files. -vv logs that once for each kind and input, except when the mode is disabled.
-  Render each path with the step 2 language, the profile scope, __kind__ set to the rule kind, and __input__.path set to the absolute input directory.
-  A relative result is resolved from __root_dir__.
+  Render each path with the step 2 language and the profile scope.
+  For that render only, add `__match__.kind` (the rule kind) and `__input__.path` (the absolute input directory).
+  `__match__.rule` is not in this scope. Reading it stops the command.
+  `__file__` is not in this scope. The kind path is per kind and input, not per rule or file.
+  A relative result is resolved from `__config__.root_dir`.
   The first path that exists and is a file wins. A missing path tries the next.
   None found means no per-file row, unless kind_overrides_mode is always.
   disabled does not run this search. 2.3.2.
@@ -432,7 +428,7 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
   There is no DATE column. DATE, Date, and date say the date column is __date__.
   A column that is not lowercase names that column and says other columns must be lowercase.
   A duplicate CSV column, a duplicate name in one vars mapping, a missing path key in TOML or YAML,
-  a bad name, or a forbidden internal name is an error.
+  a bad name, or a namespace root is an error.
   An empty file, or a file of whitespace only, is an empty table, not a missing-header error.
   A blank line is skipped. A row with values and an empty PATH or path is an error.
   Two rows with the same path: warn, keep the first, leave the later row in the file.
@@ -447,9 +443,10 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
   A var value that is a number, boolean, date, list, or nested mapping is a config error. Quote scalars.
 - A cell that sets an existing key keeps that key's first position and replaces the stored string.
   A new key is appended. CSV uses column order. TOML and YAML use key order inside vars.
-- A row must not set an internal name.
-  Other __ names, including __date__, are allowed.
-  A row must not set __kind__. Nothing may set __kind__.
+- A row may set `__date__` and names that do not start with `__`.
+  A namespace root (`__file__`, `__match__`, `__profile__`, `__config__`, `__input__`) is an error.
+  Any other name that starts with `__` is an error.
+  A key cannot contain a dot.
 
 #### Date
 
@@ -490,7 +487,7 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
   If a parent exists and is a file, that is an error and no kind file is written.
   auto appends only when a candidate exists. It does not create a missing file.
   manual reads a candidate when one exists. It does not create a file and does not add rows.
-- The rule kind picks the file. __kind__ does not change after matching, so the file and the row stay on that kind.
+- The rule kind picks the file. `__match__.kind` does not change after matching, so the file and the row stay on that kind.
 - The row key is the relative path alone.
   Two inputs that share one kind file treat the same relative path as one row.
   Put {{ __input__.path }} in the template when those inputs must not share rows.
@@ -524,7 +521,7 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
   A new CSV header starts with PATH.
   When that kind has schema columns, those names follow, in schema order, joined by kind_overrides_sep.
   A kind_schema entry supplies its local names. Otherwise declared vars_schema names are used.
-  Locked internals are left out. __date__ is included only when that schema lists it.
+  A name that starts with `__` is left out, except `__date__` when that schema lists it.
   A name that is not a legal column is left out.
   With no schema columns, the header is PATH and __date__.
   Omitted, that header is PATH,__date__. The example semicolon with no schema writes PATH;__date__.
@@ -539,7 +536,9 @@ Present overrides. A profile with an `overrides` key stops at load. The key is r
 
 `meta()` reads one field from a kept file. The result is an ordinary variable. There is no `metadata_fields` key and no `scan meta` command.
 
-`pdf_cdate()`, `pdf_mdate()`, and `file()` stay as they are. They keep their own in-process cache. They do not read `content_meta`.
+`file()`, `pdf_cdate()`, and `pdf_mdate()` are not commands. File strings are `__file__` fields. PDF dates are `meta("pdf", "creation_date")` and `meta("pdf", "modification_date")`. Those dates use this cache. A cache miss can create `database_file`. There is no second in-process PDF cache.
+
+The `fs` driver is not shipped. Walk strings are already on `__file__`. A `metadata_driver` key named `fs` with no `driver` is a config error, same as any other unknown name.
 
 `scan files` and `scan kinds` do not call drivers and do not open the database. `schema` and `profiles` do not either.
 
@@ -577,7 +576,7 @@ Reserved keys are `driver`, `enable`, `timeout`, `ext`, and `mime`. They are not
 - `true`: the same check at profile load. A miss stops the command before the walk.
 - `false`: the driver is never called. A candidate that names it misses.
 
-`fs` and `pdf` ignore `enable`. A `timeout` key on either is a config error. Other drivers: omitted timeout is 30, and `0` or below is a config error.
+`pdf` ignores `enable`. A `timeout` key on it is a config error. Other drivers: omitted timeout is 30, and `0` or below is a config error.
 
 #### Which files a driver accepts
 
@@ -594,7 +593,7 @@ The probe is `file --mime-type --brief`, once per hash, in memory. If `file` is 
 
 `command` is required. A path separator resolves from the profile directory and must be an existing file. The file is executed directly. A bare name is looked up on `PATH`.
 
-`arguments` omitted means argv is only the program. A string is split with `shlex` at load. A bad quote is a config error. Placeholders are replaced after the split. `%p` as its own token keeps a path that contains a space as one argv item. Tokens are `%p %r %n %s %e %h %c %m %d` and `%%`. Any other `%` token is a config error at load.
+`arguments` omitted means argv is only the program. A string is split with `shlex` at load. A bad quote is a config error. Placeholders are replaced after the split. `%p` as its own token keeps a path that contains a space as one argv item. Tokens are `%p %r %n %s %e %h %c %m %d` and `%%`. Any other `%` token is a config error at load. `%r` is `__file__.path`, `%n` is `.name`, `%s` is `.stem`, `%e` is `.ext`, `%h` is `.hash`, `%c` is `.ctime`, and `%m` is `.mtime`. `%p` is the absolute path. `%d` is that path's directory. `%%` is a percent sign. The tokens are argv placeholders for those facts, not a second set of template names.
 
 `output_format` is required: `yaml`, `toml`, `ini`, or `shell`. Nested mappings flatten with `.`. List and null values are skipped. A non-mapping document, a bad TOML duplicate, or a bad shell key fails the candidate. stderr is logged at debug and is not parsed.
 
@@ -602,8 +601,7 @@ The probe is `file --mime-type --brief`, once per hash, in memory. If `file` is 
 
 #### Shipped drivers
 
-- `fs`: always on. No cache row. Fields are the walk strings: `ctime`, `mtime`, `hash`, `name`, `stem`, `ext`, `path`, `dir`.
-- `pdf`: always on. `pypdf`. `ext` is `pdf`. `mime` is `application/pdf`. Fields: `creation_date` and `modification_date` as `YYYY-MM-DD`, plus `author`, `title`, `subject`, `creator`, `producer`. A bad date is a missing field. The parsed map is JSON in the cache. This does not change `pdf_cdate()`.
+- `pdf`: always on. `pypdf`. `ext` is `pdf`. `mime` is `application/pdf`. Fields: `creation_date` and `modification_date` as `YYYY-MM-DD`, plus `author`, `title`, `subject`, `creator`, `producer`. A bad date is a missing field. The parsed map is JSON in the cache. `creation_date` and `modification_date` are the PDF dates. There is no `pdf_cdate()` or `pdf_mdate()`.
 - `exiftool`: `auto`. Argv is `exiftool -json -G` and the path. Drop `SourceFile` and `File:` keys.
 - `pdftotext`: `auto`. `ext` is `pdf`. `mime` is `application/pdf`. Argv is `pdftotext -q -enc UTF-8`, the path, then `-`. The only field is `text`, and it may be omitted.
 
@@ -617,7 +615,7 @@ The process bag is checked first. sqlite is read only after that misses.
 
 - A success stores `payload` and a null `error`. A non-zero exit, timeout, undecodable stdout, or parse error stores `error` and a null `payload`.
 - A missing field after a successful parse does not store an error. The payload stays, so a later field on that hash still uses it.
-- `fs` writes nothing. A driver that does not accept the file writes nothing.
+- A driver that does not accept the file writes nothing.
 - `scan vars` and `record run` create `database_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not.
 - `--dry-run` reads a version 2 file. If the file is absent, or it is version 1, it does not create it and does not migrate. The tool still runs. Nothing is inserted.
 - A real run opens the file for write, which migrates version 1, then inserts the row. That write does not insert a document or an event.
@@ -638,7 +636,7 @@ The process bag is checked first. sqlite is read only after that misses.
   The feed flag is --var.
 - Say kind file. kind_overrides_mode, kind_overrides_date_format, kind_overrides_sep,
   and kind_overrides_config are the kind-file settings from 2.3.2.
-- scan vars --all prints internal vars. data prune --all runs every purge.
+- scan vars --all prints `__file__` and `__match__` fields. data prune --all runs every purge.
   The two flags do not share a meaning.
 
 ### 3.1 Shared rules
@@ -647,7 +645,7 @@ The process bag is checked first. sqlite is read only after that misses.
   Layers are facts, default_vars, the match rule, then the kind file.
   A filled cell is already that string. An empty cell receives the lower layer.
   An unset var stays unset. Feed does not blank a cell.
-  Internal names stay out. __date__ is allowed.
+  Namespace fields stay out. `__date__` is allowed.
 - kind_overrides_mode does not gate these commands.
   scan vars still owns auto, manual, always, and disabled.
   manual and disabled still allow data feed and data prune to write.
@@ -722,7 +720,7 @@ Dry run. `data feed --dry-run` prints the summary and does not create, migrate, 
 - --kind and --var together keep only those vars on those kinds.
   A --var name that none of the selected kinds define stops the command.
 - Positional names and the flags combine. An explicit flag is how a shared name is chosen.
-- An unknown kind or var stops the command. A locked internal name stops the command.
+- An unknown kind or var stops the command. A namespace root, or any other name that starts with `__` and is not `__date__`, stops the command.
 - --force skips the prompt.
 - Feed does not also append the empty rows scan vars appends.
 
@@ -834,7 +832,7 @@ Missing word. `--missing` drops a kind-file row for a path that is not matched a
 
 ## 4 Record
 
-`supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` stays unused. This step does not write an output tree.
+`supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` stays unused. This step does not write an output tree. Behavior 5 does.
 
 `scan vars`, `record run`, `data feed`, and `data show` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `scan inspect`, `schema`, `profiles`, and `data prune` do not. `record run` also creates it when a document row would change. `data feed` and `data show` do not insert a document or an event. A feed prompt answer of no can leave the cache, and a schema 1 file already migrated to schema 2.
 
@@ -1015,3 +1013,159 @@ Bad list. A rule sets `HASH`, `""`, `[]`, `[path, path]`, `{{ author }}`, or `ke
 - A locked file stops the command. The tip says to run the command again.
 - `--dry-run` on `record run` reports the rows that would change and creates nothing.
 - `record status`, `record history`, and `record duplicates` do not write. Passing `--dry-run` to them changes nothing.
+
+## 5 Output
+
+`supershelf output` writes a destination for matched files and records that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
+
+One profile has one sqlite file. Profiles do not share events. `cache_file` stays unused. `extension_remap` is not read.
+
+The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads and `meta()`. `output` does not call the kind-file commit.
+
+The comparison is the record status plan from behavior 4. Output does not implement a second linker. `record_identity` stays a step list. The packaged default `path` means `[path, hash]`. A bare `hash` means `[hash, path]`. A match rule can override the list.
+
+The plan phase resolves like `record status`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`, and the gate in 5.2 stops the command. The tip says to run `record run`.
+
+`scan`, `data`, `record`, `schema`, and `profiles` do not read `outputs`.
+
+### 5.1 Commands
+
+`PATH` is the optional scan selector from 2.1.1. A value that matches no kept file stops the command. Columns are a clak table: profile, input, path, output, driver, status, operation, when, dest.
+
+input is the 1-based index. path is relative to the input directory. output is the item name. when is the boolean string `true` or `false`. dest is the absolute destination, or blank when `when` rendered `false`.
+
+Rows follow profile selection, then output list order, then walk order.
+
+#### output preview
+
+- supershelf output preview [PATH]
+- Prints every selected row, including `unchanged` and `skip`.
+- Writes nothing. It does not create the sqlite file, a parent, a destination, or a directory.
+- The database is opened read-only.
+- Exit 0 when the plan is valid. A `conflict` row is valid here. The command still exits 0.
+
+#### output run
+
+- supershelf output run [PATH]
+- Prints the same rows, except `unchanged`.
+- `--dry-run` prints those rows and writes nothing. The database stays read-only. Schema `1` is not migrated.
+- A real run that would stop does stop under `--dry-run`, and still writes nothing.
+- A plan with only `unchanged` and `skip` writes nothing and does not open the database for write.
+- Every selected profile is planned before any profile writes. A later profile does not commit when an earlier profile's plan would stop.
+- A real write creates the destination parent, performs the file operation, then calls `append_output`. The method commits itself.
+- A crash after the write and before the event leaves a file this profile does not yet claim. The next run treats it as a foreign file.
+
+Status words:
+
+- `write`: the destination is created.
+- `replace`: an existing destination is replaced.
+- `unchanged`: this profile already wrote this destination, and the file still matches. No event.
+- `skip`: `when` is `false`, or `on_conflict` is `skip` and the existing file is left in place. No event.
+- `conflict`: the existing file is not one this profile wrote, and `on_conflict` is `error`. Preview prints the row and exits 0. `run` prints the rows and exits non-zero. Nothing is written.
+
+### 5.2 Selection
+
+`outputs` is a top-level list.
+
+- Omitted or null, on an output command, stops the command. The message says outputs is not set.
+- `[]` stops the command. The message says outputs is empty.
+- These are the two messages `inputs` already uses. The other commands ignore the key.
+
+Each item has `name`, `driver`, `kinds`, and `when`. The driver owns every other key. A file item that carries a key it does not know stops the command.
+
+- `name` is required. It is a non-empty string and unique in the profile. A duplicate stops the command.
+- `driver` defaults to `file`. An unknown name stops the command and names the driver.
+- `kinds` omitted or null means every matched kind. The kind is the final kind after overrides.
+  `[]` selects no file. That item adds no row. It is not an error.
+  A listed value that is not a string stops the command.
+  A name that matches no rule does not stop at load. A file of another kind is left out. It is not a `skip` row.
+- `when` omitted or null is the string `true`.
+  A value that is not a string stops the command. An unquoted YAML bool is that error. A list is that error.
+  A string with no Jinja marker is cast at load. A template is compiled at load. A syntax error stops the command before the walk.
+  Render uses the file's display-string scope, the same commands as a variable template, and StrictUndefined.
+  Strip the text. `true`, `yes`, and `1` become `true`. Empty text, `false`, `no`, and `0` become `false`. Case does not matter.
+  Any other text stops the command and names the output, the path, and the rendered text.
+  `{{ __match__.kind == "invoice" }}` renders `True` or `False`, and those cast.
+  `false` is status `skip`. The layout is not rendered. No event is written.
+  An undefined name stops the command, same as a variable template.
+
+A live file the record plan marks `duplicate` has no document. It is left out. It does not stop the other files. The owning document is the one that can be written. A `PATH` that matches only that extra file stops the command, because no kept output source was selected.
+
+A file that passes `kinds` and `when` must already be a present document whose record status is `unchanged` or `refresh`. `new`, `vars`, `generation`, `move`, `missing`, `present`, and `unmatched` stop the command before any destination is written and before any output event. The message names the profile, the input, the path, and the record status. The tip says to run `record run`. `refresh` is allowed because the hash and the variables are the same.
+
+A file that fails `kinds`, or whose `when` is `false`, does not face that gate. A `duplicate` that would have passed `kinds` and `when` is still left out.
+
+The profile sqlite file is ignored when it sits inside an input, same as record.
+
+`config.output_modules` is an optional list of importable module paths. Omitted, null, and `[]` add no drivers. The built-in `file` driver is registered first. Each module is imported in list order and exports `DRIVERS`, a list of driver classes. A name that repeats `file`, or an earlier module, stops the command. An import failure stops the command. This list is not `var_modules` and not `metadata_driver`.
+
+### 5.3 File driver
+
+`driver: file` is the default.
+
+- `path` is required. It is a profile path template, the same language as `inputs.path`. It is rendered once. A relative result resolves from `__config__.root_dir`. An empty result stops the command. A result that exists and is not a directory stops the command. A missing directory is created only on a real write.
+- `layout` is a Jinja template. Omitted, it is `{{ __file__.path }}`. The input-relative path is kept.
+  The rendered text uses `/` separators. It is split on `/`.
+  An absolute result stops the command. An empty result stops the command.
+  A segment that is empty, `.`, or `..` stops the command.
+  A slash inside a variable becomes another directory.
+  The joined path must stay inside `path`. The extension is whatever the layout writes. `{{ __file__.ext }}` is the last suffix.
+  A template that uses `__date__` fails when `__date__` was omitted.
+- `operation` is `copy`, `symlink`, or `hardlink`. Omitted, it is `copy`. Any other word stops the command.
+- `on_conflict` is `error`, `skip`, or `overwrite`. Omitted, it is `error`. Any other word stops the command.
+  It applies when the destination exists and this profile has no output event for that path.
+  It also applies when the latest event for this document and output name matches the destination, the operation, and the source hash, but the file on disk no longer matches that apply.
+  It does not apply to a destination claimed twice in this run. It does not apply when the latest event for that path belongs to another document or another output name.
+
+The latest event for a document and output name is the prior apply. The latest event for a destination is the claim. Both reads use the events already stored. An output event does not change the document.
+
+- The prior apply matches the new destination, the operation, and the source hash, and the file on disk matches that apply. Status `unchanged`. No write and no event.
+  A copy matches when the destination sha256 equals the source hash.
+  A symlink matches when its target is the absolute source path stored under the input.
+  A hardlink matches when it is the same inode as that source.
+- That prior apply is ours and the source hash or the operation changed. Status `replace`. `previous` is `existed` true and `ours` true, with the prior operation and source hash.
+- The path does not exist, and no other document claims it. Status `write`. `previous` is `existed` false. `ours` is true only when an earlier event for this profile already recorded that same path. Then `previous` also carries that event's operation and source hash.
+- The path exists and this profile has no event for it.
+  `error`: status `conflict`. `run` writes nothing.
+  `skip`: status `skip`. The file stays. No event.
+  `overwrite`: status `replace`. `previous` is `existed` true and `ours` false. Revert cannot restore those bytes. The database stores the hash, not the file.
+- The prior apply matches, but the file on disk does not. The same three words. `overwrite` stores `existed` true and `ours` true, with the prior operation and source hash.
+- A new layout points the document at a new path. The old file stays. Prune is a later `output prune`. The new path follows the rules above.
+- The latest event for the destination belongs to another document, or to another output name of this document. The command stops. `on_conflict` does not apply. The message names the destination and both owners.
+- Two planned actions in this run resolve to the same destination. The command stops before any write. The message names the destination and both sources. This includes two profiles selected together.
+- The source path and the destination path are the same file. The command stops.
+- The destination exists and is a directory. The command stops.
+
+`copy` uses a metadata-preserving file copy. `symlink` points at the absolute source path stored under the input. `hardlink` links that path. A cross-device hardlink stops the command. The tip says to use `copy`.
+
+Parents are created on a real write. A parent that exists and is a file stops the command. Preview and `--dry-run` create nothing.
+
+`append_output` runs after the file operation returns, and only for `write` and `replace`. `recorded_at` is UTC ISO-8601. `source_hash` is the document hash. `output_name` is the item name. `destination` is the absolute path.
+
+#### Cases
+
+Second run. The copy is still the same bytes. Status `unchanged`. `run` prints no row for it. No event is appended.
+
+New bytes. `record run` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
+
+Not recorded. The file is `new`. The command stops. The tip says to run `record run`. Nothing is written.
+
+Duplicate. `record_identity` is `hash`. The extra path has no document. Output leaves it out. The owning document is written when its own row is `unchanged`.
+
+Foreign file. The destination exists and no output event names it. `on_conflict` is `error`. Preview shows `conflict` and exits 0. `run` writes nothing and exits non-zero.
+
+Skip. The same foreign file, with `on_conflict: skip`. Status `skip`. The file stays. No event.
+
+Overwrite. The same foreign file, with `on_conflict: overwrite`. The file is replaced. `previous` has `existed` true and `ours` false.
+
+Other document. The latest event for that path belongs to another document. The command stops. `overwrite` does not take the path.
+
+Layout move. `layout` changes. The new path is `write`. The old file stays on disk. The old event stays.
+
+When. `when` renders `false`. Status `skip`. The column is `false`. The layout is not rendered. A file whose record status is `new` does not stop the command when `when` is `false`.
+
+Bool words. `when: '{{ __match__.kind == "invoice" }}'` becomes `true` or `false`. `when: maybe` stops at load. `when: '{{ vendor }}'` stops when vendor renders `Bank2000`.
+
+Escape. A layout that renders `../outside` stops the command. A layout that renders an absolute path stops the command. No directory is created.
+
+Two outputs. One file matches `books` and `cards`. Both destinations are planned. The same destination from both items stops the command before any write.

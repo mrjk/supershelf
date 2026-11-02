@@ -18,7 +18,7 @@ One catalog entry per name, for the whole profile.
 - `type`: `text` (default for a user var), `int`, `float`, `bool`, `date`, `time`, `datetime`. Lower case. `INT` and `timedate` are config errors. The keyword `datetime` is a date and a time together.
 - `date` is `YYYY-MM-DD`, the spelling `__date__` already uses. `time` is `HH:MM` or `HH:MM:SS`. `datetime` is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`. No timezone and no fractional seconds. Seconds stay in the display only when they were written. A set `datetime` always includes a clock: midnight is `T00:00` or `T00:00:00`. A calendar day with no clock is type `date`.
 - `unit`: string, or absent. Display and storage metadata. No conversion.
-- `internal`: managed by supershelf. Omitted means true when the name starts with `__`. An explicit value wins.
+- `internal`: managed by supershelf. `__date__` is false. A new name that starts with `__` is a config error, so omitting this key does not create an internal. An explicit `true` on a name supershelf does not manage is a config error.
 - `mandatory`: default false. After every layer, `None` fails the file. An empty text string is a value, so it passes. `time` and `datetime` use the same default.
 - `default`: omitted, a typed literal, one string, or a candidate list. This is the lowest assignment.
 - `validation`: optional mapping. Unknown keys, or keys that do not apply to the type, are a config error. A bad regex is a config error. Every listed constraint must pass. VarSpec rejects unknown keys, so `mendatory` is a config error.
@@ -46,27 +46,21 @@ amount:
   value_sources: []
 ```
 
-`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. Internal names are omitted unless `--all` is set. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
+`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. `__file__` and `__match__` fields are omitted unless `--all` is set. With `--all`, each field is one of those lines. The name is the dotted form, such as `__file__.name`, and the source label is `fact`. `__profile__`, `__config__`, and `__input__` are never printed. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
 
 ### 1.3 Catalog
 
 Built-in entries are prefilled. The user catalog is the top-level profile key `vars_schema`, a mapping of name to VarSpec. Names match `[A-Za-z_][A-Za-z0-9_]*`.
 
-Built-ins, all `internal: true`, `type: text`, `mandatory: true`, filled from the file and the match:
+`__date__` is the only built-in catalog entry: `internal: false`, `type: date`, `mandatory: false`. The prefix rule does not mark it internal. The user may set `desc`, `unit`, `mandatory`, `default`, and `validation` on it. `type` and `internal` stay fixed.
 
-- `__kind__`, `__rule_name__`, `__ctime__`, `__mtime__`, `__file_hash__`, `__file_name__`, `__file_stem__`, `__file_ext__`, `__file_path__`, `__file_dir__`. Empty `__file_ext__` or `__file_dir__` is `""`, which is set, so `mandatory` passes.
+`__file__`, `__match__`, `__profile__`, `__config__`, and `__input__` are template objects. They are not catalog entries. `desc` and `unit` on the old flat names, such as `__file_name__` or `__kind__`, are a config error, because a new name that starts with `__` is a config error. Empty `__file__.ext` and `__file__.dir` are `""`. `__file__.ctime` and `__file__.mtime` stay text: their stored form has fractional seconds and a UTC offset, which `datetime` rejects. They do not satisfy type `date`.
 
-`__date__` is in the catalog with `internal: false`, `type: date`, `mandatory: false`. The prefix rule does not mark it internal. `__ctime__` and `__mtime__` stay `text`: their stored form has fractional seconds and a UTC offset, which `datetime` rejects.
+A name with no entry is an implicit user spec: `type: text`, `mandatory: false`, `internal: false`. The prefix does not add a catalog entry.
 
-A name with no entry is an implicit user spec: `type: text`, `mandatory: false`, `internal` from the prefix rule.
+A new name starting with `__` is a config error. `internal: true` on a name supershelf does not manage is a config error.
 
-The user may set `desc` and `unit` on a locked built-in. `type`, `internal`, `mandatory`, `default`, and `validation` on a locked built-in are a config error. On `__date__` the user may also set `mandatory`, `default`, and `validation`. `type` and `internal` stay fixed.
-
-A new name starting with `__` is a config error. `internal: true` on a name supershelf does not manage is a config error. `internal: false` on a locked built-in is a config error.
-
-Profile-scope names (`__profile__`, `__root_dir__`, and the rest) stay template scope. They are not catalog entries and are not printed.
-
-Assignment rights do not change. Locked internals stay locked. Nothing may set `__kind__`. It stays the kind from the match rule. Layers may still set `__date__` and ordinary names. The schema does not grant new writes. A profile `overrides` key is a config error, including an empty list. Per-file values belong in the kind file. `kind_overrides_mode`, `kind_overrides_date_format`, `kind_overrides_sep`, and `kind_overrides_config` stay. Those keys are the kind file, not the removed list.
+Layers may set `__date__` and names that do not start with `__`. A layer cannot set a namespace root. The schema does not grant those writes. A profile `overrides` key is a config error, including an empty list. Per-file values belong in the kind file. `kind_overrides_mode`, `kind_overrides_date_format`, `kind_overrides_sep`, and `kind_overrides_config` stay. Those keys are the kind file, not the removed list.
 
 Implicit text. A name with no schema entry stores the rendered string. `vendor: Bank2000` with no schema entry is text, source `default` when `default_vars` set it.
 
@@ -96,7 +90,7 @@ These share YAML list syntax and mean different things.
 
 `{{ amount + 1 }}` is not integer math. `{% if paid %}` reads the string `true` or `false`. A non-empty string is truthy in Jinja, so `{% if paid %}` is true for both. Compare with `{% if paid == "true" %}`.
 
-The Python value lives on VarState. Jinja attribute and method access (`{{ issued.year }}`) needs that object in the scope. That is a later phase. The schema stays as it is. Profile scope is unchanged. `__config_data__` stays a mapping. File vars still overlay it on the same name.
+The Python value lives on VarState. Jinja attribute and method access (`{{ issued.year }}`) needs that object in the scope. That is a later phase. Assigned names stay display strings. `__profile__`, `__config__`, `__file__`, and `__match__` are mappings in the Jinja scope, so `{{ __file__.name }}` reads a field. `__profile__.document` is the parsed profile file, still a mapping. A field on `__file__` and `__match__` is a string. Rendering one of those objects with no field fails that candidate.
 
 `regex_time_var` still returns `YYYY-MM-DD`. That string satisfies type `date` and misses type `time` and type `datetime`.
 
@@ -122,9 +116,9 @@ A non-template literal that fails step 4 or 5 is a config error at load, includi
 
 When every candidate in a layer misses, that layer does not write the name. An earlier value and its source list stay. Later layers still run. The name stays `None` when no layer writes it. `mandatory` after the last layer stops the file when the value is still `None`. This is the same rule for `__date__` and for every other name.
 
-Facts are one value, with no candidate list. A file fact or regex group that fails the pipeline stops the command. A filename group `amount` of `12.50`, declared as `float`, becomes the float `12.5` when the match stores it. `EUR12.50` and `12,50` stop the file. A later layer does not repair that fact. To keep fallbacks, capture the text under another name and assign the typed name from a candidate list.
+Facts are one value, with no candidate list. A regex group that fails the pipeline stops the command. A filename group `amount` of `12.50`, declared as `float`, becomes the float `12.5` when the match stores it. `EUR12.50` and `12,50` stop the file. A later layer does not repair that fact. To keep fallbacks, capture the text under another name and assign the typed name from a candidate list. `__file__` and `__match__` are not catalog entries. Their fields are already strings.
 
-The filename does not set `__date__`. A stem that is a date stays `__file_stem__`. A profile that wants that date writes a candidate, such as `{{ regex_time_var(__file_stem__, __default_date_format__) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
+The filename does not set `__date__`. A stem that is a date stays `__file__.stem`. A profile that wants that date writes a candidate, such as `{{ regex_time_var(__file__.stem, __config__.date_format) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
 
 `mandatory` runs after the last layer, and only on `None`.
 
@@ -188,13 +182,13 @@ kind_schema:
       __date__:
 ```
 
-The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`company: company_name`). Null or a blank string uses the local name, so `__date__:` and `__date__: ""` both use `__date__`. TOML has no null, so the blank form there is `""`. On an object, omitted, null, or blank `schema` uses the local name. An explicit `schema` remaps (`employee` above). A locked internal, or a name that was never declared, is a config error. The local name (`company`) is the variable for files of that kind. It follows the variable-name pattern and cannot be a locked internal. `type` and `internal` cannot be set on the kind var. They come from the referenced spec.
+The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`company: company_name`). Null or a blank string uses the local name, so `__date__:` and `__date__: ""` both use `__date__`. TOML has no null, so the blank form there is `""`. On an object, omitted, null, or blank `schema` uses the local name. An explicit `schema` remaps (`employee` above). A namespace root, a name that starts with `__` and is not `__date__`, or a name that was never declared, is a config error. The local name (`company`) is the variable for files of that kind. It follows the variable-name pattern and cannot start with `__` unless it is `__date__`. `type` and `internal` cannot be set on the kind var. They come from the referenced spec.
 
 Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the referenced spec. A present `validation` mapping replaces the referenced one. It is not merged key by key. `default` is not copied. A kind `default` applies only when that kind entry sets it, as the default layer for that local name on files of that kind. Profile `default` and `default_vars` apply to that catalog name on files whose kind is not listed. On a listed kind they apply only when that kind's `vars_schema` includes the name.
 
 When a kind lists a name the profile also has, files of that kind use the overlaid spec. The kind may set `mandatory: false`. A matched kind with no `kind_schema` entry keeps the profile catalog. Names a kind does not list keep the profile spec, including profile `mandatory`.
 
-`supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names, excluding locked internals. `__date__` is included only when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.
+`supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names. A name that starts with `__` is left out, except `__date__` when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.
 
 ## 2 Packaged defaults
 
@@ -212,19 +206,19 @@ TOML has no null. A key the schema allows to be unset is left out of `default.to
 [config]
 profile = "default"
 default_date_format = "%Y-%m-%d"
-root_dir = "{{ __profile_dir__ }}"
-database_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite"
-cache_file = "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache"
+root_dir = "{{ __profile__.dir }}"
+database_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite"
+cache_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache"
 record_identity = "path"
 kind_overrides_mode = "auto"
 # kind_overrides_date_format is unset (None) and falls back to default_date_format
 # var_modules is unset (None): no modules
 kind_overrides_sep = ","
 kind_overrides_config = [
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv",
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml",
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml",
-  "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml",
+  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml",
 ]
 input_depth = 0
 input_follow_symlinks = true
@@ -234,7 +228,7 @@ input_follow_symlinks = true
 
 These stay in code. The parser needs them to read both files, or they are not a user default:
 
-- Key names, environment names, internal variable names, file suffixes, and the four kind-override mode words.
+- Key names, environment names, namespace roots, file suffixes, and the four kind-override mode words.
 - `DATE_TEXT` (`%Y-%m-%d`) as the stored date grammar. Editing `default_date_format` in `default.toml` changes display and kind-file parsing. It does not change how dates are stored.
 
 ### 2.2 Fallbacks
@@ -281,7 +275,7 @@ These also use a missing key and null as `None`: `kind_overrides_config`, `var_m
 
 ## 3 Profile database
 
-Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `2`. Foreign keys are on. Rows are never deleted. `ShelfDatabase.append_output` can append an output event. No command calls it.
+Behavior 4. One sqlite file per profile, stdlib `sqlite3`, schema version `2`. Foreign keys are on. Rows are never deleted. `ShelfDatabase.append_output` appends an output event. Behavior 5 is the command that calls it.
 
 A read accepts schema `1` and schema `2`. Schema `1` has no `content_meta`. A read does not migrate it, and a cache read is a miss. A write migrates schema `1` to schema `2`: create `content_meta`, then set `schema_version` to `2`. Documents and events stay. Any other version is rejected. The tip names `database_file`.
 
@@ -317,13 +311,13 @@ A partial unique index on `(input_path, path)` applies where `presence` is not `
 
 Indexes: `events.hash`, `events.destination`.
 
-`content_meta` is one parsed payload per content hash, driver name, and `options_key`. Behavior 2.3.3. `hash` references `contents`. `payload` is raw tool stdout, or the `pdf` driver's JSON map. `error` is set when the tool or the parse failed, and `payload` is then null. `extracted_at` is UTC ISO-8601. A hash may exist here before any document. This table does not insert a document or an event. `fs` does not write a row.
+`content_meta` is one parsed payload per content hash, driver name, and `options_key`. Behavior 2.3.3. `hash` references `contents`. `payload` is raw tool stdout, or the `pdf` driver's JSON map. `error` is set when the tool or the parse failed, and `payload` is then null. `extracted_at` is UTC ISO-8601. A hash may exist here before any document. This table does not insert a document or an event. A driver that does not accept the file does not write a row. There is no `fs` driver.
 
 `refresh` updates `mtime`, `ctime`, and `input_index` on the document and does not insert an event.
 
 ### 3.2 Variable snapshot
 
-`vars_json` is one JSON object. Keys are sorted. Identity facts that already have columns are left out: `__kind__`, `__rule_name__`, `__ctime__`, `__mtime__`, `__file_hash__`, `__file_name__`, `__file_stem__`, `__file_ext__`, `__file_path__`, `__file_dir__`. `__date__` is included when it is set. Profile-scope names are not included. An unset name is left out.
+`vars_json` is one JSON object. Keys are sorted. `__file__` and `__match__` are not included. Those facts already have columns: `match_kind`, `rule`, `mtime`, `ctime`, `file_dir`, `file_name`, `file_stem`, `file_ext`, `path`, and `hash` on `contents`. The column names stay. There is no schema migration. `__date__` is included when it is set. `__profile__` and `__config__` are not included. An unset name is left out.
 
 Each binding is `type`, `value`, `display`, and `value_sources`. `value` is the JSON form of the Python value. A float can be `12.5` while `display` is `12.50`. A difference in the name set, the type, the value, the display, or the sources is a variable change.
 
@@ -352,13 +346,13 @@ Location changes are written by first marking the moving documents `missing`, so
 
 ### 3.4 Output event
 
-No command inserts `output`. `ShelfDatabase.append_output` inserts one event and does not change the document projection. `operation` is `copy`, `symlink`, or `hardlink`. `previous_json` is the revert payload:
+Behavior 5 calls `ShelfDatabase.append_output`. The method inserts one event and does not change the document projection. `operation` is `copy`, `symlink`, or `hardlink`. `previous_json` is the revert payload:
 
 ```json
 {"existed": false, "ours": false}
 ```
 
-When this profile wrote the previous destination, `ours` is true and the object also has `operation` and `source_hash` from that earlier event. `existed` true and `ours` false means a file was already there and this profile did not write it. The outputs story fills these keys. This story only reserves them.
+When this profile wrote the previous destination, `ours` is true and the object also has `operation` and `source_hash` from that earlier event. `existed` true and `ours` false means a file was already there and this profile did not write it. Behavior 5.3 chooses which of these objects to store.
 
 ### 3.5 Open and errors
 
@@ -377,3 +371,41 @@ Collision under `path`. The generation event keeps the document id. The new docu
 Collision under `hash`. The move keeps the document id and the generation. The new bytes are a new document. A second hash-first file with the old hash is not inserted.
 
 Output slot. After `append_output`, `events` has one `output` row and the document's presence, hash, and generation are unchanged.
+
+## 4 Output drivers
+
+Behavior 5. A driver writes one kind of destination. The file driver is built in. Schema version stays `2`. The file driver calls `append_output`. A later csv, json, or sql driver is not this section. `append_output` accepts only `copy`, `symlink`, and `hardlink`.
+
+Metadata drivers fill variables. They are not output drivers. `metadata_driver` and `output_modules` are different lists.
+
+### 4.1 Contract
+
+`OutputDriver` is the base. A plugin subclasses it.
+
+- `name` is the driver word stored in `driver`.
+- `check(spec)` validates the item at load. A bad item raises `OutputConfigError`.
+- `prepare(spec, profile)` renders profile-scoped fields once. No file variables yet.
+- `plan(prepared, context)` returns one action, or skips. It does not write the filesystem and it does not append an event.
+- `apply(action, dry_run)` performs the action. `dry_run` true creates nothing and appends nothing.
+
+The host owns `name`, `driver`, `kinds`, `when`, the record gate, the row shape, and plan-then-apply. The context carries the profile, the input, the source file, the document id, and the display-string scope. A driver may store extra fields on the action for its own `apply`.
+
+The row columns are `profile`, `input`, `path`, `output`, `driver`, `status`, `operation`, `when`, `dest`. `operation` and `dest` are the driver's words. `when` is the boolean string from behavior 5.2. Status is `write`, `replace`, `unchanged`, `skip`, or `conflict`.
+
+`OutputConfigError` is a bad output item, a bad module, or a bad literal `when`. Exit 2. `OutputResolveError` is a file the plan cannot accept: the record gate, a layout, a claim, or a destination. The tip names a fix the user can make.
+
+### 4.2 File driver
+
+The built-in name is `file`. Behavior 5.3 is the path, the layout, the operation, and the re-run rule.
+
+`plan` decides the status and the `previous` payload. `apply` writes the file, then calls `append_output` for `write` and `replace`. The document projection stays as it is. `previous` is `OutputPrevious`:
+
+- `existed` false: this apply creates the path. `ours` true only when an earlier event already recorded that path. Then `operation` and `source_hash` are that event's.
+- `existed` true and `ours` true: this profile wrote the previous file. `operation` and `source_hash` are required.
+- `existed` true and `ours` false: a file was already there and this profile did not write it. Revert cannot restore those bytes.
+
+### 4.3 Modules
+
+`config.output_modules` lists importable modules. Omitted, null, and `[]` add no drivers. Built-in `file` is registered first. Each module exports `DRIVERS`, a list of `OutputDriver` subclasses. Import order is list order. A repeated name stops the command. An import failure stops the command.
+
+A module that exports no `DRIVERS` stops the command. A value that is not a driver class stops the command. The message names the module.

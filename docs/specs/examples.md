@@ -13,32 +13,34 @@ config:
   kind_overrides_mode: auto # 2.3.2. auto appends when the file exists. manual only reads. always creates and appends. disabled ignores kind files.
   kind_overrides_date_format: '%d/%m/%Y' # Optional. Kind-file __date__ cells. Omitted uses default_date_format. Stored as YYYY-MM-DD.
   kind_overrides_sep: ';' # Optional. Kind-file CSV separator. Omitted uses a comma. YAML and TOML ignore it.
-  root_dir: "{{ __profile_dir__ }}" # Default. Full directory of the config file.
+  root_dir: "{{ __profile__.dir }}" # Default. Directory of the config file.
 
   # Default paths
-  database_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite" # 4. record run creates this when a row would change. scan vars and record run also create it when meta() misses the cache. --dry-run does not. scan files and scan kinds do not.
-  cache_file: "{{ __root_dir__ }}/profile.{{ __profile__ }}.cache" # Rendered. Nothing writes it.
+  database_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite" # 4. record run creates this when a row would change. scan vars and record run also create it when meta() misses the cache. --dry-run does not. scan files and scan kinds do not.
+  cache_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache" # Rendered. Nothing writes it.
   record_identity: path # 4.2. Bare path means path then hash. Bare hash means hash then path. A list does not expand. Omitted uses path.
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See 2.3.1.
   #   - my_package.supershelf_vars
+  # output_modules: # Optional importable modules. DRIVERS. See architecture 4. Not metadata_driver.
+  #   - my_package.supershelf_outputs
   kind_overrides_config: # Omitted uses this list. First existing file wins. Per-file rows. Cached by input and kind, and by path.
-    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.csv"
-    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.toml"
-    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yaml"
-    - "{{ __root_dir__ }}/profile.{{ __profile__ }}.{{ __kind__ }}.yml"
+    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv"
+    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml"
+    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml"
+    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml"
 
   # Settings that can differ per input
   # root_dir: /srv/data_processing/
-  # database_file: "{{ __root_dir__ }}/state.sqlite"
+  # database_file: "{{ __config__.root_dir }}/state.sqlite"
   # kind_overrides_config: # Same resolution. __input__.path keeps each input in its own kind file.
-  #   - "{{ __input__.path }}/data/{{ __kind__ }}.csv"
-  #   - "{{ __input__.path }}/data/{{ __kind__ }}.toml"
-  #   - "{{ __input__.path }}/data/{{ __kind__ }}.yaml"
-  #   - "{{ __input__.path }}/data/{{ __kind__ }}.yml"
-  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.csv"
-  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.toml"
-  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.yaml"
-  #   - "{{ __root_dir__ }}/data/{{ __kind__ }}.yml"
+  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.csv"
+  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.toml"
+  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.yaml"
+  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.yml"
+  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.csv"
+  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.toml"
+  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.yaml"
+  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.yml"
 
 
 # Source of files
@@ -87,16 +89,14 @@ vars_schema:
 default_vars:
   vendor: UNKNOWN
   date: UNKNOWN
-  doc_type: '{{ __kind__ }}'
+  doc_type: '{{ __match__.kind }}'
 
   # Fallback list. The first candidate that renders wins.
   # regex_time_var reads the group date, not this list.
   __date__:
     - '{{regex_time_var(date, "%Y%m%d")}}'
-    - '{{pdf_cdate()}}'
-    - '{{pdf_mdate()}}'
-    - '{{file("ctime")}}'
-    - '{{file("mtime")}}'
+    - '{{ meta("pdf", "creation_date") }}'
+    - '{{ meta("pdf", "modification_date") }}'
 
 
 # Match rules. Tried in list order. The first rule that matches wins.
@@ -156,18 +156,16 @@ match_rules:
 
 
 
+# 5. File driver. A second layout is a second item. extension_remap is not read.
 outputs:
   - name: books
-    path: /.../output/books
-    directory_layout: "{yyyy}/{mm}/{payer}"
-    filename_layout: "{yyyy}-{mm}-{dd}_{vendor}"
-    mode: copy
-    on_conflict: rename
-
-    directory_for:
-      invoice: '{yyyy}/{mm}/videos'
-    filename_for:
-      invoice: '{yyyy}-{mm}-{dd}_vid_{seq:05}'
+    path: "{{ __config__.root_dir }}/output/books" # Profile path template. Relative paths resolve from __config__.root_dir.
+    layout: "{{ __date__[0:4] }}/{{ __date__[5:7] }}/{{ vendor }}.{{ __file__.ext }}" # Jinja. Omitted layout is {{ __file__.path }}.
+    operation: copy # copy, symlink, or hardlink. Omitted is copy.
+    on_conflict: error # error, skip, or overwrite. A file this profile did not write.
+    kinds:
+      - invoice
+    when: '{{ paid == "true" }}' # Boolean string true or false. Omitted is true.
 ```
 
 ## Kind files
