@@ -450,6 +450,36 @@ def test_profile_scope_is_readable_and_not_printed(tmp_path: Path) -> None:
     assert "__config__.root_dir" not in values
 
 
+def test_bare_objects_print_their_text_and_the_date_uses_the_profile_format(
+    tmp_path: Path,
+) -> None:
+    plan = _plan(
+        {
+            "default_vars": {
+                "__date__": "2026-04-25",
+                "file": "{{ __file__ }}",
+                "shown": "{{ __date__ }}",
+                "month": "{{ __date__.strftime('%Y-%m') }}",
+            },
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "**",
+                    "vars": {"__date__": "{{ __date__ }}"},
+                }
+            ],
+        },
+        tmp_path,
+        {"__config__": {"date_format": "%d/%m/%Y"}},
+    )
+    values = _values(plan, file=_file("bills/acme.pdf"), match=_match("bills/acme.pdf"))
+    assert values["__date__"] == "2026-04-25"
+    assert values["file"] == "acme.pdf"
+    assert values["shown"] == "25/04/2026"
+    assert values["month"] == "2026-04"
+
+
 def test_custom_module_and_a_name_clash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "shoutmod.py").write_text(
         'GLOBALS = {"shout": lambda value: value.upper()}\n',

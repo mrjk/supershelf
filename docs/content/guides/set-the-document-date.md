@@ -1,6 +1,6 @@
 # Set the document date
 
-`__date__` is the document date. When it is set, the value is a calendar date `YYYY-MM-DD`. A layout can read `{{ __date__.Y }}`, `{{ __date__.m }}`, and `{{ __date__.d }}` (`%Y`, `%m`, and `%d`). `{{ __date__ }}` is the full date. A layout that uses `__date__` fails when `__date__` was omitted. See [Output](../concepts/output.md).
+`__date__` is the document date. When it is set, the stored value is `YYYY-MM-DD`. `{{ __date__ }}` prints with `default_date_format`. `{{ __date__.strftime('%Y-%m') }}` is a custom pattern. `Y`, `m`, and `d` are `%Y`, `%m`, and `%d`. A layout that uses `__date__` fails when `__date__` was omitted. See [Output](../concepts/output.md).
 
 The commands used below are documented in [Template commands](../concepts/template-commands.md).
 

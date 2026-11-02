@@ -1187,6 +1187,21 @@ def _cast_date(text: str) -> CastValue:
     return CastValue(text, text, parsed)
 
 
+def cast_date_display(text: str, fmt: str) -> CastValue:
+    """Parse a date written with the profile format. Store `YYYY-MM-DD`."""
+    if not isinstance(fmt, str) or not fmt.strip() or fmt == DATE_TEXT:
+        raise CastMiss(f"{text!r} is not a YYYY-MM-DD date")
+    stripped = text.strip()
+    try:
+        parsed = datetime.strptime(stripped, fmt)
+    except ValueError as exc:
+        raise CastMiss(f"{text!r} is not a YYYY-MM-DD date") from exc
+    if parsed.strftime(fmt) != stripped:
+        raise CastMiss(f"{text!r} is not a YYYY-MM-DD date")
+    iso = parsed.strftime(DATE_TEXT)
+    return CastValue(iso, iso, parsed.date())
+
+
 def _round_trip_date(text: str) -> bool:
     try:
         parsed = datetime.strptime(text, DATE_TEXT)

@@ -31,11 +31,11 @@ Named regex groups are stored in pattern order and printed with the other names.
 
 `__date__` is not an internal. The filename does not set it. In `default_vars` and rule `vars`, an empty string does not count as success. A candidate list that misses leaves an earlier value in place. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. `data feed` writes `__date__` with that format. A `date` var that is not `__date__` stays `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
 
-`{{ __date__ }}` is that `YYYY-MM-DD` string. In a Jinja template the same value also has `Y`, `m`, and `d`: `%Y`, `%m`, and `%d`. `{{ __date__.Y }}-{{ __date__.m }}` is the year and the month. The printed value and `vars_json` stay the full date.
+`{{ __date__ }}` prints with `default_date_format`. The stored value stays `YYYY-MM-DD`. In a Jinja template the same value also has `Y`, `m`, and `d`: `%Y`, `%m`, and `%d`. `{{ __date__.strftime('%Y-%m') }}` is a custom pattern. The printed value and `vars_json` stay the full stored date.
 
 ## Profile scope
 
-`__profile__` and `__config__` are objects. Read a field. They are not printed. A layer cannot set them. `__date__` is the only assignable name that starts with `__`.
+`__profile__` and `__config__` are objects. With no field, `__profile__` prints the name and `__config__` prints `root_dir`. Read a field for anything else. They are not printed. A layer cannot set them. `__date__` is the only assignable name that starts with `__`.
 
 These fields are in profile path templates (`root_dir`, `database_file`, `cache_file`, `inputs.path`, and an output `path`):
 

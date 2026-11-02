@@ -32,8 +32,8 @@ Bank2000
 ```
 
 - Jinja, with strict undefined names and `autoescape` off.
-- The result must be a string. A namespace with no field fails that candidate.
-- `{{ __date__ }}` is `YYYY-MM-DD`. `Y`, `m`, and `d` are `%Y`, `%m`, and `%d`.
+- The result must be a string. A bare namespace prints one string: `__file__` is the filename, `__match__` is the kind, `__profile__` is the profile name, `__config__` is `root_dir`, and `__input__` is the input path. A plain mapping, such as `__profile__.document`, still needs a field.
+- `{{ __date__ }}` prints with `default_date_format`. `strftime('%Y-%m')` is a custom pattern. `Y`, `m`, and `d` are `%Y`, `%m`, and `%d`.
 - An unknown name fails that candidate. The next candidate in the list can run.
 - A syntax error stops the command when the template is loaded.
 - Each distinct source is compiled once for that profile. Another profile in the same command compiles it again.

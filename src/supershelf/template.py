@@ -17,6 +17,20 @@ def scope_field(scope: Mapping[str, Any], root: str, field: str) -> Any:
     return found.get(field)
 
 
+class ScopeObject(dict[str, Any]):
+    """A namespace. `str()` is one field, read when the object is rendered."""
+
+    def __init__(self, fields: Mapping[str, Any], text_field: str) -> None:
+        super().__init__(fields)
+        self._text_field = text_field
+
+    def __str__(self) -> str:
+        found = self.get(self._text_field, "")
+        if isinstance(found, str):
+            return found
+        return ""
+
+
 class Template:
     """Render `{{ name }}` placeholders against one scope."""
 
@@ -44,6 +58,8 @@ class Template:
                 if not isinstance(current, Mapping) or part not in current:
                     raise SupershelfError(f"Unknown template key {expression!r}")
                 current = current[part]
+        if isinstance(current, ScopeObject):
+            return str(current)
         if not isinstance(current, str):
             raise SupershelfError(f"Template {expression!r} must be a string")
         return current

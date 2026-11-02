@@ -9,11 +9,14 @@ import jinja2
 
 from supershelf.constants import TEMPLATE_MARKERS
 from supershelf.errors import VarCandidateError, VarConfigError, VarResolveError
+from supershelf.template import ScopeObject
 from supershelf.var_commands import BuiltinCommands
 
 
 def _finalize(value: object) -> object:
-    """A namespace object with no field fails the candidate. Strings and bools pass."""
+    """A bare namespace prints its text. A plain mapping still needs a field."""
+    if isinstance(value, ScopeObject):
+        return str(value)
     if isinstance(value, Mapping):
         raise VarCandidateError("A namespace needs a field")
     return value

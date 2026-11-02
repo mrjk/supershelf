@@ -41,7 +41,7 @@ from supershelf.constants import (
 from supershelf.defaults import PACKAGED
 from supershelf.errors import VarConfigError, VarResolveError
 from supershelf.match import FileMatch
-from supershelf.template import scope_field
+from supershelf.template import ScopeObject, scope_field
 from supershelf.var_schema import VarCatalog, check_assignment_key
 
 
@@ -994,8 +994,8 @@ class KindFiles:
             self._logger.debug("No kind_overrides_config for kind %s", kind)
             return None
         scope = dict(self._profile_scope)
-        scope[VAR_MATCH] = {FIELD_KIND: kind}
-        scope[VAR_INPUT] = {FIELD_PATH: str(input_dir)}
+        scope[VAR_MATCH] = ScopeObject({FIELD_KIND: kind}, FIELD_KIND)
+        scope[VAR_INPUT] = ScopeObject({FIELD_PATH: str(input_dir)}, FIELD_PATH)
         rendered: list[Path] = []
         for template in self._templates:
             path = self._render_path(template, scope)

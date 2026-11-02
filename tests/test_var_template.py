@@ -3,6 +3,7 @@
 import pytest
 
 from supershelf.errors import VarCandidateError, VarConfigError
+from supershelf.template import ScopeObject
 from supershelf.var_template import VarEnvironment
 from supershelf.vars import DateScope
 
@@ -27,10 +28,15 @@ def test_unknown_name_fails_the_candidate() -> None:
         environment.render("{{ __file_name__ }}", {})
 
 
-def test_a_namespace_without_a_field_fails_the_candidate() -> None:
+def test_a_namespace_prints_its_text() -> None:
     environment = VarEnvironment()
+    rendered = environment.render(
+        "{{ __file__ }}",
+        {"__file__": ScopeObject({"name": "acme.pdf", "path": "bills/acme.pdf"}, "name")},
+    )
+    assert rendered == "acme.pdf"
     with pytest.raises(VarCandidateError, match="namespace needs a field"):
-        environment.render("{{ __file__ }}", {"__file__": {"name": "a.txt"}})
+        environment.render("{{ __profile__.document }}", {"__profile__": {"document": {}}})
 
 
 def test_date_fields_follow_the_stored_format() -> None:
@@ -40,6 +46,11 @@ def test_date_fields_follow_the_stored_format() -> None:
     assert environment.render("{{ __date__.Y }}-{{ __date__.m }}/{{ __date__.d }}", scope) == (
         "2026-04/25"
     )
+    shown = {"__date__": DateScope("2026-04-25", "%d/%m/%Y")}
+    assert environment.render("{{ __date__ }}", shown) == "25/04/2026"
+    assert environment.render("{{ __date__.strftime('%Y-%m') }}", shown) == "2026-04"
+    with pytest.raises(VarCandidateError, match="non-empty"):
+        environment.render("{{ __date__.strftime('') }}", shown)
 
 
 def test_source_is_compiled_once() -> None:

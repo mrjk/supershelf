@@ -28,6 +28,7 @@ from supershelf.constants import (
 )
 from supershelf.defaults import PACKAGED
 from supershelf.errors import SupershelfError
+from supershelf.template import ScopeObject
 from supershelf.scan import InputScanResult, InputScanner
 
 _PATH_STEPS = (
@@ -59,16 +60,19 @@ class ShelfProfile:
         section = read_config_section(document)
         directory = shelf_config.path.parent
         date_format = cls._date_format(section)
-        config_scope: dict[str, Any] = {FIELD_DATE_FORMAT: date_format}
+        config_scope = ScopeObject({FIELD_DATE_FORMAT: date_format}, KEY_ROOT_DIR)
         scope: dict[str, Any] = {
-            VAR_PROFILE: {
-                FIELD_NAME: shelf_config.profile,
-                FIELD_TYPE: shelf_config.type,
-                FIELD_PATH: str(shelf_config.path),
-                FIELD_DIR: str(directory),
-                FIELD_FILE: shelf_config.path.name,
-                FIELD_DOCUMENT: document,
-            },
+            VAR_PROFILE: ScopeObject(
+                {
+                    FIELD_NAME: shelf_config.profile,
+                    FIELD_TYPE: shelf_config.type,
+                    FIELD_PATH: str(shelf_config.path),
+                    FIELD_DIR: str(directory),
+                    FIELD_FILE: shelf_config.path.name,
+                    FIELD_DOCUMENT: document,
+                },
+                FIELD_NAME,
+            ),
             VAR_CONFIG: config_scope,
         }
         rendered: dict[str, Path] = {}

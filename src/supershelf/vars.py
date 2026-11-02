@@ -14,6 +14,7 @@ from supershelf.common import config_section
 from supershelf.constants import (
     DATE_TEXT,
     FIELD_CTIME,
+    FIELD_DATE_FORMAT,
     FIELD_DIR,
     FIELD_EXT,
     FIELD_HASH,
@@ -33,6 +34,7 @@ from supershelf.constants import (
     SOURCE_FACT,
     SOURCE_KIND,
     SOURCE_RULE,
+    TYPE_DATE,
     VAR_CONFIG,
     VAR_DATE,
     VAR_FILE,
@@ -49,12 +51,13 @@ from supershelf.metadata.process import ProcessRunner
 from supershelf.metadata.registry import MetadataRegistry
 from supershelf.metadata.session import MetadataSession
 from supershelf.scan import InputFile
-from supershelf.template import scope_field
+from supershelf.template import ScopeObject, scope_field
 from supershelf.var_schema import (
     CastMiss,
     CastValue,
     VarCatalog,
     VarState,
+    cast_date_display,
     cast_value,
     check_assignment_key,
     layer_source,
@@ -64,17 +67,31 @@ from supershelf.var_template import VarEnvironment, is_template
 
 
 class DateScope:
-    """`__date__` in a Jinja scope. `str()` is YYYY-MM-DD. Fields follow `%Y-%m-%d`."""
+    """`__date__` in a Jinja scope. `str()` uses the profile date format."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, display_format: str = DATE_TEXT) -> None:
         parsed = datetime.strptime(text, DATE_TEXT)
+        self._parsed = parsed
         self.Y = parsed.strftime("%Y")
         self.m = parsed.strftime("%m")
         self.d = parsed.strftime("%d")
-        self._text = parsed.strftime(DATE_TEXT)
+        self._iso = parsed.strftime(DATE_TEXT)
+        self._format = display_format.strip() or DATE_TEXT
 
     def __str__(self) -> str:
-        return self._text
+        try:
+            return self._parsed.strftime(self._format)
+        except (TypeError, ValueError):
+            return self._iso
+
+    def strftime(self, fmt: str) -> str:
+        """Format with a `strftime` pattern, such as `%Y-%m`."""
+        if not isinstance(fmt, str) or not fmt.strip():
+            raise VarCandidateError("A date format must be a non-empty string")
+        try:
+            return self._parsed.strftime(fmt)
+        except (TypeError, ValueError) as exc:
+            raise VarCandidateError(f"Date format {fmt!r} is invalid") from exc
 
 
 def _file_namespace(file: InputFile) -> dict[str, str]:
@@ -101,9 +118,9 @@ def _fact_lines(file_ns: Mapping[str, str], match_ns: Mapping[str, str]) -> dict
     return facts
 
 
-def _render_value(name: str, display: str) -> str | DateScope:
+def _render_value(name: str, display: str, date_format: str) -> str | DateScope:
     if name == VAR_DATE:
-        return DateScope(display)
+        return DateScope(display, date_format)
     return display
 
 
@@ -458,11 +475,18 @@ class VarPlan:
     ) -> dict[str, Any]:
         """Profile names, file and match objects, then display strings written so far."""
         render_scope: dict[str, Any] = dict(self._profile_scope)
-        render_scope[VAR_FILE] = dict(file_ns)
-        render_scope[VAR_MATCH] = dict(match_ns)
+        render_scope[VAR_FILE] = ScopeObject(file_ns, FIELD_NAME)
+        render_scope[VAR_MATCH] = ScopeObject(match_ns, FIELD_KIND)
+        date_format = self._date_display_format()
         for name, value in scope.items():
-            render_scope[name] = _render_value(name, value)
+            render_scope[name] = _render_value(name, value, date_format)
         return render_scope
+
+    def _date_display_format(self) -> str:
+        found = scope_field(self._profile_scope, VAR_CONFIG, FIELD_DATE_FORMAT)
+        if isinstance(found, str) and found.strip():
+            return found
+        return DATE_TEXT
 
     def _first(
         self,
@@ -479,8 +503,15 @@ class VarPlan:
                     cast = cast_value(spec, rendered, allow_typed=False)
                 else:
                     cast = cast_value(spec, source, allow_typed=True)
-            except (VarCandidateError, CastMiss):
+            except VarCandidateError:
                 continue
+            except CastMiss:
+                if spec.type != TYPE_DATE or not isinstance(source, str):
+                    continue
+                try:
+                    cast = cast_date_display(rendered, self._date_display_format())
+                except CastMiss:
+                    continue
             return cast
         return None
 

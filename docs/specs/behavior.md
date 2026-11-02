@@ -302,7 +302,8 @@ Source is who writes a value. Availability is where a template can read it. A na
 - Jinja uses StrictUndefined. An unknown name fails that candidate. autoescape is off.
   The rendered result is stored as a string.
   An old flat name, such as `__file_name__` or `__kind__`, is unknown and fails that candidate. There is no alias.
-  Rendering `__file__`, `__match__`, `__profile__`, or `__config__` with no field fails that candidate.
+  A namespace with no field prints one string: `__profile__` is the name, `__config__` is `root_dir`, `__file__` is the filename, `__match__` is the kind, `__input__` is the input path.
+  A plain mapping, such as `__profile__.document`, still needs a field.
 - A string candidate is rendered once. Failure aborts that candidate.
 - Inserted strings are not rendered again.
 - An empty string is a success for text. For every other type, empty or whitespace is a miss.
@@ -312,9 +313,11 @@ Source is who writes a value. Availability is where a template can read it. A na
   A fact or a kind-file cell that cannot cast stops the file. There is no next candidate for those.
 - __date__, when set, is a calendar date YYYY-MM-DD. A candidate that renders to anything else fails, and the next candidate is tried.
   The stored value, the printed value, and vars_json stay that string.
-  In a Jinja template the same value is an object. `{{ __date__ }}` is `YYYY-MM-DD`.
+  In a Jinja template `{{ __date__ }}` uses `default_date_format`. The packaged format is `%Y-%m-%d`, so the text is `YYYY-MM-DD`.
+  `strftime` takes one `strftime` pattern. `{{ __date__.strftime('%Y-%m') }}` is the year and the month. `%YY` is not a year code.
   The fields are `Y`, `m`, and `d`, the `%Y`, `%m`, and `%d` parts of that date.
   `{{ __date__.Y }}` is the four-digit year. There is no string slicing.
+  A date candidate that is not `YYYY-MM-DD` is parsed with `default_date_format` and stored as `YYYY-MM-DD`. If that also fails, the candidate misses.
   Supershelf uses this date as the document date, including for output paths.
   This step does not write outputs. Behavior 5 does. A layout that uses __date__ fails when __date__ was omitted.
 - Shape errors and template syntax errors fail the command before the walk.
@@ -1114,8 +1117,8 @@ The profile sqlite file is ignored when it sits inside an input, same as record.
   A segment that is empty, `.`, or `..` stops the command.
   A slash inside a variable becomes another directory.
   The joined path must stay inside `path`. The extension is whatever the layout writes. `{{ __file__.ext }}` is the last suffix.
-  `{{ __date__ }}` is `YYYY-MM-DD`. `Y`, `m`, and `d` are the `%Y`, `%m`, and `%d` fields.
-  A template that uses `__date__` fails when `__date__` was omitted.
+  `{{ __date__ }}` prints with `default_date_format`. `Y`, `m`, and `d` are the `%Y`, `%m`, and `%d` fields.
+  `{{ __date__.strftime('%Y-%m') }}` is a custom pattern. A template that uses `__date__` fails when `__date__` was omitted.
 - `operation` is `copy`, `symlink`, or `hardlink`. Omitted, it is `copy`. Any other word stops the command.
 - `on_conflict` is `error`, `skip`, or `overwrite`. Omitted, it is `error`. Any other word stops the command.
   It applies when the destination exists and this profile has no output event for that path.

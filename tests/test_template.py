@@ -3,7 +3,7 @@
 import pytest
 
 from supershelf.errors import SupershelfError
-from supershelf.template import Template
+from supershelf.template import ScopeObject, Template
 
 
 def test_render_replaces_a_name() -> None:
@@ -12,6 +12,16 @@ def test_render_replaces_a_name() -> None:
 
 def test_render_allows_spaces_inside_braces() -> None:
     assert Template({"name": "work"}).render("{{ name }}") == "work"
+
+
+def test_render_stringifies_a_namespace() -> None:
+    scope = {
+        "__profile__": ScopeObject({"name": "acme", "dir": "/cfg"}, "name"),
+        "__input__": ScopeObject({"path": "/inbox"}, "path"),
+    }
+
+    assert Template(scope).render("{{ __profile__ }}") == "acme"
+    assert Template(scope).render("{{ __input__ }}") == "/inbox"
 
 
 def test_render_reads_dotted_dict_keys() -> None:
