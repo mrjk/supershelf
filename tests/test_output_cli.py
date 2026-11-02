@@ -172,8 +172,8 @@ def test_new_file_stops_before_any_write(
         app.dispatch(["output", "run"])
     assert caught.value.code == 1
     error = capsys.readouterr().err
-    assert "is new" in error
-    assert "record run" in error
+    assert "record status is new" in error
+    assert "Run record status, then record run." in error
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "output").exists() is False
 
@@ -191,7 +191,8 @@ def test_preview_and_dry_run_write_nothing(
     app.dispatch(["output", "preview"])
     preview = capsys.readouterr().out
     assert "write" in preview
-    assert "Bank2000" in preview
+    assert "Bank2000/a.pdf" in preview
+    assert str(tmp_path / "output" / "books") not in preview
     assert (tmp_path / "output").exists() is False
     app.dispatch(["output", "run", "--dry-run"])
     assert "write" in capsys.readouterr().out
@@ -216,6 +217,7 @@ def test_run_copies_and_second_run_is_unchanged(
     assert dest.read_bytes() == (inbox / "a.pdf").read_bytes()
     events = _events(tmp_path)
     assert len(events) == 1
+    assert events[0]["destination"] == str(dest)
     assert events[0]["previous"] == {"existed": False, "ours": False}
     assert events[0]["source_hash"] == _digest(b"bank-2000")
     app.dispatch(["output", "run"])
@@ -422,7 +424,7 @@ def test_duplicate_path_is_left_out(
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run", "b.pdf"])
     assert caught.value.code == 1
-    assert "is new" in capsys.readouterr().err
+    assert "record status is new" in capsys.readouterr().err
     assert (tmp_path / "output" / "books" / "b.pdf").exists() is False
 
 
@@ -526,7 +528,10 @@ def test_refresh_is_allowed_and_vars_stops(
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run"])
     assert caught.value.code == 1
-    assert "is vars" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "record status is vars" in error
+    assert "Kind, rule, or variables differ from the stored document." in error
+    assert "Run record status, then record run." in error
     assert (tmp_path / "output").exists() is False
 
 

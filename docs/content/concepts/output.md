@@ -15,7 +15,7 @@ The walk is the same full walk as `record`. Variables are resolved the same way,
 | `output preview [PATH]` | Every selected row, including `unchanged` and `skip` | No |
 | `output run [PATH]` | The same rows, except `unchanged` | Yes, unless `--dry-run` |
 
-Columns are profile, input, path, output, driver, status, operation, when, and dest. input is the 1-based index. path is relative to the input. dest is absolute, or blank when `when` is false.
+Columns are profile, input, path, output, driver, status, operation, when, and dest. input is the 1-based index. path is relative to the input. dest is the path relative to that output's `path`, or blank when `when` is false. The stored event keeps the absolute destination.
 
 `--dry-run` prints the run rows and writes nothing. The database stays read-only. A `conflict` row stops `run` and `--dry-run` after the rows are printed, and the exit status is non-zero. `preview` still exits 0. Every selected profile is planned before any profile writes.
 

@@ -4,13 +4,13 @@ Behavior. Index: [README](../README.md).
 
 `supershelf output` writes a destination for matched files and records that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
 
-One profile has one sqlite file. Profiles do not share events. `cache_file` stays unused. `extension_remap` is not read.
+One profile has one sqlite file. Profiles do not share events. `cache_file` is the metadata cache in behavior 2.3.3. `output` resolves like `record status`, so a miss does not write it. `extension_remap` is not read.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads and `meta()`. `output` does not call the kind-file commit.
 
 The comparison is the record status plan from behavior 4. Output does not implement a second linker. `record_identity` stays a step list. The packaged default `path` means `[path, hash]`. A bare `hash` means `[hash, path]`. A match rule can override the list.
 
-The plan phase resolves like `record status`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`, and the gate in 5.2 stops the command. The tip says to run `record run`.
+The plan phase resolves like `record status`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`, and the gate in 5.2 stops the command. The tip says to run `record status`, then `record run`.
 
 `scan`, `data`, `record`, `schema`, and `profiles` do not read `outputs`.
 
@@ -18,7 +18,7 @@ The plan phase resolves like `record status`. A metadata cache miss does not cre
 
 `PATH` is the optional scan selector from 2.1.1. A value that matches no kept file stops the command. Columns are a clak table: profile, input, path, output, driver, status, operation, when, dest.
 
-input is the 1-based index. path is relative to the input directory. output is the item name. when is the boolean string `true` or `false`. dest is the absolute destination, or blank when `when` rendered `false`.
+input is the 1-based index. path is relative to the input directory. output is the item name. when is the boolean string `true` or `false`. dest is the path relative to that output's `path`, or blank when `when` rendered `false`. The event stores the absolute destination.
 
 Rows follow profile selection, then output list order, then walk order.
 
@@ -77,7 +77,17 @@ Each item has `name`, `driver`, `kinds`, and `when`. The driver owns every other
 
 A live file the record plan marks `duplicate` has no document. It is left out. It does not stop the other files. The owning document is the one that can be written. A `PATH` that matches only that extra file stops the command, because no kept output source was selected.
 
-A file that passes `kinds` and `when` must already be a present document whose record status is `unchanged` or `refresh`. `new`, `vars`, `generation`, `move`, `missing`, `present`, and `unmatched` stop the command before any destination is written and before any output event. The message names the profile, the input, the path, and the record status. The tip says to run `record run`. `refresh` is allowed because the hash and the variables are the same.
+A file that passes `kinds` and `when` must already be a present document whose record status is `unchanged` or `refresh`. `new`, `vars`, `generation`, `move`, `missing`, `present`, and `unmatched` stop the command before any destination is written and before any output event. The message says `record status is` that word, and names the profile, the input, and the path. The tip says why that word blocks output, then `Run record status, then record run.`
+
+- `new`: This file is not recorded.
+- `vars`: Kind, rule, or variables differ from the stored document.
+- `generation`: The file bytes changed.
+- `move`: The file moved.
+- `missing`: The recorded file is missing from the walk.
+- `present`: The file is back and is not stored as present.
+- `unmatched`: No rule matches this file.
+
+A passing status with no document id uses the same message. That tip is only `Run record status, then record run.` `refresh` is allowed because the hash and the variables are the same.
 
 A file that fails `kinds`, or whose `when` is `false`, does not face that gate. A `duplicate` that would have passed `kinds` and `when` is still left out.
 
@@ -135,7 +145,7 @@ Second run. The copy is still the same bytes. Status `unchanged`. `run` prints n
 
 New bytes. `record run` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
 
-Not recorded. The file is `new`. The command stops. The tip says to run `record run`. Nothing is written.
+Not recorded. The file is `new`. The command stops. The tip says to run `record status`, then `record run`. Nothing is written.
 
 Duplicate. `record_identity` is `hash`. The extra path has no document. Output leaves it out. The owning document is written when its own row is `unchanged`.
 
