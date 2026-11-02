@@ -629,9 +629,10 @@ The process bag is checked first. sqlite is read only after that misses.
 
 - It uses the same full walk as scan vars, and the same resolved values.
   There is no --quick and no path filter.
-- It does not open, create, read, or write the profile database, and it does not append events.
-  Behavior 4 owns that file. Resolution does not read vars_json.
-  It does not create the cache file or an output tree.
+- It does not read or write documents, events, or vars_json, and it does not append a record event.
+  Resolution does not read vars_json. Behavior 4 owns those tables.
+  cache_file stays unused. content_meta is not that path.
+  It does not create an output tree.
 - Profile selection is the same as the other commands: --config and --profile.
 - Say var, not field. A field is a match-rule slot, such as regex or filename_glob.
   The feed flag is --var.
@@ -665,10 +666,18 @@ The process bag is checked first. sqlite is read only after that misses.
   if the selected values differ, stop and name both inputs. Do not pick one.
 - A mandatory var that is still unset stops the command before any write, same as scan vars.
 - Duplicate path rows: update the first, leave the later row, and keep the warning from 2.3.2.
+  A rewrite must not drop that later row.
 - --dry-run prints the same summary the prompt would show, asks nothing, and writes nothing.
-- A resolve error writes nothing.
+  It does not create the sqlite file, and it does not migrate it.
+- A resolve error writes no kind file.
+  A content_meta row already stored during that resolve stays.
 - data feed and data prune edit kind-file cells and columns only.
-  Those writes belong on the kind file. They do not open the profile database.
+  Those writes are not database rows.
+  Feed resolves like scan vars. When a candidate calls meta(), feed uses the content_meta rules in 2.3.3.
+  That cache write happens while the preview is computed, before Continue?
+  A no leaves the cache in place, including a schema 1 file migrated to schema 2, and does not edit the kind file.
+  The prompt guards kind-file edits only.
+  Prune does not render templates, so it does not open the database.
 - A feed or prune can change what the next record run resolves.
   That run may append a vars event. data does not write the event.
   A kind cell filled by feed is later labeled kind:<path>, not rule:<name>.
@@ -679,7 +688,8 @@ The process bag is checked first. sqlite is read only after that misses.
   Not a terminal, and no --force, stops the command and tells the user to pass --force.
   --force writes without asking.
   The prompt names which kinds, vars, or purges are enabled.
-- data show does not write and does not prompt.
+- data show does not write kind files and does not prompt.
+  It may write content_meta, as in 3.4.
 
 #### Cases
 
@@ -691,7 +701,11 @@ Shared path. Two inputs resolve the same kind file and the same relative path, a
 
 Not a terminal. `data feed` with no `--force` and no `--dry-run` stops and tells the user to pass `--force`.
 
-Database left alone. `data feed` fills an empty `vendor` cell. The sqlite file is not opened. The next `record run` may append `vars`. The new source label is `kind:<path>`.
+Documents left alone. `data feed` fills an empty `vendor` cell. No document row and no event is written. The next `record run` may append `vars`. The new source label is `kind:<path>`.
+
+Cache before the prompt. A candidate calls `meta()` and `content_meta` misses. The preview creates or migrates the sqlite file and inserts the cache row, then asks `Continue?`. No leaves that cache and does not edit the kind file.
+
+Dry run. `data feed --dry-run` prints the summary and does not create, migrate, or insert `content_meta`.
 
 ### 3.2 data feed
 
@@ -804,9 +818,11 @@ Missing word. `--missing` drops a kind-file row for a path that is not matched a
 #### Command
 
 - supershelf data show [KIND]
-- Prints the live resolve. It does not read the profile database.
-  It does not write and does not prompt.
+- Prints the live resolve. It does not read documents, events, or vars_json.
+  It does not write kind files and it does not prompt.
   A recorded document is not required. A file that was never recorded is still shown.
+  When a candidate calls meta(), show uses the content_meta rules in 2.3.3.
+  A real show may create or migrate the sqlite file. --dry-run does not.
 - One table per profile and kind, because each kind has its own columns.
   It does not return one merged row list.
   A title line names the profile, the kind, and the kind file path when there is one.
@@ -820,7 +836,7 @@ Missing word. `--missing` drops a kind-file row for a path that is not matched a
 
 `supershelf record` stores matched files in the profile sqlite file from `config.database_file`. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. `cache_file` stays unused. This step does not write an output tree.
 
-`scan vars` and `record run` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `scan inspect`, `schema`, `profiles`, and `data` do not either. `record run` also creates it when a row would change.
+`scan vars`, `record run`, `data feed`, and `data show` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `scan inspect`, `schema`, `profiles`, and `data prune` do not. `record run` also creates it when a document row would change. `data feed` and `data show` do not insert a document or an event. A feed prompt answer of no can leave the cache, and a schema 1 file already migrated to schema 2.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. `record` does not call the kind-file commit, so it does not create or append a kind file.
 
