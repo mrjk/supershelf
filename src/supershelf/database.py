@@ -537,7 +537,7 @@ class ShelfDatabase:
         *,
         recorded_at: str,
     ) -> EventRow:
-        """Append an output event. No command calls this yet.
+        """Append an output event after the file driver writes the destination.
 
         The document projection stays as it is. `previous` is what a later
         revert needs.

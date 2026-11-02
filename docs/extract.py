@@ -87,6 +87,9 @@ class DocExtract:
             "help record run": ("record", "run"),
             "help record history": ("record", "history"),
             "help record duplicates": ("record", "duplicates"),
+            "help output": ("output",),
+            "help output preview": ("output", "preview"),
+            "help output run": ("output", "run"),
         }
         blocks = {
             name: DocExtract._help(argv)

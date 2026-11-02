@@ -12,7 +12,7 @@ The walk is the full walk. mtime, ctime, and sha256 are required. There is no `-
 
 Unmatched files log the same warning as `scan kinds`, once per file. They add no row.
 
-`scan vars`, `record run`, `data feed`, and `data show` create the database file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, and `data prune` do not. This command does not create the cache file or an output tree. It may read, create, or append a kind file. See [Kind files](kind-files.md).
+`scan vars`, `record run`, `data feed`, and `data show` create the database file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, and `data prune` do not. This command does not create the cache file and does not write an output. It may read, create, or append a kind file. See [Kind files](kind-files.md).
 
 ## Facts and assignments
 
@@ -94,6 +94,6 @@ A template can read facts and any assignment already rendered. It cannot read a 
 
 An empty string is a success for `text`. For `int`, `float`, `bool`, `date`, `time`, and `datetime`, empty or whitespace is a miss. `__date__` is `date`, so an empty string misses.
 
-If every candidate in a layer misses, that layer does not write the name. An earlier value stays. When no layer has written it, the name stays unset and is left off the row. The command continues. `mandatory` runs after the last layer, and `None` stops the file. A fact or a kind-file cell that cannot cast still stops the file. There is no next candidate for those. This version does not write output paths.
+If every candidate in a layer misses, that layer does not write the name. An earlier value stays. When no layer has written it, the name stays unset and is left off the row. The command continues. `mandatory` runs after the last layer, and `None` stops the file. A fact or a kind-file cell that cannot cast still stops the file. There is no next candidate for those. `output` reads these display strings when it renders `layout` and `when`.
 
 A function that has nothing to return fails that candidate only, by raising `VarCandidateError`. Any other exception from a template stops the command. Built-in commands are documented in [Template commands](template-commands.md).

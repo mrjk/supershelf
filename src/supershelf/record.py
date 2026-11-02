@@ -46,6 +46,7 @@ from supershelf.profile import ShelfProfile
 from supershelf.runs import ShelfRuns
 from supershelf.scan import InputFile, InputScanResult, KeptPath
 from supershelf.var_template import is_template
+from supershelf.vars import FileVars, VarPlan
 
 
 class RecordIdentity(WordChoice):
@@ -741,6 +742,17 @@ class RecordPlan:
         return rows
 
 
+@dataclass(frozen=True)
+class LinkedMatch:
+    """One walked file and the record row that describes it."""
+
+    shelf: ShelfProfile
+    row: PlannedRow
+    found: InputFile
+    resolved: FileVars
+    var_plan: VarPlan
+
+
 class _ProfileRun:
     """One profile's scan, plan, and optional write."""
 
@@ -753,10 +765,12 @@ class _ProfileRun:
         self.shelf = shelf
         self.steps = steps
         self.rules = rules
+        self.linked: list[LinkedMatch] = []
         self._logger = logging.getLogger(LOGGER_NAME)
 
     def plan(self, path: str | None, *, dry_run: bool = False) -> list[PlannedRow]:
         """Resolve this profile and compare it with the database. Kind files are not committed."""
+        self.linked = []
         scans = self.shelf.scan(quick=False)
         walked = {str(result.config.path) for result in scans}
         kept_paths: list[str] = []
@@ -787,6 +801,7 @@ class _ProfileRun:
             dry_run=dry_run,
         )
         live: list[LiveFile] = []
+        seen: list[tuple[str, InputFile, FileVars, VarPlan]] = []
         for _shelf, result, found, matched, resolved, variables in walk:
             live.append(
                 LiveFile.from_match(
@@ -798,6 +813,7 @@ class _ProfileRun:
                     steps=self.rules.get(matched.rule, self.steps),
                 )
             )
+            seen.append((str(result.config.path), found, resolved, variables))
         with ShelfDatabase.open_read(self.shelf.database_file) as database:
             stored = database.identity()
             if stored is not None and not RecordIdentity.same(stored, self.steps):
@@ -810,6 +826,8 @@ class _ProfileRun:
                 )
             prior: dict[int, str] = {}
             for event in database.events():
+                if event.event == EVENT_OUTPUT:
+                    continue
                 prior[event.document_id] = event.identity
             plan = RecordPlan(
                 database.documents(),
@@ -825,12 +843,35 @@ class _ProfileRun:
             rows = plan.rows()
         for message in plan.warnings:
             self._logger.warning("%s", message)
+        self.linked = self._linked(seen, rows)
         if path is not None and not rows and not self._selector_saw_file(selector, kept):
             raise SupershelfError(
                 f"No kept file {path!r}",
                 advice="Use a path from scan files, or run record without a path.",
             )
         return rows
+
+    def _linked(
+        self,
+        walked: list[tuple[str, InputFile, FileVars, VarPlan]],
+        rows: list[PlannedRow],
+    ) -> list[LinkedMatch]:
+        by_location = {(row.file.input_path, row.file.path): row for row in rows}
+        linked: list[LinkedMatch] = []
+        for input_path, found, resolved, variables in walked:
+            row = by_location.get((input_path, found.path))
+            if row is None:
+                continue
+            linked.append(
+                LinkedMatch(
+                    shelf=self.shelf,
+                    row=row,
+                    found=found,
+                    resolved=resolved,
+                    var_plan=variables,
+                )
+            )
+        return linked
 
     def write(self, rows: list[PlannedRow], *, dry_run: bool) -> None:
         """Apply rows that would change. A dry run and an empty plan create nothing."""
@@ -902,6 +943,14 @@ class RecordSession:
             rules = RecordIdentity.rule_lists(shelf.document, shelf.name, steps)
             built.append(_ProfileRun(shelf, steps, rules))
         return cls(built)
+
+    def sources(self, path: str | None) -> list[LinkedMatch]:
+        """Live files in walk order, with the record row for each. Writes nothing."""
+        found: list[LinkedMatch] = []
+        for run in self.runs:
+            run.plan(path, dry_run=True)
+            found.extend(run.linked)
+        return found
 
     def status(self, path: str | None) -> list[dict[str, object]]:
         """Every in-scope row. Writes nothing."""

@@ -22,6 +22,7 @@ from supershelf.match import (
     FileInspection,
     PatternTrial,
 )
+from supershelf.output import OutputSession
 from supershelf.record import RecordReader, RecordSession
 from supershelf.runs import ShelfRuns
 from supershelf.scan import InputFile
@@ -570,6 +571,38 @@ class DataCommand(Parser):
     )
 
 
+class OutputPreviewCommand(ListViewMixin, Parser):
+    """Print destinations without writing them."""
+
+    path = kept_path()
+
+    def cli_run(self, config=None, profile=None, path=None, **_):
+        return OutputSession.load(config, profile).preview(path)
+
+
+class OutputRunCommand(ListViewMixin, Parser):
+    """Write destinations and record the apply."""
+
+    path = kept_path()
+
+    def cli_run(self, config=None, profile=None, path=None, dry_run=False, format=None, **_):
+        rows, failed = OutputSession.load(config, profile).run(path, dry_run=bool(dry_run))
+        if failed:
+            if format:
+                ListView().render(rows, format=format)
+            else:
+                ListView().render(rows)
+            raise SystemExit(1)
+        return rows
+
+
+class OutputCommand(Parser):
+    """Write destinations for recorded files."""
+
+    preview = Command(OutputPreviewCommand, help="Print destinations without writing them")
+    run = Command(OutputRunCommand, help="Write destinations and record the apply")
+
+
 class RecordCommand(Parser):
     """Record matched files and read that history."""
 
@@ -586,7 +619,7 @@ class RecordCommand(Parser):
 
 
 class App(LoggingOptMixin, GlobalFlags, Parser):
-    """Load profiles, scan inputs, record matched files, and edit kind files."""
+    """Load profiles, scan inputs, record matched files, write outputs, and edit kind files."""
 
     version = Argument(
         "--version",
@@ -613,6 +646,7 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
     scan = Command(ScanCommand, help="Scan profile inputs")
     data = Command(DataCommand, help="Read and write kind files")
     record = Command(RecordCommand, help="Record matched files and read that history")
+    output = Command(OutputCommand, help="Write destinations for recorded files")
 
 
 def main() -> None:

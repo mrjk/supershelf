@@ -68,4 +68,4 @@ With `hash`, the old hash moves to `2026-04-25-copy.pdf`. The new bytes at `2026
 
 Each change appends an event: `new`, `move`, `generation`, `vars`, `missing`, `present`, or `unmatched`. A `refresh` does not. Deleting an event is not how a revert works.
 
-The event row also has room for a later output apply: output name, operation (`copy`, `symlink`, or `hardlink`), destination, source hash, and the previous state of that destination. No command writes that event yet. This version does not build an output tree.
+An output apply appends an event with the output name, the operation (`copy`, `symlink`, or `hardlink`), the destination, the source hash, and the previous state of that destination. `output run` writes that event. The document's presence, hash, and generation stay as they are. See [Output](output.md).

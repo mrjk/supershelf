@@ -1,6 +1,6 @@
 # Record matched files
 
-`record` keeps a history of the files a profile matches. The concepts are in [Record](../concepts/record.md). This version does not build an output tree.
+`record` keeps a history of the files a profile matches. The concepts are in [Record](../concepts/record.md). `output` writes destinations for those files. See [Write an output](write-an-output.md).
 
 Use the profile from [Set variables](set-variables.md), with a file in `inbox`:
 

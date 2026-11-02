@@ -1,6 +1,6 @@
 # Set the document date
 
-`__date__` is the document date. When it is set, the value is a calendar date `YYYY-MM-DD`. Supershelf uses that date for the document, including later output paths. This version does not write those paths. See [Limits](../concepts/limits.md).
+`__date__` is the document date. When it is set, the value is a calendar date `YYYY-MM-DD`. An output layout can slice that string, for example `{{ __date__[0:4] }}`. A layout that uses `__date__` fails when `__date__` was omitted. See [Output](../concepts/output.md).
 
 The commands used below are documented in [Template commands](../concepts/template-commands.md).
 

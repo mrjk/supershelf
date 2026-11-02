@@ -8,4 +8,4 @@ supershelf 0.1.0
 ```
 <!-- /extract -->
 
-This documentation describes `profiles`, the scan commands, and `schema`: file lists, matching, variables, kind files, and template commands. It does not describe an output tree. See [Limits](../concepts/limits.md).
+This documentation describes `profiles`, the scan commands, `record`, `output`, and `schema`: file lists, matching, variables, kind files, template commands, and the file output. See [Limits](../concepts/limits.md).

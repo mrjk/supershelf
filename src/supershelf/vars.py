@@ -300,6 +300,24 @@ class VarPlan:
             }
         return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
+    def compile(self, source: str) -> None:
+        """Compile a template now so a syntax error fails before the walk."""
+        self._environment.compile_source(source)
+
+    def render_file(self, source: str, resolved: FileVars, file: InputFile) -> str:
+        """Render one template with this file's display strings."""
+        scope = dict(self._profile_scope)
+        for name, state in resolved.states:
+            if state.value is not None:
+                scope[name] = state.display
+        binding = FileBinding(
+            file.absolute,
+            file.sha256 or "",
+            file.ctime or "",
+            file.mtime or "",
+        )
+        return self._environment.render(source, scope, binding, self._pdf)
+
     def commit(self) -> None:
         """Create or append kind rows after every file in this plan has resolved."""
         self._kinds.commit()

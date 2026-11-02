@@ -31,6 +31,19 @@ class DatabaseError(SupershelfError):
     """The profile sqlite file cannot be read or written."""
 
 
+class OutputConfigError(SupershelfError):
+    """A bad output item, output module, or literal when. Exit 2."""
+
+    rc = 2
+
+
+class OutputResolveError(SupershelfError):
+    """A file the output plan cannot accept.
+
+    The record gate, a layout, a claim, or a destination. The tip names a fix.
+    """
+
+
 class VarCandidateError(Exception):
     """Skip this candidate and try the next one.
 

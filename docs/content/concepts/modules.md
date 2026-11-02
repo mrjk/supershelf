@@ -46,3 +46,5 @@ GLOBALS = {"account_tail": account_tail}
 ```
 
 `FILTERS` may be omitted. `GLOBALS` may be omitted. A module that exports neither adds no commands.
+
+`config.output_modules` is a different list. It registers output drivers, not template commands. See [Output](output.md).

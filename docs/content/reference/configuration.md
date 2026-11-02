@@ -20,10 +20,11 @@ These keys live under `config`.
 | `profile` | string | from the filename, or `default` | Profile name when the filename is not `profile.NAME.*`. See [Profiles](../concepts/profiles.md). |
 | `default_date_format` | string | `%Y-%m-%d` | `strftime` pattern for mtime and ctime in `scan files`. Not a template. |
 | `root_dir` | string | `{{ __profile_dir__ }}` | Path template. Relative results resolve from the config directory. |
-| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, and `data prune` do not. |
+| `database_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite` | Path template. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `output run` opens an existing file when an output event would be appended and does not create a missing file. `--dry-run` does not create or migrate it. `scan files`, `scan kinds`, and `data prune` do not. |
 | `cache_file` | string | `{{ __root_dir__ }}/profile.{{ __profile__ }}.cache` | Path template. Rendered, not created. |
 | `record_identity` | string or list of strings | `path` | `path`, `hash`, or a list of those steps. A bare `path` means path then hash. A bare `hash` means hash then path. A list does not expand. `""` and `[]` are invalid and do not fall back. See [Record](../concepts/record.md). |
 | `var_modules` | list of strings | none | Importable modules. See [Modules](../concepts/modules.md). |
+| `output_modules` | list of strings | none | Importable output driver modules. Omitted, null, and `[]` add no drivers. See [Output](../concepts/output.md). |
 | `kind_overrides_mode` | string | `auto` | `auto`, `manual`, `always`, or `disabled`. See [Kind files](../concepts/kind-files.md). |
 | `kind_overrides_date_format` | string | `default_date_format` | `strptime` format for a kind-file `__date__` cell. |
 | `kind_overrides_sep` | one character | `,` | CSV separator. YAML and TOML ignore it. See [Kind file](kind-file.md). |
@@ -36,6 +37,7 @@ Other keys under `config` are stored. This version does not interpret them.
 | Key | Type | Default | Role |
 | --- | --- | --- | --- |
 | `inputs` | list of mappings | required for a scan | Folders to walk. See [Inputs](../concepts/inputs.md). |
+| `outputs` | list of mappings | none | Destinations for `output`. Omitted or null on an output command stops it. `[]` stops it. `scan`, `data`, `record`, `schema`, and `profiles` ignore the key. See [Output](../concepts/output.md). |
 | `match_rules` | list of mappings | none | First match wins. Missing means nothing matches. See [Matching](../concepts/matching.md). |
 | `default_vars` | mapping | none | Lowest assignment layer. See [Variables](../concepts/variables.md). |
 | `vars_schema` | mapping | none | Type of each variable name. A missing name is `text`. See [Variables](../concepts/variables.md). |
@@ -52,6 +54,21 @@ Other keys under `config` are stored. This version does not interpret them.
 | `follow_symlinks` | boolean | `true` |
 
 Unknown keys on an input stop the command.
+
+### outputs item
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `name` | string | required. Unique in the profile. |
+| `driver` | string | `file` |
+| `kinds` | list of strings | every matched kind. `[]` selects no file |
+| `when` | string | `true` |
+| `path` | string | required for the file driver. Profile path template. |
+| `layout` | string | `{{ __file_path__ }}` |
+| `operation` | `copy`, `symlink`, or `hardlink` | `copy` |
+| `on_conflict` | `error`, `skip`, or `overwrite` | `error` |
+
+The file driver rejects an unknown key. `when` has to be a string. An unquoted YAML bool stops the command.
 
 ### match_rules item
 

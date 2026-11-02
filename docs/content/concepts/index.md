@@ -10,4 +10,6 @@ flowchart LR
   facts --> defaults[default_vars]
   defaults --> ruleVars[Rule vars]
   ruleVars --> kindFile[Kind file row]
+  kindFile --> recorded[Record]
+  recorded --> output[Output]
 ```

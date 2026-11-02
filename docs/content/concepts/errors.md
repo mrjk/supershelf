@@ -8,6 +8,10 @@ User errors stop the command and print a message without a traceback. When the e
 
 `RecordConfigError` is a bad `record_identity` word or list. It exits with status 2. The steps in this version are `path` and `hash`. A different case, an empty string, an empty list, an empty comma item, a repeated step, a template, or the word `key` is this error. The message names `--record-identity`, `SUPERSHELF_RECORD_IDENTITY`, `config.record_identity`, or the match rule (`Profile NAME match rule RULE`). `record status` and `record run` check every rule before the walk. Scan commands do not.
 
+`OutputConfigError` is a bad output item, a bad `output_modules` entry, or a literal `when` that is not a boolean string. It exits with status 2. These are checked before the walk. An unknown driver, a repeated output name, a file-driver key it does not know, and an unquoted YAML bool are this error.
+
+`OutputResolveError` is a file the plan cannot accept: the record gate, a layout, a claim on a destination, or a destination that is the source, a directory, or blocked by a parent file. It exits with status 1. The tip names a fix, such as `record run` or `copy` instead of a cross-device hardlink. A `conflict` row is not this error. `output run` prints that row and exits non-zero. `output preview` prints it and exits 0.
+
 `DatabaseError` is a profile sqlite file that cannot be used: the parent is not a directory, the path is not a supershelf database, or the file is locked. A read accepts schema 1 and schema 2. A write migrates schema 1 to schema 2. Any other schema version is rejected. It exits with status 1. The tip names a path change or a retry.
 
 `VarResolveError` is a fact or kind-file cell that cannot cast, or a `mandatory` name that is still unset after the last layer. A candidate list that misses does not raise it. The message names the profile, the input, the path, and the variable. The tip is the cast message for a failed fact or cell, `{name} is mandatory and no layer set it.` when a mandatory name is still unset, or the date-format message for a kind-file `__date__` cell. There is no next candidate.
