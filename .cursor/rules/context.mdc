@@ -1,0 +1,20 @@
+---
+description: Which files to open, and how a change moves from plan to spec to code
+alwaysApply: true
+---
+
+# Context
+
+- Product behavior: read `docs/specs/README.md`, then only the one file it names for that id. `behavior 2.2` is `docs/specs/behavior/2.2-match.md` only.
+- Skip `docs/content/`, `docs/v1/`, `docs/site/`, and `docs/specs/drafts/` unless the user names them.
+- Open `docs/RULES.md` only for repo layout, license, or naming.
+- For code, open the module the user named. Do not tour `src/`.
+
+# Workflow
+
+- Planning: ask questions the user can answer, including edge cases. Do not implement while a doubt remains. Update the spec before implementation.
+- Integration plan: state what will be written and how. Wait for review before coding.
+- Implementation follows the accepted plan. Document the feature in the spec file the index names. If a review changes behavior, update that spec and warn when it conflicts with an existing rule.
+- If the request needs a lot of code, an external plugin, or a complicated design, say so before starting. Offer a simpler option and its drawbacks.
+- In the POC phase, alternate spec work with implementation and tests. Skip the public docs until the user asks to resync them.
+- When a decision is accepted, write it in the spec file the index names before implementation.
