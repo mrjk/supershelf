@@ -2,7 +2,7 @@
 
 Supershelf loads one or more profile files, walks their input directories, matches each kept file to a kind, and prints the variables for that file.
 
-A profile is a TOML or YAML file. It names the folders to read, the rules that classify files, and the values to attach to each match. `scan vars` can also keep a kind file, one row per matched path. `record run` stores matched files in the profile database. This version does not write an output tree or a cache file.
+A profile is a TOML or YAML file. It names the folders to read, the rules that classify files, and the values to attach to each match. `scan vars` can also keep a kind file, one row per matched path. `data feed` and `data prune` edit that file. `data show` prints the live values. `record run` stores matched files in the profile database. This version does not write an output tree or a cache file.
 
 ## Install
 

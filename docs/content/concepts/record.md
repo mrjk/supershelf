@@ -2,7 +2,7 @@
 
 `record` stores each matched file in the profile sqlite file. The path is `config.database_file`. The packaged path is `{{ __root_dir__ }}/profile.{{ __profile__ }}.sqlite`. One profile has one file. `cache_file` is a different path, and nothing writes it.
 
-`scan vars` and `record run` create the sqlite file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `scan inspect`, `schema`, and `profiles` do not either. `record run` also creates it when a row would change. `--dry-run` prints those rows and creates nothing.
+`scan vars`, `record run`, `data feed`, and `data show` create the sqlite file when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `scan inspect`, `schema`, `profiles`, and `data prune` do not. `record run` also creates it when a row would change. `--dry-run` prints those rows and creates nothing. `data feed` and `data show` do not insert a document or an event.
 
 The walk is the same full walk as `scan vars`. Variables are resolved the same way, including a kind-file read. `record` does not create or append a kind file.
 

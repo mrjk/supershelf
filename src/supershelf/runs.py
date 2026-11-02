@@ -66,16 +66,13 @@ class ShelfRuns:
             for shelf in self.shelves
         ]
 
-    def resolved(
+    def plans(
         self,
-        path: str | None,
         *,
         mode: str | None = None,
         dry_run: bool = False,
-        groups: list[list[InputScanResult]] | None = None,
-        accept: Callable[[InputFile], bool] | None = None,
-    ) -> ResolvedWalk:
-        """Match and resolve. A passed `groups` skips a second walk."""
+    ) -> list[tuple[ShelfProfile, Matcher, VarPlan]]:
+        """One matcher and var plan per profile. Does not walk."""
         prepared: list[tuple[ShelfProfile, Matcher, VarPlan]] = []
         for shelf in self.shelves:
             matcher = Matcher.from_document(shelf.document, shelf.name)
@@ -94,6 +91,19 @@ class ShelfRuns:
                     ),
                 )
             )
+        return prepared
+
+    def resolved(
+        self,
+        path: str | None,
+        *,
+        mode: str | None = None,
+        dry_run: bool = False,
+        groups: list[list[InputScanResult]] | None = None,
+        accept: Callable[[InputFile], bool] | None = None,
+    ) -> ResolvedWalk:
+        """Match and resolve. A passed `groups` skips a second walk."""
+        prepared = self.plans(mode=mode, dry_run=dry_run)
         if groups is None:
             groups = self.scans(quick=False, path=path)
         return ResolvedWalk(prepared, groups, accept)

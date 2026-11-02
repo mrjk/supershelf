@@ -145,6 +145,14 @@ class KindDateFormat:
                 advice="Use directives such as %Y, %m, and %d.",
             ) from exc
 
+    def show(self, stored: str) -> str:
+        """Write a stored YYYY-MM-DD value with this kind-file format."""
+        try:
+            parsed = datetime.strptime(stored.strip(), DATE_TEXT)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return parsed.strftime(self.text)
+
 
 class KindCsvSep:
     """One-character separator for a kind-file CSV. Omitted means a comma."""
@@ -191,6 +199,8 @@ class KindTable:
         *,
         blank: bool = False,
         missing: bool = False,
+        raw_rows: list[tuple[str, dict[str, str]]] | None = None,
+        bom: bool = False,
     ) -> None:
         self.path = path
         self.suffix = suffix
@@ -199,6 +209,8 @@ class KindTable:
         self.sep = sep
         self.blank = blank
         self.missing = missing
+        self.raw_rows = [] if raw_rows is None else raw_rows
+        self._bom = bom
         self._pending: list[str] = []
         self._pending_seen: set[str] = set()
         self._extra_columns: list[str] = []
@@ -213,21 +225,25 @@ class KindTable:
     def read(cls, path: Path, logger: logging.Logger, sep: str) -> KindTable:
         """Parse an existing file. An empty file is an empty table."""
         suffix = cls._suffix(path)
+        payload = path.read_bytes()
+        bom = payload.startswith(b"\xef\xbb\xbf")
         try:
-            text = path.read_text(encoding="utf-8-sig")
+            text = payload.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise VarConfigError(
                 f"{path} is not UTF-8",
                 advice="Save the kind file as UTF-8.",
             ) from exc
         if text.strip() == "":
-            return cls(path, suffix, None, {}, sep, blank=True)
+            return cls(path, suffix, None, {}, sep, blank=True, bom=bom)
         if suffix == ".csv":
-            columns, rows = cls._parse_csv(path, text, logger, sep)
-            return cls(path, suffix, columns, rows, sep)
+            columns, rows, raw_rows = cls._parse_csv(path, text, logger, sep)
+            return cls(path, suffix, columns, rows, sep, raw_rows=raw_rows, bom=bom)
         if suffix == ".toml":
-            return cls(path, suffix, None, cls._parse_toml(path, text, logger), sep)
-        return cls(path, suffix, None, cls._parse_yaml(path, text, logger), sep)
+            rows, raw_rows = cls._parse_toml(path, text, logger)
+            return cls(path, suffix, None, rows, sep, raw_rows=raw_rows, bom=bom)
+        rows, raw_rows = cls._parse_yaml(path, text, logger)
+        return cls(path, suffix, None, rows, sep, raw_rows=raw_rows, bom=bom)
 
     def ensure(self, relative: str) -> None:
         """Remember a matched path that is not already a row."""
@@ -368,6 +384,12 @@ class KindTable:
             return None
         return rows[0]
 
+    def accepts_name(self, name: str) -> bool:
+        """CSV rejects a column that is not a legal header name."""
+        if self.suffix != ".csv":
+            return True
+        return self._legal_column(name)
+
     @classmethod
     def _legal_column(cls, name: str) -> bool:
         if name == KIND_CSV_PATH or name in cls._SHA_ALIASES or name in cls._DATE_ALIASES:
@@ -381,6 +403,153 @@ class KindTable:
         except VarConfigError:
             return False
         return True
+
+    def set_cell(self, relative: str, name: str, value: str) -> bool:
+        """Set one cell on the first row. An illegal CSV column is refused."""
+        if value.strip() == "":
+            return False
+        if not self.accepts_name(name):
+            return False
+        row = self.rows.get(relative)
+        if row is None:
+            row = {}
+            self.rows[relative] = row
+        row[name] = value
+        if self.suffix == ".csv":
+            if self.columns is None:
+                self.columns = (KIND_CSV_PATH,)
+            if name not in self.columns:
+                self.columns = (*self.columns, name)
+        return True
+
+    def drop_column(self, name: str) -> None:
+        """Remove one column or key from every row, including a later duplicate."""
+        if self.columns is not None:
+            self.columns = tuple(item for item in self.columns if item != name)
+        for cells in self.rows.values():
+            cells.pop(name, None)
+        self.raw_rows = [
+            (path, {key: item for key, item in cells.items() if key != name})
+            for path, cells in self.raw_rows
+        ]
+
+    def drop_paths(self, paths: set[str]) -> None:
+        """Drop every row for these relative paths, including later duplicates."""
+        for path in paths:
+            self.rows.pop(path, None)
+        self.raw_rows = [(path, cells) for path, cells in self.raw_rows if path not in paths]
+
+    def clear_rows(self) -> None:
+        """Remove every data row. A CSV header stays on the table."""
+        self.rows.clear()
+        self.raw_rows.clear()
+
+    def column_filled(self, name: str) -> bool:
+        """True when any raw row, including a later duplicate, has this cell."""
+        for cells in self.rows.values():
+            if cells.get(name, "").strip():
+                return True
+        for _path, cells in self.raw_rows:
+            if cells.get(name, "").strip():
+                return True
+        return False
+
+    def data_columns(self) -> tuple[str, ...]:
+        """CSV header names after PATH, or TOML and YAML keys in file order."""
+        if self.suffix == ".csv":
+            return tuple(name for name in (self.columns or ()) if name != KIND_CSV_PATH)
+        names: list[str] = []
+        seen: set[str] = set()
+        for _path, cells in self.output_rows():
+            for name in cells:
+                if name in seen:
+                    continue
+                seen.add(name)
+                names.append(name)
+        return tuple(names)
+
+    def output_rows(self) -> list[tuple[str, dict[str, str]]]:
+        """File order. The first row of a path is the edited one. Later rows stay."""
+        emitted: set[str] = set()
+        ordered: list[tuple[str, dict[str, str]]] = []
+        for relative, cells in self.raw_rows:
+            if relative not in self.rows:
+                continue
+            if relative not in emitted:
+                emitted.add(relative)
+                ordered.append((relative, self.rows[relative]))
+                continue
+            ordered.append((relative, cells))
+        for relative, cells in self.rows.items():
+            if relative in emitted:
+                continue
+            ordered.append((relative, cells))
+        return ordered
+
+    def save(self) -> None:
+        """Rewrite the kind file. A later duplicate row is kept."""
+        self._require_parent()
+        text = self._full_text()
+        payload = text.encode("utf-8")
+        if self._bom:
+            payload = b"\xef\xbb\xbf" + payload
+        self.path.write_bytes(payload)
+        self.missing = False
+        self.blank = False
+
+    def _full_text(self) -> str:
+        rows = self.output_rows()
+        if self.suffix == ".csv":
+            columns = self.columns
+            if columns is None:
+                columns = (KIND_CSV_PATH, *(name for _path, cells in rows for name in cells))
+                columns = tuple(dict.fromkeys(columns))
+            return self._csv_rows(columns, rows)
+        if self.suffix == ".toml":
+            return "".join(self._toml_row(relative, cells) for relative, cells in rows)
+        return self._yaml_rows(rows)
+
+    def _csv_rows(self, columns: tuple[str, ...], rows: list[tuple[str, dict[str, str]]]) -> str:
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, delimiter=self.sep, lineterminator="\n")
+        writer.writerow(columns)
+        for relative, cells in rows:
+            writer.writerow(
+                [relative if name == KIND_CSV_PATH else cells.get(name, "") for name in columns]
+            )
+        return buffer.getvalue()
+
+    def _toml_row(self, relative: str, cells: dict[str, str]) -> str:
+        lines = [f"[[rows]]\npath = {self._toml_string(relative)}\n"]
+        if cells:
+            lines.append("[rows.vars]\n")
+            for key, value in cells.items():
+                lines.append(f"{key} = {self._toml_string(value)}\n")
+        return "".join(lines)
+
+    @classmethod
+    def _yaml_rows(cls, rows: list[tuple[str, dict[str, str]]]) -> str:
+        if not rows:
+            return "[]\n"
+        chunks: list[str] = []
+        for relative, cells in rows:
+            dumped_path = yaml.safe_dump(
+                relative,
+                allow_unicode=True,
+                default_style='"',
+            ).strip()
+            lines = [f"- path: {dumped_path}\n"]
+            if cells:
+                lines.append("  vars:\n")
+                for key, value in cells.items():
+                    dumped = yaml.safe_dump(
+                        value,
+                        allow_unicode=True,
+                        default_style='"',
+                    ).strip()
+                    lines.append(f"    {key}: {dumped}\n")
+            chunks.append("".join(lines))
+        return "".join(chunks)
 
     def _append(self) -> None:
         block = self._rendered(
@@ -445,7 +614,7 @@ class KindTable:
         text: str,
         logger: logging.Logger,
         sep: str,
-    ) -> tuple[tuple[str, ...], dict[str, dict[str, str]]]:
+    ) -> tuple[tuple[str, ...], dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
         try:
             parsed = [
                 row
@@ -465,6 +634,7 @@ class KindTable:
         header = tuple(cell.strip() for cell in parsed[0])
         cls._check_header(path, header, sep)
         rows: dict[str, dict[str, str]] = {}
+        raw_rows: list[tuple[str, dict[str, str]]] = []
         for raw in parsed[1:]:
             if len(raw) > len(header):
                 raise VarConfigError(
@@ -488,6 +658,7 @@ class KindTable:
                         advice=cls._header_advice(sep, header),
                     )
                 continue
+            raw_rows.append((relative, dict(cells)))
             if relative in rows:
                 logger.warning(
                     "Kind file %s path %r is duplicated; keeping the first row",
@@ -496,7 +667,7 @@ class KindTable:
                 )
                 continue
             rows[relative] = cells
-        return header, rows
+        return header, rows, raw_rows
 
     @classmethod
     def _check_header(cls, path: Path, header: tuple[str, ...], sep: str) -> None:
@@ -568,7 +739,7 @@ class KindTable:
         path: Path,
         text: str,
         logger: logging.Logger,
-    ) -> dict[str, dict[str, str]]:
+    ) -> tuple[dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
         try:
             raw = yaml.safe_load(text)
         except yaml.YAMLError as exc:
@@ -577,7 +748,7 @@ class KindTable:
                 advice="Use a bare list of path and vars items.",
             ) from exc
         if raw is None:
-            return {}
+            return {}, []
         if not isinstance(raw, list):
             raise VarConfigError(
                 f"{path} must be a bare list",
@@ -591,7 +762,7 @@ class KindTable:
         path: Path,
         text: str,
         logger: logging.Logger,
-    ) -> dict[str, dict[str, str]]:
+    ) -> tuple[dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
         try:
             raw = tomllib.loads(text)
         except tomllib.TOMLDecodeError as exc:
@@ -600,7 +771,7 @@ class KindTable:
                 advice="Use [[rows]] tables with path and an optional vars table.",
             ) from exc
         if raw == {}:
-            return {}
+            return {}, []
         rows = raw.get("rows") if isinstance(raw, dict) else None
         if not isinstance(rows, list):
             raise VarConfigError(
@@ -615,8 +786,9 @@ class KindTable:
         path: Path,
         items: list[object],
         logger: logging.Logger,
-    ) -> dict[str, dict[str, str]]:
+    ) -> tuple[dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
         rows: dict[str, dict[str, str]] = {}
+        raw_rows: list[tuple[str, dict[str, str]]] = []
         for index, item in enumerate(items, start=1):
             if not isinstance(item, dict):
                 raise VarConfigError(
@@ -630,6 +802,7 @@ class KindTable:
                     advice="Path is the file relative to the input.",
                 )
             cells = cls._vars(path, index, item.get("vars"))
+            raw_rows.append((relative, dict(cells)))
             if relative in rows:
                 logger.warning(
                     "Kind file %s path %r is duplicated; keeping the first row",
@@ -638,7 +811,7 @@ class KindTable:
                 )
                 continue
             rows[relative] = cells
-        return rows
+        return rows, raw_rows
 
     @classmethod
     def _vars(cls, path: Path, index: int, raw: object) -> dict[str, str]:
@@ -723,6 +896,7 @@ class KindFiles:
         self._dry_run = dry_run
         self._tables: dict[Path, KindTable] = {}
         self._winners: dict[tuple[str, str], KindTable | None] = {}
+        self._seen: set[tuple[str, str]] = set()
         self._catalog: VarCatalog | None = None
         self._logger = logging.getLogger(LOGGER_NAME)
 
@@ -756,6 +930,31 @@ class KindFiles:
         """Use this catalog when a kind file is chosen."""
         self._catalog = catalog
 
+    @property
+    def templates(self) -> tuple[str, ...]:
+        """Path templates. An empty tuple means there is no kind file."""
+        return self._templates
+
+    @property
+    def dates(self) -> KindDateFormat:
+        """Format used to read and write a __date__ cell."""
+        return self._dates
+
+    def open_table(self, kind: str, input_dir: Path, *, create: bool) -> KindTable | None:
+        """The winning file. `create` holds a missing file and does not write it.
+
+        Mode does not apply. A cached miss stays a miss until `create` is set.
+        """
+        search = (kind, str(input_dir))
+        if search in self._seen:
+            cached = self._winners.get(search)
+            if cached is not None or not create:
+                return cached
+        table = self._find_table(kind, input_dir, create=create)
+        self._seen.add(search)
+        self._winners[search] = table
+        return table
+
     def cells_for(
         self,
         kind: str,
@@ -766,10 +965,11 @@ class KindFiles:
         """Return the literal cells for one file. auto and always record a missing path."""
         if self._mode == KIND_MODE_DISABLED:
             return KindRow(None, {})
-        search = (kind, str(input_dir))
-        if search not in self._winners:
-            self._winners[search] = self._winner(kind, input_dir)
-        table = self._winners[search]
+        table = self.open_table(
+            kind,
+            input_dir,
+            create=self._mode == KIND_MODE_ALWAYS,
+        )
         if table is None:
             return KindRow(None, {})
         cells = self._literals(table.rows.get(relative, {}), match, relative)
@@ -785,7 +985,7 @@ class KindFiles:
                 table.sync_schema_columns(self._dry_run, self._logger)
             table.commit(self._dry_run, self._logger)
 
-    def _winner(self, kind: str, input_dir: Path) -> KindTable | None:
+    def _find_table(self, kind: str, input_dir: Path, *, create: bool) -> KindTable | None:
         if not self._templates:
             self._logger.debug("No kind_overrides_config for kind %s", kind)
             return None
@@ -809,7 +1009,7 @@ class KindFiles:
                     advice="Point kind_overrides_config at a csv, toml, or yaml file.",
                 )
             return self._with_headers(self._load_existing(path, kind), kind)
-        if self._mode == KIND_MODE_ALWAYS and rendered:
+        if create and rendered:
             return self._with_headers(
                 self._hold(KindTable.missing(rendered[0], self._sep)),
                 kind,

@@ -114,7 +114,10 @@ def test_empty_date_format_and_root_dir_do_not_fall_back(tmp_path: Path) -> None
 
 def test_kind_date_format_falls_back_only_when_unset() -> None:
     user = {"default_date_format": "%d/%m/%Y"}
-    assert KindDateFormat.from_section(user, {}).text == "%d/%m/%Y"
+    dates = KindDateFormat.from_section(user, {})
+    assert dates.text == "%d/%m/%Y"
+    assert dates.show("2026-04-25") == "25/04/2026"
+    assert dates.store("25/04/2026") == "2026-04-25"
     assert KindDateFormat.from_section({}, {}).text == PACKAGED.default_date_format
     assert (
         KindDateFormat.from_section(

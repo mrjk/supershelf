@@ -163,6 +163,16 @@ class VarPlan:
         self._session = session
         self._pdf: dict[str, tuple[str | None, str | None]] = {}
 
+    @property
+    def catalog(self) -> VarCatalog:
+        """Schema and kind columns for this profile."""
+        return self._catalog
+
+    @property
+    def kind_files(self) -> KindFiles:
+        """Kind files for this profile. Commit stays with scan vars."""
+        return self._kinds
+
     @classmethod
     def from_document(
         cls,

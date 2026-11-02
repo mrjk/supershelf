@@ -20,7 +20,7 @@ These `config` keys are rendered in order. After each one, a relative result is 
 
 `config.default_date_format` is a plain string. It is not a template. The default is `%Y-%m-%d`. It formats mtime and ctime in `scan files`. The stored timestamps used by variables stay UTC ISO-8601.
 
-`scan vars` and `record run` create `database_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not. `record run` also creates `database_file` when a row would change. Nothing writes `cache_file`. The paths are rendered so later templates can read them.
+`scan vars`, `record run`, `data feed`, and `data show` create `database_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, and `data prune` do not. `record run` also creates `database_file` when a row would change. Nothing writes `cache_file`. The paths are rendered so later templates can read them.
 
 ## Other paths
 

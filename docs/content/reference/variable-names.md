@@ -29,7 +29,7 @@ Named regex groups are stored in pattern order and printed with the other names.
 | --- | --- | --- |
 | `__date__` | `default_vars`, rule `vars`, kind file | Type `date`. Stored as `YYYY-MM-DD`. |
 
-`__date__` is not an internal. The filename does not set it. In `default_vars` and rule `vars`, an empty string does not count as success. A candidate list that misses leaves an earlier value in place. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
+`__date__` is not an internal. The filename does not set it. In `default_vars` and rule `vars`, an empty string does not count as success. A candidate list that misses leaves an earlier value in place. A kind-file cell is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. `data feed` writes `__date__` with that format. A `date` var that is not `__date__` stays `YYYY-MM-DD`. A blank cell is absent. A cell that does not match the format stops the command.
 
 ## Profile scope
 
@@ -46,7 +46,7 @@ These names are in scope for path templates and variable templates. They are not
 | `__default_date_format__` | `config.default_date_format`. |
 | `__config_data__` | The parsed config file. Dotted keys read nested mappings. |
 | `__root_dir__` | Rendered root directory. |
-| `__database_file__` | Rendered database path. `record run` creates it when a row would change. |
+| `__database_file__` | Rendered database path. `record run` creates it when a row would change. `scan vars`, `record run`, `data feed`, and `data show` also create it when `meta()` runs and the cache misses. `--dry-run` does not. |
 | `__cache_file__` | Rendered cache path. The file is not created. |
 
 Kind-file path templates also see:

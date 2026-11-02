@@ -2,7 +2,7 @@
 
 A kind file is a list of rows for one kind. One row per path relative to the input. A missing variable is omitted. How the file is chosen is in [Kind files](../concepts/kind-files.md).
 
-A cell is one string. It is not a candidate list. It is not compiled, even when it contains `{{`, `{%`, or `{#`. An empty cell, a blank string, or a YAML or TOML null is absent. When the row is applied, a non-empty cell is cast to the name's type. `text` keeps surrounding spaces. The other types strip once. `__date__` is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`.
+A cell is one string. It is not a candidate list. It is not compiled, even when it contains `{{`, `{%`, or `{#`. An empty cell, a blank string, or a YAML or TOML null is absent. When the row is applied, a non-empty cell is cast to the name's type. `text` keeps surrounding spaces. The other types strip once. `__date__` is parsed with `kind_overrides_date_format` and stored as `YYYY-MM-DD`. `data feed` writes that cell back with the same format. A `date` var that is not `__date__` stays `YYYY-MM-DD`.
 
 Files are UTF-8. Invalid UTF-8 stops the command. A leading byte-order mark is accepted and is not part of the first column name. The suffix is `.csv`, `.toml`, `.yaml`, or `.yml`. `.yml` is the same text as YAML.
 

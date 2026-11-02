@@ -73,3 +73,17 @@ The cell is stripped, then the whole string is parsed. The stored value is `YYYY
 This format applies to `__date__` only. In TOML and YAML, another key, including `date`, stays raw text.
 
 `config.kind_overrides_sep` is checked before the walk, at the same time as the date format. The separator rules are in [Kind file](../reference/kind-file.md).
+
+## data feed and data prune
+
+`kind_overrides_mode` does not gate `data feed` or `data prune`. `manual` and `disabled` still write. An empty `kind_overrides_config` stops `data feed`, `data prune`, and `data show`.
+
+`data feed` fills empty selected cells with the resolved display string. A filled cell stays. An unset var does not blank a cell and does not add an empty one. Feed does not append the empty rows `scan vars` appends. `__date__` is written with `kind_overrides_date_format`. Other date vars stay `YYYY-MM-DD`. A matched path with no row is added when a selected cell is written. A new column is appended on the right.
+
+`data prune` edits existing files and does not create a missing one. With no flags it drops empty columns that are not in the schema. `--missing` drops a row whose path is not matched as that kind. That is not document presence. The document stays. `--clear` removes every row and leaves the file. `--all` runs every purge, so the file ends with no rows. The database is not changed. Passing one flag does not turn the others on.
+
+Both ask once, on stderr, before any kind-file write. `y` or `yes` writes. Anything else writes nothing. When stdin is not a terminal, pass `--force`. `--force` skips the question. `--dry-run` prints the summary and writes no kind file. A resolve that calls `meta()` can write `content_meta` before the question. An answer of no leaves that cache.
+
+`data show` prints the live values, one table per profile and kind. It does not write kind files and it does not prompt. It may write `content_meta`.
+
+A later duplicate row for the same path stays in the file. The first row is the one a rewrite updates. Two inputs that share one kind file and the same relative path stop the command when the selected values differ.
