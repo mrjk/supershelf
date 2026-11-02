@@ -53,10 +53,10 @@ supershelf scan files
 
 ## Development
 
-Python, uv, and task come from `mise.toml`. From the repository root, `task test` runs the tests, `task docs` serves the documentation, and `task ci` runs the tests and the docs build. GitHub Actions runs those tasks through mise. CI runs on a pull request and on a push to `main`, `dev`, or `dev-*`. The site publishes after that succeeds on `main`. `test`, `docs:build`, and `docs:release` can also be run on their own from the Actions tab.
+Python, uv, and task come from `mise.toml`. Shared settings are in `.env`. Local overrides go in `mise.local.toml`, which is gitignored. From the repository root, `task test` runs the tests, `task docs` serves the documentation, and `task ci` runs the verification pipeline. GitHub Actions runs `task ci` through mise. CI runs on a pull request and on a push to `main`, `dev`, or `dev-*`. The site publishes after that succeeds on `main`. `test`, `docs:build`, and `docs:release` can also be run on their own from the Actions tab.
 
 ## License
 
 Copyright (C) 2026 the Supershelf authors.
 
-Supershelf is free software under the GNU General Public License, version 3, or any later version. The license text is the `LICENSE` file at the repository root.
+Supershelf is free software under the GNU General Public License, version 3, or any later version. The license text is the `LICENSE.md` file at the repository root.

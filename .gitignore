@@ -9,8 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Local environment
-.env
+# Shared settings are in .env. Local overrides:
 mise.local.toml
 
 # Zensical build output

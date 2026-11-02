@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test
+  ci:
+    name: ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,27 +27,11 @@ jobs:
           install: true
           cache: true
 
-      - name: Run tests
-        run: mise x -- task test
-
-  docs:
-    name: docs:build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: jdx/mise-action@v4
-        with:
-          install: true
-          cache: true
-
-      - name: Build documentation
-        run: mise x -- task docs:build
+      - name: Run ci
+        run: mise x -- task ci
 
   deploy:
-    needs: [test, docs]
+    needs: [ci]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     name: docs:release
     runs-on: ubuntu-latest
