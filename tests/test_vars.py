@@ -536,6 +536,111 @@ def test_kind_row_is_literal_and_follows_the_rule(tmp_path: Path) -> None:
     assert values["vendor"] == "FromKind"
 
 
+def test_feed_column_is_ignored_and_custom_cell_wins(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,vendor,VENDOR\na.txt,Mine,Generated\n", encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
+            "default_vars": {"owner": "DEFAULT", "vendor": "RuleCo"},
+        },
+        tmp_path,
+    )
+    values = _values(plan)
+    assert values["vendor"] == "Mine"
+    assert "VENDOR" not in values
+
+
+def test_empty_custom_cell_ignores_the_feed_column(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,VENDOR\na.txt,Generated\n", encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
+            "default_vars": {"owner": "DEFAULT", "vendor": "RuleCo"},
+        },
+        tmp_path,
+    )
+    values = _values(plan)
+    assert values["vendor"] == "RuleCo"
+    assert "VENDOR" not in values
+
+
+def test_wrapped_feed_columns_are_ignored(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        "PATH,_PATH_,_SHA_,_DATE_,__DATE__\na.txt,from-feed,abc,2020-01-01,01/02/2026\n",
+        encoding="utf-8",
+    )
+    plan = _plan(
+        {
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
+            "default_vars": {
+                "owner": "DEFAULT",
+                "path": "kept",
+                "sha": "real",
+                "date": "2026-04-25",
+            },
+        },
+        tmp_path,
+    )
+    values = _values(plan)
+    assert values["path"] == "kept"
+    assert values["sha"] == "real"
+    assert values["date"] == "2026-04-25"
+    assert "__date__" not in values
+
+
+def test_date_and_sha_headers_stay_errors(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,DATE\na.txt,2026-04-25\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with pytest.raises(VarConfigError, match="is not the date column"):
+        _values(plan)
+
+    kind.write_text("PATH,SHA\na.txt,abc\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with pytest.raises(VarConfigError, match="Rows match on PATH"):
+        _values(plan)
+
+
+def test_mixed_case_column_stays_an_error(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,Vendor\na.txt,Mine\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with pytest.raises(VarConfigError, match="must be lowercase"):
+        _values(plan)
+
+
+def test_toml_feed_column_is_stored_and_ignored(tmp_path: Path) -> None:
+    kind = tmp_path / "note.toml"
+    kind.write_text(
+        '[[rows]]\npath = "a.txt"\n\n[rows.vars]\nvendor = "Mine"\n__DATE__ = "01/02/2026"\n',
+        encoding="utf-8",
+    )
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.toml"), tmp_path)
+    values = _values(plan)
+    assert values["vendor"] == "Mine"
+    assert "__DATE__" not in values
+    assert "__date__" not in values
+
+
+def test_schema_append_keeps_a_feed_column(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,VENDOR\na.txt,Generated\n", encoding="utf-8")
+    plan = _plan(
+        {
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
+            "vars_schema": {"vendor": {"type": "text"}},
+            "default_vars": {"owner": "DEFAULT", "vendor": "RuleCo"},
+        },
+        tmp_path,
+    )
+    assert _values(plan)["vendor"] == "RuleCo"
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == ("PATH,VENDOR,vendor\na.txt,Generated,\n")
+
+
 def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,__date__\na.txt,25/04/2026\nb.txt,\n", encoding="utf-8")

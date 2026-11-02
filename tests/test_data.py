@@ -141,12 +141,17 @@ def test_empty_cell_is_filled_and_filled_cell_stays(
 
     err = capsys.readouterr().err
     assert "Continue? [y/N]" in err
+    assert "uppercase columns" in err
     assert "invoice" in err
     rows = _cells(kind)
     assert rows[0]["vendor"] == "Bank2000"
-    assert rows[0]["issued"] == "2026-04-25"
-    assert rows[0]["__date__"] == "25/04/2026"
+    assert rows[0]["VENDOR"] == "Bank2000"
+    assert rows[0]["issued"] == ""
+    assert rows[0]["ISSUED"] == "2026-04-25"
+    assert rows[0]["__date__"] == ""
+    assert rows[0]["__DATE__"] == "25/04/2026"
     assert rows[0]["owner"] == "Clerk2000"
+    assert rows[0]["OWNER"] == "Clerk2000"
     assert (tmp_path / "profile.work.sqlite").exists() is False
 
 
@@ -163,7 +168,10 @@ def test_unset_var_does_not_blank_or_add_a_cell(
 
     text = kind.read_text(encoding="utf-8")
     assert "owner" not in text.splitlines()[0]
-    assert _cells(kind)[0]["vendor"] == "Bank2000"
+    assert "OWNER" not in text.splitlines()[0]
+    row = _cells(kind)[0]
+    assert row["vendor"] == ""
+    assert row["VENDOR"] == "Bank2000"
 
 
 def test_date_round_trip_uses_the_kind_format(
@@ -178,8 +186,128 @@ def test_date_round_trip_uses_the_kind_format(
     _dispatch(["data", "feed", "--force"])
 
     row = _cells(kind)[0]
-    assert row["__date__"] == "25/04/2026"
-    assert row["issued"] == "2026-04-25"
+    assert row["__date__"] == ""
+    assert row["__DATE__"] == "25/04/2026"
+    assert row["issued"] == ""
+    assert row["ISSUED"] == "2026-04-25"
+
+
+def test_equal_uppercase_cell_is_not_a_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[vars_schema.vendor]
+type = "text"
+
+[default_vars]
+vendor = "Bank2000"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+    kind = tmp_path / "invoice.csv"
+    original = "PATH,vendor,VENDOR\na.pdf,,Bank2000\n"
+    kind.write_text(original, encoding="utf-8")
+
+    _dispatch(["data", "feed", "--force"])
+
+    assert kind.read_text(encoding="utf-8") == original
+
+
+def test_different_uppercase_cell_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[vars_schema.vendor]
+type = "text"
+
+[default_vars]
+vendor = "Bank2000"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+    kind = tmp_path / "invoice.csv"
+    kind.write_text("PATH,vendor,VENDOR\na.pdf,Mine,Old\n", encoding="utf-8")
+
+    _dispatch(["data", "feed", "--force"])
+
+    row = _cells(kind)[0]
+    assert row["vendor"] == "Mine"
+    assert row["VENDOR"] == "Mine"
+
+
+def test_reserved_names_use_wrapped_columns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[vars_schema.path]
+type = "text"
+
+[vars_schema.sha]
+type = "text"
+
+[vars_schema.date]
+type = "date"
+
+[default_vars]
+path = "rel/a.pdf"
+sha = "abc"
+date = "2026-04-25"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+
+    _dispatch(["data", "feed", "--force"])
+
+    row = _cells(tmp_path / "invoice.csv")[0]
+    assert row["_PATH_"] == "rel/a.pdf"
+    assert row["_SHA_"] == "abc"
+    assert row["_DATE_"] == "2026-04-25"
+    assert "PATH" == next(iter(row))
+    header = (tmp_path / "invoice.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert "SHA" not in header.split(",")
+    assert header.split(",").count("DATE") == 0
 
 
 def test_ambiguous_kind_and_var_name(
@@ -270,7 +398,8 @@ glob = "**"
     _dispatch(["data", "feed", "--force"])
 
     row = _cells(created)[0]
-    assert row["vendor"] == "Bank2000"
+    assert row["vendor"] == ""
+    assert row["VENDOR"] == "Bank2000"
     assert row["owner"] == "Clerk2000"
 
 
@@ -398,7 +527,8 @@ def test_duplicate_raw_row_is_kept(
     _dispatch(["data", "feed", "--force"])
 
     rows = _cells(kind)
-    assert rows[0]["vendor"] == "Bank2000"
+    assert rows[0]["vendor"] == ""
+    assert rows[0]["VENDOR"] == "Bank2000"
     assert rows[1]["vendor"] == "Later"
 
 
@@ -431,8 +561,10 @@ glob = "**"
     _dispatch(["data", "feed", "--force"])
 
     row = _cells(tmp_path / "note.csv")[0]
-    assert row["vendor"] == "Bank2000"
-    assert row["__date__"] == "25/04/2026"
+    assert row["VENDOR"] == "Bank2000"
+    assert row["__DATE__"] == "25/04/2026"
+    assert "vendor" not in row
+    assert "__date__" not in row
 
 
 def test_feed_does_not_write_documents(
@@ -451,7 +583,9 @@ def test_feed_does_not_write_documents(
 
     assert _count(database, "documents") == documents
     assert _count(database, "events") == events
-    assert _cells(tmp_path / "invoice.csv")[0]["vendor"] == "Bank2000"
+    row = _cells(tmp_path / "invoice.csv")[0]
+    assert row["vendor"] == ""
+    assert row["VENDOR"] == "Bank2000"
 
 
 def test_cache_is_written_before_a_no(
@@ -540,6 +674,22 @@ glob = "**"
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "profile.work.cache").exists() is False
     assert list(tmp_path.glob("*.sqlite*")) == []
+
+
+def test_prune_drops_an_empty_feed_column(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED)
+    kind = tmp_path / "invoice.csv"
+    kind.write_text("PATH,vendor,VENDOR\na.pdf,Bank2000,\n", encoding="utf-8")
+
+    _dispatch(["data", "prune", "--force"])
+
+    header = kind.read_text(encoding="utf-8").splitlines()[0]
+    assert "vendor" in header.split(",")
+    assert "VENDOR" not in header.split(",")
 
 
 def test_prune_default_drops_only_empty_extra_columns(

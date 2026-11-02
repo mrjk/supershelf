@@ -25,6 +25,7 @@ Behavior. Index: [README](../README.md).
   Layers are facts, default_vars, the match rule, then the kind file.
   A filled cell is already that string. An empty cell receives the lower layer.
   An unset var stays unset. Feed does not blank a cell.
+  Feed writes the uppercase column from 3.2 and does not write a lowercase cell.
   Namespace fields stay out. `__date__` is allowed.
 - kind_overrides_mode does not gate these commands.
   scan vars still owns auto, manual, always, and disabled.
@@ -79,7 +80,7 @@ Shared path. Two inputs resolve the same kind file and the same relative path, a
 
 Not a terminal. `data feed` with no `--force` and no `--dry-run` stops and tells the user to pass `--force`.
 
-Documents left alone. `data feed` fills an empty `vendor` cell. No document row and no event is written. The next `record run` may append `vars`. The new source label is `kind:<path>`.
+Documents left alone. `data feed` writes `VENDOR` and leaves `vendor` empty. No document row and no event is written. The next `record run` still uses the lower layer. The source label is not `kind:<path>` from that feed column.
 
 Cache before the prompt. A candidate calls `meta()` and the cache misses. The preview creates `cache_file` and stores the entry, then asks `Continue?`. No leaves that cache and does not edit the kind file. The sqlite file is not created.
 
@@ -117,22 +118,32 @@ Dry run. `data feed --dry-run` prints the summary and does not create `cache_fil
 
 ### Write
 
-- Write the resolved display string into the selected cell.
-  A filled cell is already that string, so the text stays.
-  An empty cell receives it.
-- __date__ is written with kind_overrides_date_format, not the stored YYYY-MM-DD.
-  Other date vars stay YYYY-MM-DD. The kind-file format applies to __date__ only, as in 2.3.2.
-- An unset var does not blank a cell.
-- A selected name missing from the file is added. A matched path with no row is added.
+- The feed column is the var name with ASCII letters uppercased.
+  `vendor` is `VENDOR`. `__date__` is `__DATE__`.
+  When that form is `PATH`, `SHA`, or `DATE`, wrap it: `_PATH_`, `_SHA_`, `_DATE_`.
+  `Path` is still `_PATH_`. Feed never writes the headers `PATH`, `SHA`, or `DATE`.
+- Write the resolved display string into that column.
+  Replace the cell when the text differs. An equal cell is not a change.
+  A lowercase or mixed-case cell is never written.
+  An edit in the uppercase column is replaced on the next feed.
+  Custom text belongs in the lowercase column.
+- The value is the display string `scan vars` prints, including a filled lowercase cell.
+  The uppercase column is not read back.
+  It does not change the next resolve or the source label.
+- `__date__` is written as `__DATE__` with kind_overrides_date_format, not the stored YYYY-MM-DD.
+  Other date vars stay YYYY-MM-DD. The kind-file format applies to `__date__` only, as in 2.3.2.
+- An unset var does not blank a cell and does not add an empty cell.
+- A missing feed column is appended on the right. TOML and YAML append the key.
+  A matched path with no row is added when a cell is written.
   Other columns and other rows stay.
 - CSV column rules from 2.3.2 still apply.
-  A name that is not a legal column is left out of CSV and reported.
+  A name that is not a legal feed column is left out of CSV and reported.
 
 ### Prompt
 
 - One paragraph plus the file list.
-  It names the selected kinds and vars, then says it writes those resolved values into empty cells.
-  A filled cell stays.
+  It names the selected kinds and vars, then says it writes those resolved values into the uppercase columns.
+  It replaces a cell when the text changes. Lowercase cells stay.
   Then each kind file path and how many cells would change.
   Question: Continue? [y/N]
 - -v lists the cells that would change. The summary is enough at the default log level.
@@ -143,13 +154,17 @@ Both names. `invoice` is a kind and a var. `data feed invoice` stops and names `
 
 No schema. A kind with no schema columns feeds the user-visible names `scan vars` prints, including a set `__date__`.
 
-Date round-trip. Stored `__date__` is `2026-04-25`. `kind_overrides_date_format` is `%d/%m/%Y`. Feed writes `25/04/2026`. A `date` var that is not `__date__` stays `YYYY-MM-DD`.
+Date round-trip. Stored `__date__` is `2026-04-25`. `kind_overrides_date_format` is `%d/%m/%Y`. Feed writes `__DATE__` as `25/04/2026`. The `__date__` cell stays. A `date` var that is not `__date__` is written as `_DATE_` and stays `YYYY-MM-DD`.
 
-Filled cell. The kind file already holds `Bank2000`. Feed writes `Bank2000` again. The text stays.
+Filled uppercase cell. `VENDOR` already holds the resolved display string. The text stays, and the file is not rewritten for that cell. A different `VENDOR` cell is replaced. The lowercase `vendor` cell stays.
 
-Empty cell. The rule set `vendor` and the cell is empty. Feed writes the rule's display string.
+Empty custom cell. The rule set `vendor` and the `vendor` cell is empty. Feed writes the rule's display string into `VENDOR`. `vendor` stays empty. The next resolve still uses the rule.
 
-Unset. No layer set `owner`. Feed does not blank a hand-written `owner` cell, and it does not add an empty cell.
+Custom cell. `vendor` holds `Mine`. Feed writes `Mine` into `VENDOR`. `vendor` stays `Mine` and still wins on the next resolve.
+
+Unset. No layer set `owner`. Feed does not blank `OWNER` or `owner`, and it does not add an empty cell.
+
+Reserved name. A var named `path`, `sha`, or `date` is written to `_PATH_`, `_SHA_`, or `_DATE_`. Those columns are ignored on the next scan.
 
 ## 3.3 data prune
 
@@ -170,6 +185,7 @@ Unset. No layer set `owner`. Feed does not blank a hand-written `owner` cell, an
 - Default, also available as --empty-fields:
   Drop a column or key that is not in that kind's schema and whose cells are all empty.
   An empty schema column stays. A non-empty extra column stays. One filled cell keeps the column.
+  A feed column is an extra column. An empty one is dropped. One filled cell keeps it.
   CSV drops the column. TOML and YAML omit the key.
 - --missing:
   Drop a kind-file row whose path is not a matched file of that kind in this scan.
@@ -206,6 +222,7 @@ Missing word. `--missing` drops a kind-file row for a path that is not matched a
   A title line names the profile, the kind, and the kind file path when there is one.
 - Columns are path, then the var names: schema order first, then any other user-visible name scan vars would print.
   Values are the display strings. An unset var is blank.
+  A feed column is not a column in this table.
 - KIND limits the output to that kind. An unknown kind stops the command.
   A known kind with no matched files prints the title and no rows.
 - No KIND prints every kind that has a matched file.

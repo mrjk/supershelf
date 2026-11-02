@@ -79,7 +79,7 @@ def run_feed(
     dry_run: bool,
     verbosity: int,
 ) -> None:
-    """Fill empty selected cells. The prompt guards the kind-file write only."""
+    """Write resolved values into uppercase columns. The prompt guards the kind-file write only."""
     runs = ShelfRuns.load(config, profile)
     prepared = runs.plans(dry_run=dry_run)
     _require_kind_files(prepared)
@@ -299,27 +299,28 @@ def _feed_writes(
                     ),
                 )
             choices[key] = _Choice(item.profile, item.index, item.input_path, value)
-            if value is None or name in current:
+            column = KindTable.feed_column_name(name)
+            if value is None or current.get(column) == value:
                 continue
-            if not table.accepts_name(name):
-                mark = (table.path, name)
+            if not table.accepts_name(column):
+                mark = (table.path, column)
                 if mark not in warned:
                     warned.add(mark)
                     logger.warning(
                         "Kind file %s leaves out %s. It is not a legal CSV column.",
                         table.path,
-                        name,
+                        column,
                     )
                 continue
             if verbosity >= 1:
                 logger.info(
                     "Would set %s %s to %s in %s",
                     item.relative,
-                    name,
+                    column,
                     value,
                     table.path,
                 )
-            writes.append(_CellWrite(table, item.relative, name, value))
+            writes.append(_CellWrite(table, item.relative, column, value))
     return tuple(writes)
 
 
@@ -340,7 +341,8 @@ def _feed_summary(
     var_text = ", ".join(variables) if variables else "(none)"
     lines = [
         f"Selected kinds: {kind_text}. Selected vars: {var_text}.",
-        "Writes those resolved values into empty cells. A filled cell stays.",
+        "Writes those resolved values into the uppercase columns. "
+        "A cell is replaced when the text changes. Lowercase cells stay.",
     ]
     counts: dict[Path, int] = {}
     order: list[Path] = []

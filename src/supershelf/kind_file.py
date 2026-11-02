@@ -191,8 +191,10 @@ class KindTable:
     _SUFFIXES = (".csv", ".toml", ".yaml", ".yml")
     _FRESH_COLUMNS = (KIND_CSV_PATH, VAR_DATE)
     _LOWER_NAME = re.compile(r"[a-z_][a-z0-9_]*\Z")
+    _FEED_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
     _DATE_ALIASES = frozenset({"DATE", "Date", "date"})
     _SHA_ALIASES = frozenset({"SHA", "sha", "Sha"})
+    _WRAPPED_FEED = frozenset({KIND_CSV_PATH, "SHA", "DATE"})
 
     def __init__(
         self,
@@ -389,11 +391,30 @@ class KindTable:
             return None
         return rows[0]
 
+    @classmethod
+    def feed_column_name(cls, name: str) -> str:
+        """The ignored column data feed writes for this var."""
+        column = "".join(char.upper() if "a" <= char <= "z" else char for char in name)
+        if column in cls._WRAPPED_FEED:
+            return f"_{column}_"
+        return column
+
+    @classmethod
+    def is_feed_column(cls, name: str) -> bool:
+        """True for an uppercase feed column. PATH, SHA, and DATE stay reserved."""
+        if cls._FEED_NAME.fullmatch(name) is None:
+            return False
+        if not any("A" <= char <= "Z" for char in name):
+            return False
+        if name == KIND_CSV_PATH or name in cls._SHA_ALIASES or name in cls._DATE_ALIASES:
+            return False
+        return True
+
     def accepts_name(self, name: str) -> bool:
-        """CSV rejects a column that is not a legal header name."""
+        """CSV rejects a column that is not a legal header name or a feed column."""
         if self.suffix != ".csv":
             return True
-        return self._legal_column(name)
+        return self.is_feed_column(name) or self._legal_column(name)
 
     @classmethod
     def _legal_column(cls, name: str) -> bool:
@@ -700,6 +721,8 @@ class KindTable:
                     f"{path} column {name!r} is not the date column. Use __date__.",
                     advice=advice,
                 )
+            if cls.is_feed_column(name):
+                continue
             if cls._LOWER_NAME.fullmatch(name) is None:
                 raise VarConfigError(
                     f"{path} column {name!r} must be lowercase.",
@@ -830,7 +853,8 @@ class KindTable:
         cells: dict[str, str] = {}
         label = f"{path} item {index} vars"
         for key, value in raw.items():
-            check_assignment_key(key, label)
+            if not cls.is_feed_column(str(key)):
+                check_assignment_key(key, label)
             text = cls._typed(value, label, str(key))
             if text is not None:
                 cells[str(key)] = text
@@ -1056,6 +1080,8 @@ class KindFiles:
     ) -> dict[str, str]:
         parsed: dict[str, str] = {}
         for key, value in raw.items():
+            if KindTable.is_feed_column(key):
+                continue
             if key != VAR_DATE:
                 parsed[key] = value
                 continue
