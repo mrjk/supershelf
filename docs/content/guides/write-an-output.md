@@ -30,3 +30,5 @@ Run it again. Files that still match are omitted. `supershelf output preview` sh
 `--dry-run` prints the rows a run would write and does not write the files or an output event.
 
 `when` is a string template. Omitted, every file that passed `kinds` is kept. `kinds` omitted means every matched kind. A file whose record status is `new` stops the command. Run `record run` before `output run`.
+
+The next page loads more than one profile: [Use several profiles](use-several-profiles.md).

@@ -44,4 +44,4 @@ The default mode is `auto`. When the CSV already exists, invoice paths that are 
 
 The kind in the filename is the kind from the match rule.
 
-The next page loads more than one profile: [Use several profiles](use-several-profiles.md).
+The next page keeps a history of the files a profile matches: [Record matched files](record-matched-files.md).

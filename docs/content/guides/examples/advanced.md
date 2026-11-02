@@ -292,3 +292,5 @@ company/bank2000_account/REL_ACCTSTMT_100200300400_033123-ab12cd34.pdf;31/03/202
 The default mode is `auto`. An invoice path that is missing from the file is appended. The modes are in [Kind files](../../concepts/kind-files.md).
 
 The same mechanisms, without the walkthrough, are in [Concepts](../../concepts/index.md).
+
+The next page lists template names: [Templating](../templating-cheat-sheet.md).

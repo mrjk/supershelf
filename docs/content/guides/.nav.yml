@@ -1,12 +1,20 @@
 nav:
-  - list-files.md
-  - match-a-kind.md
-  - see-why-it-matched.md
-  - set-variables.md
-  - set-the-document-date.md
-  - share-variables-for-a-kind.md
-  - record-matched-files.md
-  - write-an-output.md
-  - use-several-profiles.md
+  - Scan files:
+      - list-files.md
+      - match-a-kind.md
+      - see-why-it-matched.md
+  - Extract Data:
+      - set-variables.md
+      - set-the-document-date.md
+      - share-variables-for-a-kind.md
+  - State:
+      - record-matched-files.md
+  - find-duplicates.md
+  - Output:
+      - write-an-output.md
+      - use-several-profiles.md
   - examples
-  - templating-cheat-sheet.md
+  - CheatSheet:
+      - templating-cheat-sheet.md
+      - config.md
+      - workflow.md

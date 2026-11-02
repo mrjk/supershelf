@@ -54,3 +54,5 @@ record_identity = ["hash", "path"]
 ```
 
 The two readings of one Bank2000 invoice are in [Record](../concepts/record.md).
+
+The next page is [Find duplicates](find-duplicates.md).
