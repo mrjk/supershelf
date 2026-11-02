@@ -40,8 +40,9 @@ Product steps live in `behavior/` only. `2` is profile load only. Scan, match, a
 - `3` Data (`3.1` shared rules, `3.2` feed, `3.3` prune, `3.4` show): [behavior/3-data.md](behavior/3-data.md)
 - `4` Record (`4.1` commands, `4.2` link, `4.3` writes): [behavior/4-record.md](behavior/4-record.md)
 - `5` Output (`5.1` commands, `5.2` selection, `5.3` file driver): [behavior/5-output.md](behavior/5-output.md)
+- `6` Inspect (`6.1` command): [behavior/6-inspect.md](behavior/6-inspect.md)
 
-The next command stage is `6`. Do not use `6` for the engine.
+The next command stage is `7`. Do not use `7` for the engine.
 
 At most three dotted numbers. A section that is already `X.Y.Z` keeps word headings under it. Do not renumber a section to make room. Add the next free id.
 

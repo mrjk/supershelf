@@ -4,6 +4,7 @@ from clak import Argument, Command, LoggingOptMixin, Parser
 
 from supershelf.cli.common import GlobalFlags, PackageVersion
 from supershelf.cli.data import DataCommand
+from supershelf.cli.inspect import InspectCommand
 from supershelf.cli.output import OutputCommand
 from supershelf.cli.profiles import ProfilesCommand
 from supershelf.cli.record import RecordCommand
@@ -21,7 +22,7 @@ __all__ = [
 
 
 class App(LoggingOptMixin, GlobalFlags, Parser):
-    """Load profiles, scan inputs, record matched files, write outputs, and edit kind files."""
+    """Load profiles, inspect config, scan inputs, record matched files, write outputs, and edit kind files."""
 
     version = Argument(
         "--version",
@@ -41,6 +42,7 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
         ]
 
     profiles = Command(ProfilesCommand, help="List profile names and config paths")
+    inspect = Command(InspectCommand, help="Show how profile init read the config")
     schema = Command(
         SchemaCommand,
         help="Print JSON Schema for declared variables and kinds",

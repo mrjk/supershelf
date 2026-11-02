@@ -6,6 +6,7 @@ Source is who writes a value. Availability is where a template can read it. A na
 
 - supershelf profiles only lists profile, type, and path. It does not build a ShelfProfile.
 - A command that needs rendered paths, such as scan, creates one ShelfProfile per selected ShelfConfig.
+- supershelf inspect config also builds one ShelfProfile per selected ShelfConfig, and it does not scan.
 - Profile load writes `__profile__` before any path template. Read a field. The object with no field is not a string, so the command stops.
   - `__profile__.name`: the profile name from section 1. This replaces `__profile__` and `__profile_name__`.
   - `__profile__.type`: `toml` or `yaml`
