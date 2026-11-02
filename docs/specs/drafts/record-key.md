@@ -1,6 +1,6 @@
 # Record key
 
-Status: accepted, blocked. This is not part of [behavior.md](../behavior.md). Nothing here is implemented. Move it into behavior 4.2 when the schema can store `link_key`. File metadata is behavior 2.3.3.
+Status: accepted, blocked. This is not part of [behavior 4](../behavior/4-record.md). Nothing here is implemented. Move it into behavior 4.2 when the schema can store `link_key`. File metadata is behavior 2.3.3.
 
 Behavior 4.2 links a document with `path` and `hash`. This step adds `key` to that list. The word `key` is a config error until then.
 

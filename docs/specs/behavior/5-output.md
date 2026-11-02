@@ -1,0 +1,158 @@
+# 5 Output
+
+Behavior. Index: [README](../README.md).
+
+`supershelf output` writes a destination for matched files and records that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
+
+One profile has one sqlite file. Profiles do not share events. `cache_file` stays unused. `extension_remap` is not read.
+
+The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads and `meta()`. `output` does not call the kind-file commit.
+
+The comparison is the record status plan from behavior 4. Output does not implement a second linker. `record_identity` stays a step list. The packaged default `path` means `[path, hash]`. A bare `hash` means `[hash, path]`. A match rule can override the list.
+
+The plan phase resolves like `record status`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`, and the gate in 5.2 stops the command. The tip says to run `record run`.
+
+`scan`, `data`, `record`, `schema`, and `profiles` do not read `outputs`.
+
+## 5.1 Commands
+
+`PATH` is the optional scan selector from 2.1.1. A value that matches no kept file stops the command. Columns are a clak table: profile, input, path, output, driver, status, operation, when, dest.
+
+input is the 1-based index. path is relative to the input directory. output is the item name. when is the boolean string `true` or `false`. dest is the absolute destination, or blank when `when` rendered `false`.
+
+Rows follow profile selection, then output list order, then walk order.
+
+### output preview
+
+- supershelf output preview [PATH]
+- Prints every selected row, including `unchanged` and `skip`.
+- Writes nothing. It does not create the sqlite file, a parent, a destination, or a directory.
+- The database is opened read-only.
+- Exit 0 when the plan is valid. A `conflict` row is valid here. The command still exits 0.
+
+### output run
+
+- supershelf output run [PATH]
+- Prints the same rows, except `unchanged`.
+- `--dry-run` prints those rows and writes nothing. The database stays read-only. Schema `1` is not migrated.
+- A real run that would stop does stop under `--dry-run`, and still writes nothing.
+- A plan with only `unchanged` and `skip` writes nothing and does not open the database for write.
+- Every selected profile is planned before any profile writes. A later profile does not commit when an earlier profile's plan would stop.
+- A real write creates the destination parent, performs the file operation, then calls `append_output`. The method commits itself.
+- A crash after the write and before the event leaves a file this profile does not yet claim. The next run treats it as a foreign file.
+
+Status words:
+
+- `write`: the destination is created.
+- `replace`: an existing destination is replaced.
+- `unchanged`: this profile already wrote this destination, and the file still matches. No event.
+- `skip`: `when` is `false`, or `on_conflict` is `skip` and the existing file is left in place. No event.
+- `conflict`: the existing file is not one this profile wrote, and `on_conflict` is `error`. Preview prints the row and exits 0. `run` prints the rows and exits non-zero. Nothing is written.
+
+## 5.2 Selection
+
+`outputs` is a top-level list.
+
+- Omitted or null, on an output command, stops the command. The message says outputs is not set.
+- `[]` stops the command. The message says outputs is empty.
+- These are the two messages `inputs` already uses. The other commands ignore the key.
+
+Each item has `name`, `driver`, `kinds`, and `when`. The driver owns every other key. A file item that carries a key it does not know stops the command.
+
+- `name` is required. It is a non-empty string and unique in the profile. A duplicate stops the command.
+- `driver` defaults to `file`. An unknown name stops the command and names the driver.
+- `kinds` omitted or null means every matched kind. The kind is the final kind after overrides.
+  `[]` selects no file. That item adds no row. It is not an error.
+  A listed value that is not a string stops the command.
+  A name that matches no rule does not stop at load. A file of another kind is left out. It is not a `skip` row.
+- `when` omitted or null is the string `true`.
+  A value that is not a string stops the command. An unquoted YAML bool is that error. A list is that error.
+  A string with no Jinja marker is cast at load. A template is compiled at load. A syntax error stops the command before the walk.
+  Render uses the file's display-string scope, the same commands as a variable template, and StrictUndefined.
+  Strip the text. `true`, `yes`, and `1` become `true`. Empty text, `false`, `no`, and `0` become `false`. Case does not matter.
+  Any other text stops the command and names the output, the path, and the rendered text.
+  `{{ __match__.kind == "invoice" }}` renders `True` or `False`, and those cast.
+  `false` is status `skip`. The layout is not rendered. No event is written.
+  An undefined name stops the command, same as a variable template.
+
+A live file the record plan marks `duplicate` has no document. It is left out. It does not stop the other files. The owning document is the one that can be written. A `PATH` that matches only that extra file stops the command, because no kept output source was selected.
+
+A file that passes `kinds` and `when` must already be a present document whose record status is `unchanged` or `refresh`. `new`, `vars`, `generation`, `move`, `missing`, `present`, and `unmatched` stop the command before any destination is written and before any output event. The message names the profile, the input, the path, and the record status. The tip says to run `record run`. `refresh` is allowed because the hash and the variables are the same.
+
+A file that fails `kinds`, or whose `when` is `false`, does not face that gate. A `duplicate` that would have passed `kinds` and `when` is still left out.
+
+The profile sqlite file is ignored when it sits inside an input, same as record.
+
+`config.output_modules` is an optional list of importable module paths. Omitted, null, and `[]` add no drivers. The built-in `file` driver is registered first. Each module is imported in list order and exports `DRIVERS`, a list of driver classes. A name that repeats `file`, or an earlier module, stops the command. An import failure stops the command. This list is not `var_modules` and not `metadata_driver`.
+
+## 5.3 File driver
+
+`driver: file` is the default.
+
+- `path` is required. It is a profile path template, the same language as `inputs.path`. It is rendered once. A relative result resolves from `__config__.root_dir`. An empty result stops the command. A result that exists and is not a directory stops the command. A missing directory is created only on a real write.
+- `layout` is a Jinja template. Omitted, it is `{{ __file__.path }}`. The input-relative path is kept.
+  The rendered text uses `/` separators. It is split on `/`.
+  An absolute result stops the command. An empty result stops the command.
+  A segment that is empty, `.`, or `..` stops the command.
+  A slash inside a variable becomes another directory.
+  The joined path must stay inside `path`. The extension is whatever the layout writes. `{{ __file__.ext }}` is the last suffix.
+  `{{ __date__ }}` prints with `default_date_format`. `Y`, `m`, and `d` are the `%Y`, `%m`, and `%d` fields.
+  `{{ __date__.strftime('%Y-%m') }}` is a custom pattern. A template that uses `__date__` fails when `__date__` was omitted.
+- `operation` is `copy`, `symlink`, or `hardlink`. Omitted, it is `copy`. Any other word stops the command.
+- `on_conflict` is `error`, `skip`, or `overwrite`. Omitted, it is `error`. Any other word stops the command.
+  It applies when the destination exists and this profile has no output event for that path.
+  It also applies when the latest event for this document and output name matches the destination, the operation, and the source hash, but the file on disk no longer matches that apply.
+  It does not apply to a destination claimed twice in this run. It does not apply when the latest event for that path belongs to another document or another output name.
+
+The latest event for a document and output name is the prior apply. The latest event for a destination is the claim. Both reads use the events already stored. An output event does not change the document.
+
+- The prior apply matches the new destination, the operation, and the source hash, and the file on disk matches that apply. Status `unchanged`. No write and no event.
+  A copy matches when the destination sha256 equals the source hash.
+  A symlink matches when its target is the absolute source path stored under the input.
+  A hardlink matches when it is the same inode as that source.
+- That prior apply is ours and the source hash or the operation changed. Status `replace`. `previous` is `existed` true and `ours` true, with the prior operation and source hash.
+- The path does not exist, and no other document claims it. Status `write`. `previous` is `existed` false. `ours` is true only when an earlier event for this profile already recorded that same path. Then `previous` also carries that event's operation and source hash.
+- The path exists and this profile has no event for it.
+  `error`: status `conflict`. `run` writes nothing.
+  `skip`: status `skip`. The file stays. No event.
+  `overwrite`: status `replace`. `previous` is `existed` true and `ours` false. Revert cannot restore those bytes. The database stores the hash, not the file.
+- The prior apply matches, but the file on disk does not. The same three words. `overwrite` stores `existed` true and `ours` true, with the prior operation and source hash.
+- A new layout points the document at a new path. The old file stays. Prune is a later `output prune`. The new path follows the rules above.
+- The latest event for the destination belongs to another document, or to another output name of this document. The command stops. `on_conflict` does not apply. The message names the destination and both owners.
+- Two planned actions in this run resolve to the same destination. The command stops before any write. The message names the destination and both sources. This includes two profiles selected together.
+- The source path and the destination path are the same file. The command stops.
+- The destination exists and is a directory. The command stops.
+
+`copy` uses a metadata-preserving file copy. `symlink` points at the absolute source path stored under the input. `hardlink` links that path. A cross-device hardlink stops the command. The tip says to use `copy`.
+
+Parents are created on a real write. A parent that exists and is a file stops the command. Preview and `--dry-run` create nothing.
+
+`append_output` runs after the file operation returns, and only for `write` and `replace`. `recorded_at` is UTC ISO-8601. `source_hash` is the document hash. `output_name` is the item name. `destination` is the absolute path.
+
+### Cases
+
+Second run. The copy is still the same bytes. Status `unchanged`. `run` prints no row for it. No event is appended.
+
+New bytes. `record run` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
+
+Not recorded. The file is `new`. The command stops. The tip says to run `record run`. Nothing is written.
+
+Duplicate. `record_identity` is `hash`. The extra path has no document. Output leaves it out. The owning document is written when its own row is `unchanged`.
+
+Foreign file. The destination exists and no output event names it. `on_conflict` is `error`. Preview shows `conflict` and exits 0. `run` writes nothing and exits non-zero.
+
+Skip. The same foreign file, with `on_conflict: skip`. Status `skip`. The file stays. No event.
+
+Overwrite. The same foreign file, with `on_conflict: overwrite`. The file is replaced. `previous` has `existed` true and `ours` false.
+
+Other document. The latest event for that path belongs to another document. The command stops. `overwrite` does not take the path.
+
+Layout move. `layout` changes. The new path is `write`. The old file stays on disk. The old event stays.
+
+When. `when` renders `false`. Status `skip`. The column is `false`. The layout is not rendered. A file whose record status is `new` does not stop the command when `when` is `false`.
+
+Bool words. `when: '{{ __match__.kind == "invoice" }}'` becomes `true` or `false`. `when: maybe` stops at load. `when: '{{ vendor }}'` stops when vendor renders `Bank2000`.
+
+Escape. A layout that renders `../outside` stops the command. A layout that renders an absolute path stops the command. No directory is created.
+
+Two outputs. One file matches `books` and `cards`. Both destinations are planned. The same destination from both items stops the command before any write.

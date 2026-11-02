@@ -1,6 +1,6 @@
 # Examples
 
-Config a user would write. The rules are in [behavior.md](behavior.md) and [architecture.md](architecture.md). This file has no section numbers.
+Config a user would write. The rules are indexed in [README.md](README.md). This file has no section numbers.
 
 ## Profile
 

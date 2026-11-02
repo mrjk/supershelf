@@ -159,7 +159,7 @@ Then set `meta.schema_version` to `2`. Version `3` or anything else is still `Da
 
 ## Docs in slice 3
 
-Move the implemented rules into [behavior.md](../behavior.md) `2.3.3` and the table into [architecture.md](../architecture.md) section 3. Update the sentences that say `scan vars` never creates `database_file`. The new sentence is: `scan vars` and `record run` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not.
+Move the implemented rules into [behavior 2.3.3](../behavior/2.3.3-file-metadata.md) and the table into [architecture 3](../architecture/3-database.md). Update the sentences that say `scan vars` never creates `database_file`. The new sentence is: `scan vars` and `record run` create it when `meta()` runs and the cache misses. `--dry-run` does not. `scan files` and `scan kinds` do not.
 
 Same change on the public pages that say the sqlite file is never created by scan, and that PDF metadata is only the two date commands:
 
