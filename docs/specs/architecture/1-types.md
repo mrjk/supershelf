@@ -2,7 +2,7 @@
 
 Architecture. Index: [README](../README.md).
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `scan import` writes the profile database in section 3. The sqlite schema does not follow these names. Each user variable is one key in `vars_json`. Architecture 3.2. `inspect schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. Kind-file columns use the kind's local names. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `db import` writes the profile database in section 3. The sqlite schema does not follow these names. Each user variable is one key in `vars_json`. Architecture 3.2. `inspect schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. Kind-file columns use the kind's local names. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
 
 A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `inspect schema` builds one model per declared object and prints `model_json_schema()`. Resolving a variable does not write the database.
 
@@ -157,7 +157,7 @@ Sources. `default_vars` sets `vendor`, the rule replaces it, and the kind file r
 
 ## 1.9 kind_schema
 
-`kind_schema` is an optional top-level mapping. A profile with no `kind_schema` resolves as before. A bad entry stops `scan vars`, `scan feeds`, `scan import`, and `inspect schema`.
+`kind_schema` is an optional top-level mapping. A profile with no `kind_schema` resolves as before. A bad entry stops `scan vars`, `scan feeds`, `db import`, and `inspect schema`.
 
 ```yaml
 vars_schema:

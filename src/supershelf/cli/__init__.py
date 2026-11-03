@@ -42,7 +42,7 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
     profiles = Command(ProfilesCommand, help="List profile names and config paths")
     inspect = Command(InspectCommand, help="Read config, schema, and scan plans")
     scan = Command(ScanCommand, help="Scan profile inputs")
-    db = Command(DbCommand, help="Read the profile database")
+    db = Command(DbCommand, help="Read or import the profile database")
     output = Command(OutputCommand, help="Write destinations for recorded files")
 
 

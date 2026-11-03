@@ -8,7 +8,7 @@ A read accepts schema `1` and schema `2`. Schema `1` has no `content_meta`. A re
 
 ## 3.1 Tables
 
-`meta` stores `schema_version` and, after a successful `scan import`, `identity`. The value is the profile default list, comma-separated, no spaces: `path,hash` or `hash,path`. A legacy `path` compares equal to `path,hash`. A legacy `hash` compares equal to `hash,path`. Behavior 4.2.
+`meta` stores `schema_version` and, after a successful `db import`, `identity`. The value is the profile default list, comma-separated, no spaces: `path,hash` or `hash,path`. A legacy `path` compares equal to `path,hash`. A legacy `hash` compares equal to `hash,path`. Behavior 4.2.
 
 `contents` is one row per sha256. The primary key is `hash`. Many documents reference one row.
 
@@ -87,7 +87,7 @@ When this profile wrote the previous destination, `ours` is true and the object 
 
 A missing file opened for reading is an empty previous state. The file is not created. A real read of an existing file uses SQLite read-only mode.
 
-`scan import` opens for write when a row would change, or when the stored identity rule differs and the file already exists. The other scan steps do not. `--dry-run` does not create the file and does not migrate schema `1`. A `meta()` miss does not open the file. The identity key is updated in the import transaction. A failure rolls that transaction back. The schema created for a new file stays. Kind-file writes are not in this transaction. 3.
+`db import` opens for write when a row would change, or when the stored identity rule differs and the file already exists. The scan steps do not. `--dry-run` does not create the file and does not migrate schema `1`. A `meta()` miss does not open the file. The identity key is updated in the import transaction. A failure rolls that transaction back. The schema created for a new file stays. Kind-file writes are not in this transaction. 3.
 
 `RecordConfigError` is a bad `record_identity` word or list, on the flag, the environment variable, the profile, or a match rule. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
 

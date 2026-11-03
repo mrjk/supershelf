@@ -18,8 +18,8 @@ config:
   root_dir: "{{ __profile__.dir }}" # Default. Directory of the config file.
 
   # Default paths
-  database_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite" # 4. scan import creates this when a document row would change. User vars are keys in vars_json. --dry-run does not create it.
-  cache_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache" # 2.3.3. JSON metadata cache. scan vars, scan feeds, and scan import create it when meta() misses. --dry-run does not.
+  database_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite" # 4. db import creates this when a document row would change. User vars are keys in vars_json. --dry-run does not create it.
+  cache_file: "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache" # 2.3.3. JSON metadata cache. scan vars, scan feeds, and db import create it when meta() misses. --dry-run does not.
   record_identity: path # 4.2. Bare path means path then hash. Bare hash means hash then path. A list does not expand. Omitted uses path.
   # var_modules: # Optional importable modules. GLOBALS and FILTERS. See 2.3.1.
   #   - my_package.supershelf_vars

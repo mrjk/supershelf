@@ -575,7 +575,7 @@ def test_feed_does_not_write_documents(
     isolate_env(monkeypatch, tmp_path)
     _profile(tmp_path, _FEED)
     (tmp_path / "invoice.csv").write_text("PATH,vendor\na.pdf,\n", encoding="utf-8")
-    _dispatch(["scan", "import"])
+    _dispatch(["db", "import"])
     database = tmp_path / "profile.work.sqlite"
     documents = _count(database, "documents")
     events = _count(database, "events")
@@ -723,9 +723,9 @@ def test_missing_drops_the_kind_row_and_keeps_the_document(
         "PATH,vendor,note\na.pdf,Bank2000,\ngone.pdf,Bank2000,\n",
         encoding="utf-8",
     )
-    _dispatch(["scan", "import"])
+    _dispatch(["db", "import"])
     (tmp_path / "inbox" / "gone.pdf").unlink()
-    _dispatch(["scan", "import"])
+    _dispatch(["db", "import"])
     database = tmp_path / "profile.work.sqlite"
     before = _count(database, "documents")
 
@@ -751,7 +751,7 @@ def test_clear_leaves_the_database(
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor,note\na.pdf,Bank2000,\n", encoding="utf-8")
-    _dispatch(["scan", "import"])
+    _dispatch(["db", "import"])
     database = tmp_path / "profile.work.sqlite"
     documents = _count(database, "documents")
     events = _count(database, "events")
@@ -791,7 +791,7 @@ def test_all_clears_rows_and_leaves_the_database(
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor\na.pdf,Bank2000\n", encoding="utf-8")
-    _dispatch(["scan", "import"])
+    _dispatch(["db", "import"])
     database = tmp_path / "profile.work.sqlite"
     documents = _count(database, "documents")
 

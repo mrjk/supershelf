@@ -47,12 +47,12 @@ STATUS_CONFLICT = "conflict"
 SHARED_KEYS = frozenset({"name", "driver", "kinds", "when"})
 _PASSING = frozenset({STATUS_UNCHANGED, STATUS_REFRESH})
 _APPLY = frozenset({STATUS_WRITE, STATUS_REPLACE})
-_RECORD_TIP = "Run scan import."
+_RECORD_TIP = "Run db import."
 _VARS_TIP = (
-    "Run scan import, if those live values are the ones you want. "
-    "If a live value is wrong, fix the match rule, the kind file, or the profile, then scan import again."
+    "Run db import, if those live values are the ones you want. "
+    "If a live value is wrong, fix the match rule, the kind file, or the profile, then db import again."
 )
-_UNMATCHED_TIP = "Change the match rule so this path matches, then run scan import."
+_UNMATCHED_TIP = "Change the match rule so this path matches, then run db import."
 _LOGGER = logging.getLogger(LOGGER_NAME)
 _WHEN_TRUE = frozenset({"true", "yes", "1"})
 _WHEN_FALSE = frozenset({"false", "no", "0"})

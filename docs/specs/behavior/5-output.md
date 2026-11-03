@@ -4,13 +4,13 @@ Behavior. Index: [README](../README.md).
 
 `supershelf output` writes a destination for matched files and documents that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
 
-One profile has one sqlite file. Profiles do not share events. `cache_file` is the metadata cache in behavior 2.3.3. `output` resolves like `inspect scan import`, so a miss does not write it. `extension_remap` is not read.
+One profile has one sqlite file. Profiles do not share events. `cache_file` is the metadata cache in behavior 2.3.3. `output` uses the document plan from behavior 4, so a miss does not write it. `extension_remap` is not read.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads and `meta()`. `output` does not call the kind-file commit.
 
 The comparison is the document plan from behavior 4. Output does not implement a second linker. `record_identity` stays a step list. The packaged default `path` means `[path, hash]`. A bare `hash` means `[hash, path]`. A match rule can override the list.
 
-The plan phase resolves like `inspect scan import`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`. Preview warns, prints the row, and exits 1. `run` warns and writes nothing. The tip says to run `scan`, or `scan import`.
+The plan phase uses that document plan. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`. Preview warns, prints the row, and exits 1. `run` warns and writes nothing. The tip says to run `db import`.
 
 `scan`, `inspect`, `db`, and `profiles` do not read `outputs`.
 
@@ -84,21 +84,21 @@ A file that passes `kinds` and `when` is planned from the live match. `output ru
 
 The message starts `Profile {name} input {index} {path} status is {status}.` Then the facts. Then the fix. Values are quoted with double quotes.
 
-- `new`: `This file is not in the library.` Fix: `Run scan import.`
-- `vars`: one clause per difference, in this order. `kind was "statement", now "bill".` `rule was "invoice", now "bill".` A variable uses its display string. `vendor was "Bank2000", now "Bank2001".` A new key: `amount is "12.00" and was not stored.` A removed key: `amount was "12.00" and is no longer set.` The same display, with a different type or source: `vendor is still "Bank2000" but its stored type or source changed.` `file_dir`, `file_name`, `file_stem`, and `file_ext` use the same was/now form. Fix: `Run scan import, if those live values are the ones you want. If a live value is wrong, fix the match rule, the kind file, or the profile, then scan import again.`
-- `generation`: `The file bytes changed. hash was "{old}", now "{new}".` Then any kind, rule, variable, or file-field clauses from the same comparison. Fix: `Run scan import.`
-- `move`: `The file moved. path was "{stored}", now "{live}".` Then any of those clauses. Fix: `Run scan import.`
-- `missing`: `The recorded file is missing from the walk.` Fix: `Run scan import.`
-- `present`: `The file is back and is not stored as present.` Fix: `Run scan import.`
-- `unmatched`: `No rule matches this file.` Fix: `Change the match rule so this path matches, then run scan import.`
+- `new`: `This file is not in the library.` Fix: `Run db import.`
+- `vars`: one clause per difference, in this order. `kind was "statement", now "bill".` `rule was "invoice", now "bill".` A variable uses its display string. `vendor was "Bank2000", now "Bank2001".` A new key: `amount is "12.00" and was not stored.` A removed key: `amount was "12.00" and is no longer set.` The same display, with a different type or source: `vendor is still "Bank2000" but its stored type or source changed.` `file_dir`, `file_name`, `file_stem`, and `file_ext` use the same was/now form. Fix: `Run db import, if those live values are the ones you want. If a live value is wrong, fix the match rule, the kind file, or the profile, then db import again.`
+- `generation`: `The file bytes changed. hash was "{old}", now "{new}".` Then any kind, rule, variable, or file-field clauses from the same comparison. Fix: `Run db import.`
+- `move`: `The file moved. path was "{stored}", now "{live}".` Then any of those clauses. Fix: `Run db import.`
+- `missing`: `The recorded file is missing from the walk.` Fix: `Run db import.`
+- `present`: `The file is back and is not stored as present.` Fix: `Run db import.`
+- `unmatched`: `No rule matches this file.` Fix: `Change the match rule so this path matches, then run db import.`
 
 The compared facts are `match_kind`, `rule`, `vars_json`, `file_dir`, `file_name`, `file_stem`, and `file_ext`. Variable text is the display field. A `present` row has no was/now clauses.
 
-A passing status with no document id stops preview and run before a table. The message says `status is` that word. The tip is only `Run scan import.` `refresh` is allowed because the hash and the variables are the same.
+A passing status with no document id stops preview and run before a table. The message says `status is` that word. The tip is only `Run db import.` `refresh` is allowed because the hash and the variables are the same.
 
 A file that fails `kinds`, or whose `when` is `false`, does not face that gate. A `duplicate` that would have passed `kinds` and `when` is still left out.
 
-The profile sqlite file is ignored when it sits inside an input, same as scan import.
+The profile sqlite file is ignored when it sits inside an input, same as `db import`.
 
 `config.output_modules` is an optional list of importable module paths. Omitted, null, and `[]` add no drivers. The built-in `file` driver is registered first. Each module is imported in list order and exports `DRIVERS`, a list of driver classes. A name that repeats `file`, or an earlier module, stops the command. An import failure stops the command. This list is not `var_modules` and not `metadata_driver`.
 
@@ -150,7 +150,7 @@ Parents are created on a real write. A parent that exists and is a file stops th
 
 Second run. The copy is still the same bytes. Status `unchanged`. `run` prints no row for it. No event is appended.
 
-New bytes. `scan import` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
+New bytes. `db import` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
 
 Not in the library. The file is `new`. Preview prints the row, warns `This file is not in the library.`, and exits 1. `run` warns and writes nothing. No sqlite file is created.
 

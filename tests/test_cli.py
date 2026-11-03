@@ -202,7 +202,7 @@ def test_db_show_prints_vars_in_one_cell(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     capsys.readouterr()
 
     app.dispatch(["db", "show"])
@@ -935,7 +935,7 @@ def test_scan_inspect_rejects_a_bad_regex_before_walking(
     assert "missing-inbox" not in caplog.text
 
 
-def test_bare_scan_dry_run_creates_nothing_and_a_second_run_is_quiet(
+def test_bare_scan_dry_run_creates_nothing_and_does_not_import(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -959,26 +959,27 @@ def test_bare_scan_dry_run_creates_nothing_and_a_second_run_is_quiet(
             "--dry-run",
             "--kind-overrides-mode",
             "always",
-            "--record-identity",
-            "path",
         ]
     )
     preview = capsys.readouterr().out
     assert "a.pdf" in preview
     assert "new" in preview
+    assert "import" not in preview
     assert (tmp_path / "invoice.csv").exists() is False
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "profile.work.cache").exists() is False
 
     app.dispatch(["scan"])
-    assert "new" in capsys.readouterr().out
+    first = capsys.readouterr().out
+    assert "new" in first
+    assert "import" not in first
     assert (tmp_path / "invoice.csv").is_file()
-    assert (tmp_path / "profile.work.sqlite").is_file()
+    assert (tmp_path / "profile.work.sqlite").exists() is False
 
     app.dispatch(["scan"])
     again = capsys.readouterr().out
-    assert "import" in again
-    assert "a.pdf" not in again.split("import", 1)[-1]
+    assert "import" not in again
+    assert (tmp_path / "profile.work.sqlite").exists() is False
 
 
 def test_removed_commands_fail(
@@ -988,7 +989,14 @@ def test_removed_commands_fail(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
     app = App(parse=False)
-    for argv in (["data"], ["record"], ["schema"], ["scan", "inspect"]):
+    for argv in (
+        ["data"],
+        ["record"],
+        ["schema"],
+        ["scan", "inspect"],
+        ["scan", "import"],
+        ["inspect", "scan", "import"],
+    ):
         with pytest.raises(SystemExit) as caught:
             app.dispatch(argv)
         assert caught.value.code != 0

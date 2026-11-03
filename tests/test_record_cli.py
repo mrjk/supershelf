@@ -50,7 +50,7 @@ def test_dry_run_creates_nothing(
     _isolate(monkeypatch, tmp_path)
     _profile(tmp_path)
     app = App(parse=False)
-    app.dispatch(["scan", "import", "--dry-run"])
+    app.dispatch(["db", "import", "--dry-run"])
     output = capsys.readouterr().out
     assert "new" in output
     assert "a.pdf" in output
@@ -71,7 +71,7 @@ def test_run_does_not_write_a_kind_file(
         encoding="utf-8",
     )
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     assert "new" in capsys.readouterr().out
     assert (tmp_path / "profile.work.sqlite").is_file()
     assert (tmp_path / "profile.work.bill.csv").exists() is False
@@ -94,24 +94,20 @@ def test_run_records_and_scan_commands_stay_free_of_sqlite(
     app.dispatch(["profiles"])
     assert (tmp_path / "profile.work.sqlite").exists() is False
 
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     recorded = capsys.readouterr().out
     assert "new" in recorded
     database = tmp_path / "profile.work.sqlite"
     assert database.is_file()
     assert (tmp_path / "profile.work.cache").exists() is False
 
-    app.dispatch(["inspect", "scan", "import"])
-    status = capsys.readouterr().out
-    assert "unchanged" in status
-
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     again = capsys.readouterr().out
     assert "new" not in again
     assert "a.pdf" not in again
 
     (inbox / "a.pdf").write_bytes(b"bank-2001")
-    app.dispatch(["scan", "import", "--dry-run"])
+    app.dispatch(["db", "import", "--dry-run"])
     preview = capsys.readouterr().out
     assert "generation" in preview
     assert database.is_file()
@@ -129,17 +125,17 @@ def test_filter_missing_then_a_later_run_moves(
     original = (inbox / "a.pdf").read_bytes()
     (inbox / "c.pdf").write_bytes(b"other")
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     capsys.readouterr()
 
     (inbox / "a.pdf").unlink()
-    app.dispatch(["scan", "import", "a.pdf"])
+    app.dispatch(["db", "import", "a.pdf"])
     filtered = capsys.readouterr().out
     assert "missing" in filtered
     assert "c.pdf" not in filtered
 
     (inbox / "b.pdf").write_bytes(original)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     moved = capsys.readouterr().out
     assert "move" in moved
     assert "b.pdf" in moved
@@ -160,7 +156,7 @@ def test_duplicates_lists_two_current_documents(
     inbox = _profile(tmp_path)
     (inbox / "copy.pdf").write_bytes((inbox / "a.pdf").read_bytes())
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     capsys.readouterr()
     duplicates = _duplicates()
     assert sum(row["current"] == "yes" for row in duplicates) >= 2
@@ -174,13 +170,13 @@ def test_unmatched_file_stays_in_history(
     _isolate(monkeypatch, tmp_path)
     inbox = _profile(tmp_path)
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     capsys.readouterr()
     (tmp_path / "profile.work.toml").write_text(
         _PROFILE.replace('glob = "**"', 'glob = "missing-*.pdf"'),
         encoding="utf-8",
     )
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     output = capsys.readouterr().out
     assert "unmatched" in output
     history = _history()
@@ -199,7 +195,7 @@ def test_bad_identity_exits_before_creating_sqlite(
     _profile(tmp_path)
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["scan", "import", "--record-identity", "PATH"])
+        app.dispatch(["db", "import", "--record-identity", "PATH"])
     assert caught.value.code == 2
     assert "path or hash" in capsys.readouterr().err
     assert (tmp_path / "profile.work.sqlite").exists() is False
@@ -213,10 +209,10 @@ def test_identity_switch_warns_and_keeps_old_events(
     _isolate(monkeypatch, tmp_path)
     inbox = _profile(tmp_path)
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     capsys.readouterr()
     (inbox / "a.pdf").write_bytes(b"edited")
-    app.dispatch(["scan", "import", "--record-identity", "hash"])
+    app.dispatch(["db", "import", "--record-identity", "hash"])
     warned = capsys.readouterr().err
     assert "was path" in warned
     assert "uses hash" in warned
@@ -241,7 +237,7 @@ def test_two_hash_copies_are_not_inserted(
     )
     (inbox / "b.pdf").write_bytes((inbox / "a.pdf").read_bytes())
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     first = capsys.readouterr().out
     assert "new" in first
     assert "duplicate" in first
@@ -249,7 +245,7 @@ def test_two_hash_copies_are_not_inserted(
     history = _history()
     assert [row["path"] for row in history] == ["a.pdf"]
     assert "b.pdf" not in {row["path"] for row in _duplicates()}
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     second = capsys.readouterr().out
     assert "duplicate" in second
     assert "new" not in second
@@ -282,7 +278,7 @@ record_identity = "key"
     )
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["scan", "import"])
+        app.dispatch(["db", "import"])
     assert caught.value.code == 2
     assert "match rule other" in capsys.readouterr().err
     assert (tmp_path / "profile.work.sqlite").exists() is False
@@ -314,7 +310,7 @@ record_identity = {record_identity}
     )
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["scan", "import"])
+        app.dispatch(["db", "import"])
     assert caught.value.code == 2
     assert (tmp_path / "profile.work.sqlite").exists() is False
     capsys.readouterr()
@@ -328,7 +324,7 @@ def test_path_list_matches_legacy_meta_without_a_warning(
     _isolate(monkeypatch, tmp_path)
     _profile(tmp_path)
     app = App(parse=False)
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     capsys.readouterr()
     database = tmp_path / "profile.work.sqlite"
     raw = sqlite3.connect(database)
@@ -340,7 +336,7 @@ def test_path_list_matches_legacy_meta_without_a_warning(
         '[config]\nrecord_identity = ["path", "hash"]\n' + text,
         encoding="utf-8",
     )
-    app.dispatch(["scan", "import"])
+    app.dispatch(["db", "import"])
     assert "record_identity was" not in capsys.readouterr().err
     with ShelfDatabase.open_read(database) as stored:
         assert stored.identity() == "path"

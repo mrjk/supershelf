@@ -2,7 +2,7 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf scan feeds` writes kind files. `supershelf scan` runs this step after vars and before import. 2.1. There is no `data` command.
+`supershelf scan feeds` writes kind files. `supershelf scan` runs this step after vars. 2.1. It does not write the sqlite file. There is no `data` command.
 
 Say var, not field. A field is a match-rule slot, such as regex or filename_glob.
 
@@ -43,7 +43,7 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 
 ### Cases
 
-Empty kind paths. `kind_overrides_config: []` and no `feed_file`. `scan feeds` prints that there is no file. `scan import` still writes documents.
+Empty kind paths. `kind_overrides_config: []` and no `feed_file`. `scan feeds` prints that there is no file. `db import` still writes documents.
 
 Disabled mode. `kind_overrides_mode` is `disabled`. No kind file is read or written.
 

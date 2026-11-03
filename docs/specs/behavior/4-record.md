@@ -2,22 +2,21 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf scan import` stores matched files in the profile sqlite file from `config.database_file`. There is no `record` command. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. User vars stay in `vars_json`. The sqlite schema does not follow the user's config. Architecture 3.2. `cache_file` is the metadata cache in behavior 2.3.3. This step does not write an output tree. Behavior 5 does. This step does not write a kind file. Behavior 3 does.
+`supershelf db import` stores matched files in the profile sqlite file from `config.database_file`. There is no `record` command. There is no `scan import` command. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. User vars stay in `vars_json`. The sqlite schema does not follow the user's config. Architecture 3.2. `cache_file` is the metadata cache in behavior 2.3.3. This step does not write an output tree. Behavior 5 does. This step does not write a kind file. Behavior 3 does.
 
-`scan vars`, `scan feeds`, and `scan import` create `cache_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `inspect`, `profiles`, `db show`, and `output` do not. `scan import` creates `database_file` when a document row would change. `scan feeds` does not insert a document or an event.
+`scan vars`, `scan feeds`, and `db import` create `cache_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `inspect`, `profiles`, `db show`, and `output` do not. `db import` creates `database_file` when a document row would change. `scan` does not. `scan feeds` does not insert a document or an event.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. The kind-file row is chosen by the first step of `record_identity`, as in 2.3.2. The `--record-identity` flag does not change that key.
 
 ## 4.1 Commands
 
-`PATH` is the optional scan selector from 2.1.1. A value that matches no kept file and no in-scope document stops `scan import`. Columns are a clak table.
+`PATH` is the optional scan selector from 2.1.1. A value that matches no kept file and no in-scope document stops `db import`. Columns are a clak table.
 
-`supershelf scan import [PATH]`
+`supershelf db import [PATH]`
 
 - Prints the rows this run would write, then writes every printed row except `duplicate`.
 - A row is printed when this run would append an event or update the current document row. `unchanged` is omitted. A `missing` or `unmatched` document that would not append another event is omitted. `db show` still lists that document. 7.
-- `inspect scan import` prints every in-scope live matched file, plus every in-scope document this scan would mark missing or unmatched, including unchanged rows. It writes nothing. 6.
-- `--dry-run` prints the rows `scan import` would print and writes nothing. It does not create the sqlite file, its parents, or a journal. It does not migrate schema `1`.
+- `--dry-run` prints the rows `db import` would print and writes nothing. It does not create the sqlite file, its parents, or a journal. It does not migrate schema `1`.
 - A run with no changes does not create a missing sqlite file.
 - A run that prints only `duplicate` rows writes nothing and does not create a missing sqlite file.
 - A run with changes creates parent directories, then writes one transaction per profile.
@@ -30,7 +29,7 @@ The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve a
 - `--record-identity` is a word or a comma-separated list. 4.2.
 - Events have no command. The sqlite file keeps them. `db show` prints the current document row, not the event list.
 
-`scan import PATH` observes only that path. It can mark the selection `missing` while the same bytes still exist outside the filter. A later full `scan import` reconciles that. Bare `scan` is the full walk.
+`db import PATH` observes only that path. It can mark the selection `missing` while the same bytes still exist outside the filter. A later full `db import` reconciles that. Bare `db import` is the full walk.
 
 ## 4.2 Link
 
@@ -50,7 +49,8 @@ The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve a
   Kind files do not store this key. The kind-file row identifier is the first step. 2.3.2.
   The `--record-identity` flag does not change that key.
   Two rules may share a kind and use different lists.
-- A bad value stops `scan` and `scan import` before the walk. Exit 2. Nothing is written.
+- A bad value stops `db import` before the walk. Exit 2. Nothing is written.
+  A bad config or environment value also stops the scan steps that resolve it. 2.3.2.
   Bad: a different case, an empty string, an empty list, an empty comma item, a repeated step, a step other than `path` or `hash`, or a template string.
   The word `key` is reserved and is bad in this version. drafts/record-key.md.
   The message names the flag, the environment variable, `config.record_identity`, or the match rule.
@@ -161,5 +161,5 @@ Bad list. A rule sets `HASH`, `""`, `[]`, `[path, path]`, `{{ author }}`, or `ke
 - A path that exists and is not a supershelf database stops the command. The tip says to point `database_file` at a new path.
 - Schema version is `2`. A write migrates schema `1` to schema `2`, as architecture 3.5. A read does not migrate. Any other version stops the command. The tip says to point `database_file` at a new path.
 - A locked file stops the command. The tip says to run the command again.
-- `--dry-run` on `scan import` reports the rows that would change and creates nothing.
-- `inspect scan import` and `db show` do not write. Passing `--dry-run` to them changes nothing.
+- `--dry-run` on `db import` reports the rows that would change and creates nothing.
+- `db show` does not write. Passing `--dry-run` to it changes nothing.

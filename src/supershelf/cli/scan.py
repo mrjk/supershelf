@@ -9,7 +9,6 @@ from clak.views import CompositeView, ListView
 from supershelf.cli.common import kept_path
 from supershelf.data import run_feed
 from supershelf.kind_file import KindOverrideMode
-from supershelf.record import RecordSession
 from supershelf.scan.runs import ShelfRuns, order_scan_row
 from supershelf.vars import FileVars
 
@@ -158,46 +157,12 @@ class ScanFeedsCommand(ListViewMixin, Parser):
         )
 
 
-class ScanImportCommand(ListViewMixin, Parser):
-    """Record matched files into the profile database."""
-
-    path = kept_path()
-    record_identity = Argument(
-        "--record-identity",
-        help=(
-            "Link rule for this run: a word or a comma-separated list. "
-            "Does not override a match rule that set record_identity. "
-            "Overrides SUPERSHELF_RECORD_IDENTITY and config.record_identity."
-        ),
-    )
-
-    def cli_run(
-        self,
-        config=None,
-        profile=None,
-        path=None,
-        dry_run=False,
-        record_identity=None,
-        **_,
-    ):
-        session = RecordSession.load(config, profile, record_identity)
-        return session.run(path, dry_run=bool(dry_run))
-
-
 class ScanCommand(CompositeViewMixin, Parser):
-    """Scan profile inputs. With no step, run files, kinds, vars, feeds, then import."""
+    """Scan profile inputs. With no step, run files, kinds, vars, then feeds."""
 
     kind_overrides_mode = Argument(
         "--kind-overrides-mode",
         help="Kind file mode: auto, manual, always, or disabled.",
-    )
-    record_identity = Argument(
-        "--record-identity",
-        help=(
-            "Link rule for this run: a word or a comma-separated list. "
-            "Does not override a match rule that set record_identity. "
-            "Overrides SUPERSHELF_RECORD_IDENTITY and config.record_identity."
-        ),
     )
 
     files = Command(ScanFilesCommand, help="List file-identity changes")
@@ -212,7 +177,6 @@ class ScanCommand(CompositeViewMixin, Parser):
         path=None,
         dry_run=False,
         kind_overrides_mode=None,
-        record_identity=None,
         verbosity=0,
         ctx=None,
         **_,
@@ -222,7 +186,7 @@ class ScanCommand(CompositeViewMixin, Parser):
         fmt = ctx.view_settings.get("format") if ctx is not None else None
         runs = ShelfRuns.load(config, profile)
         dry = bool(dry_run)
-        # Resolve in the vars step before either write. A resolve error stops here.
+        # Resolve in the vars step before the feed write. A resolve error stops here.
         var_rows = variable_rows(
             runs.changed_resolves(path, mode=kind_overrides_mode, dry_run=dry),
             fmt,
@@ -244,14 +208,6 @@ class ScanCommand(CompositeViewMixin, Parser):
                 ),
                 "feeds",
             ),
-            (
-                "import",
-                RecordSession.load(config, profile, record_identity).run(
-                    path,
-                    dry_run=dry,
-                ),
-                "import",
-            ),
         ]
         return CompositeView(
             [
@@ -259,10 +215,3 @@ class ScanCommand(CompositeViewMixin, Parser):
                 for key, rows, title in sections
             ]
         )
-
-
-setattr(
-    ScanCommand,
-    "import",
-    Command(ScanImportCommand, help="Record matched files into the profile database"),
-)

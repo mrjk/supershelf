@@ -12,7 +12,6 @@ from supershelf.configs import ShelfConfigs
 from supershelf.data import run_feed
 from supershelf.domain_schema import DomainSchema
 from supershelf.inspect_config import OUTPUT_FORMATS, InspectedConfig
-from supershelf.record import RecordSession
 from supershelf.scan.match import (
     DETAIL_NO_PATTERNS,
     STATUS_HIT,
@@ -219,23 +218,6 @@ class InspectScanFeedsCommand(ListViewMixin, Parser):
         )
 
 
-class InspectScanImportCommand(ListViewMixin, Parser):
-    """Every in-scope import row, including unchanged. Writes nothing."""
-
-    path = kept_path()
-    record_identity = Argument(
-        "--record-identity",
-        help=(
-            "Link rule for this run: a word or a comma-separated list. "
-            "Does not override a match rule that set record_identity. "
-            "Overrides SUPERSHELF_RECORD_IDENTITY and config.record_identity."
-        ),
-    )
-
-    def cli_run(self, config=None, profile=None, path=None, record_identity=None, **_):
-        return RecordSession.load(config, profile, record_identity).status(path)
-
-
 class InspectScanCommand(Parser):
     """Print the full plan for one scan step. Writes nothing."""
 
@@ -246,13 +228,6 @@ class InspectScanCommand(Parser):
         InspectScanFeedsCommand,
         help="Every fed cell and every row a feed would drop",
     )
-
-
-setattr(
-    InspectScanCommand,
-    "import",
-    Command(InspectScanImportCommand, help="Every in-scope import row, including unchanged"),
-)
 
 
 class InspectCommand(Parser):

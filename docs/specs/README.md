@@ -38,7 +38,7 @@ Product steps live in `behavior/` only. `2` is profile load only. Scan, match, a
   - `2.3.2` kind files: [behavior/2.3.2-kind-files.md](behavior/2.3.2-kind-files.md)
   - `2.3.3` file metadata: [behavior/2.3.3-file-metadata.md](behavior/2.3.3-file-metadata.md)
 - `3` Feeds (`3.1` shared rules, `3.2` scan feeds, `3.3` row drop): [behavior/3-data.md](behavior/3-data.md)
-- `4` Import (`4.1` scan import, `4.2` link, `4.3` writes): [behavior/4-record.md](behavior/4-record.md)
+- `4` Import (`4.1` db import, `4.2` link, `4.3` writes): [behavior/4-record.md](behavior/4-record.md)
 - `5` Output (`5.1` commands, `5.2` selection, `5.3` file driver): [behavior/5-output.md](behavior/5-output.md)
 - `6` Inspect (`6.1` config, `6.2` schema, `6.3` scan): [behavior/6-inspect.md](behavior/6-inspect.md)
 - `7` Database (`7.1` db show): [behavior/7-db.md](behavior/7-db.md)

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 
-from clak import Command, ListViewMixin, Parser
+from clak import Argument, Command, ListViewMixin, Parser
 
+from supershelf.cli.common import kept_path
 from supershelf.database import ShelfDatabase
+from supershelf.record import RecordSession
 from supershelf.scan.runs import ShelfRuns
 
 _STRUCTURED_FORMATS = frozenset({"json", "yaml"})
@@ -56,7 +58,40 @@ class DbShowCommand(ListViewMixin, Parser):
         return rows
 
 
+class DbImportCommand(ListViewMixin, Parser):
+    """Record matched files into the profile database."""
+
+    path = kept_path()
+    record_identity = Argument(
+        "--record-identity",
+        help=(
+            "Link rule for this run: a word or a comma-separated list. "
+            "Does not override a match rule that set record_identity. "
+            "Overrides SUPERSHELF_RECORD_IDENTITY and config.record_identity."
+        ),
+    )
+
+    def cli_run(
+        self,
+        config=None,
+        profile=None,
+        path=None,
+        dry_run=False,
+        record_identity=None,
+        **_,
+    ):
+        session = RecordSession.load(config, profile, record_identity)
+        return session.run(path, dry_run=bool(dry_run))
+
+
 class DbCommand(Parser):
-    """Read the profile database."""
+    """Read or import the profile database."""
 
     show = Command(DbShowCommand, help="Print document rows")
+
+
+setattr(
+    DbCommand,
+    "import",
+    Command(DbImportCommand, help="Record matched files into the profile database"),
+)

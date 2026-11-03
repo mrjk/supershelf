@@ -2,7 +2,7 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf db show` prints document rows from the profile sqlite file. It does not scan, resolve, or write. It does not create the file. A missing file prints no rows.
+`supershelf db show` prints document rows from the profile sqlite file. It does not scan, resolve, or write. It does not create the file. A missing file prints no rows. `supershelf db import` stores matched files. Behavior 4.
 
 The sqlite schema does not follow the user's vars. Each variable stays inside `vars_json`. Architecture 3.2. This command does not expand `vars_json` into columns. Events have no command. A sqlite browser reads them.
 
