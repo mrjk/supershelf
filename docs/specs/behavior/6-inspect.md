@@ -40,6 +40,7 @@ A path template that section 2 cannot render stops the command with that same er
 - supershelf inspect scan STEP [PATH]
 - STEP is `files`, `kinds`, `vars`, `feeds`, or `import`.
 - Prints the full plan for that step, including unchanged rows. `scan` prints only rows this run would write. 2.1.
+- `inspect scan files`, `inspect scan vars`, and `inspect scan feeds` use the same columns as that scan step. 2.1.
 - Writes nothing. It does not create or edit a kind file, the sqlite file, or the cache file.
 - `inspect scan kinds` with a PATH is the pattern trace in 2.2.1. Omit PATH to print one match or miss line per kept file.
 - `inspect scan feeds` lists every fed cell and every row a real `scan feeds` would drop. It does not drop them.

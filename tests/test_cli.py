@@ -143,7 +143,8 @@ def test_scan_files_table(
     ).strftime("%d/%m/%Y")
 
     assert "profile" in output
-    assert "sha256" in output
+    assert "sha" in output
+    assert "sha256" not in output
     assert "a.txt" in output
     assert "b.txt" in output
     assert "work" in output
@@ -171,14 +172,49 @@ def test_scan_files_always_includes_the_hash(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "files"])
-    output = capsys.readouterr().out
+    app.dispatch(["scan", "files", "--format", "json"])
+    rows = json.loads(capsys.readouterr().out)
 
-    assert "a.txt" in output
-    assert "sha256" in output
-    assert "mtime" in output
-    assert "new" in output
+    assert list(rows[0])[:4] == ["input", "sha", "path", "status"]
+    assert "profile" not in rows[0]
+    assert "sha256" not in rows[0]
+    assert rows[0]["path"] == "a.txt"
+    assert rows[0]["status"] == "new"
+    assert "mtime" in rows[0]
     assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_db_show_prints_vars_in_one_cell(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "import"])
+    capsys.readouterr()
+
+    app.dispatch(["db", "show"])
+    table = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+    assert "vendor: Bank2000" in table
+    assert "vars" in table
+
+    app.dispatch(["db", "show", "--format", "json"])
+    rows = json.loads(capsys.readouterr().out)
+    assert list(rows[0])[-1] == "vars"
+    assert rows[0]["vars"] == {"vendor": "Bank2000"}
+    assert "vendor" not in rows[0]
 
 
 def test_scan_files_prefix_selects_paths_that_start_with(
@@ -385,7 +421,7 @@ def test_scan_vars_lists_resolved_values_and_skips_unmatched(
     app.dispatch(["scan", "vars"])
     captured = capsys.readouterr()
 
-    assert captured.out.count("work") == 1
+    assert "work" not in captured.out
     assert "vendor: Bank2000" in captured.out
     assert "note" in captured.out
     assert "a.txt" in captured.out

@@ -10,7 +10,11 @@ The sqlite schema does not follow the user's vars. Each variable stays inside `v
 
 - supershelf db show
 - One row per document, including `missing` and `unmatched`.
-- Columns: profile, presence, input, path, kind, rule, hash, generation, mtime, ctime.
+- Columns: profile, presence, input, path, kind, rule, hash, generation, mtime, ctime, vars.
+- vars is one cell. Each stored name is one line: the name, ": ", then the display string, sorted by name.
+  An empty object is an empty cell.
+  JSON and YAML use one vars object of name to display string.
+  This does not add a column per name.
 - input is the stored index. path is the stored relative path. kind is `match_kind`.
 - A `duplicate` live file has no document row and is not listed. The scan plan prints it. 4.1.
 - Profile selection is `--config` and `--profile`, same as the other commands.

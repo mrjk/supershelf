@@ -195,7 +195,12 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
         fmt = ctx.view_settings.get("format") if ctx is not None else None
         runs = ShelfRuns.load(config, profile)
         walk = runs.changed_resolves(path, dry_run=True, changes_only=False)
-        return variable_rows(walk, fmt, show_all=bool(show_all))
+        return variable_rows(
+            walk,
+            fmt,
+            show_all=bool(show_all),
+            profiles=len(runs.shelves),
+        )
 
 
 class InspectScanFeedsCommand(ListViewMixin, Parser):

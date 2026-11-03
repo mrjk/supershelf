@@ -21,7 +21,7 @@ from supershelf.errors import SupershelfError, VarConfigError
 from supershelf.kind_file import KindFiles, KindLine, KindTable
 from supershelf.profile import ShelfProfile
 from supershelf.scan.match import Matcher
-from supershelf.scan.runs import ResolvedWalk, ShelfRuns
+from supershelf.scan.runs import ResolvedWalk, ShelfRuns, order_scan_row
 from supershelf.scan.walk import InputScanResult, KeptPath
 from supershelf.vars import VarCatalog, VarPlan, reserved_var_name
 
@@ -137,7 +137,7 @@ def run_feed(
         verbosity,
         changes_only=changes_only,
     )
-    rows = _feed_rows(writes, drops)
+    rows = _feed_rows(writes, drops, profiles=len(runs.shelves))
     if not dry_run:
         _apply_feed(writes, drops)
     return rows
@@ -429,29 +429,37 @@ def _user_cell(line: KindLine) -> bool:
 def _feed_rows(
     writes: tuple[_CellWrite, ...],
     drops: tuple[_FeedDrop, ...],
+    *,
+    profiles: int,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for write in writes:
         rows.append(
-            {
-                "profile": write.profile,
-                "path": write.relative,
-                "column": write.name,
-                "value": write.value,
-                "sha": "",
-                "user_cells": "",
-            }
+            order_scan_row(
+                {
+                    "profile": write.profile,
+                    "path": write.relative,
+                    "column": write.name,
+                    "value": write.value,
+                    "sha": "",
+                    "user_cells": "",
+                },
+                profiles=profiles,
+            )
         )
     for drop in drops:
         rows.append(
-            {
-                "profile": drop.profile,
-                "path": drop.path,
-                "column": "",
-                "value": "",
-                "sha": drop.sha,
-                "user_cells": "yes" if drop.user_cells else "no",
-            }
+            order_scan_row(
+                {
+                    "profile": drop.profile,
+                    "path": drop.path,
+                    "column": "",
+                    "value": "",
+                    "sha": drop.sha,
+                    "user_cells": "yes" if drop.user_cells else "no",
+                },
+                profiles=profiles,
+            )
         )
     return rows
 

@@ -100,6 +100,10 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
   A name that is not a legal feed column is left out of CSV and reported.
 - The report lists cells that would change, and rows that would be dropped. 3.3.
   `scan feeds` prints changes. `inspect scan feeds` prints every fed cell. 6.
+  Columns: sha, path, column, value, user_cells.
+  profile is the first column when more than one profile is selected. 2.1.
+  There is no input column and no status column.
+  sha stays the value this step already prints: empty on a cell write for an existing row, the kind-file SHA on a dropped row.
 
 ### Cases
 

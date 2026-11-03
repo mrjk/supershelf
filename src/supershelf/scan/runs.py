@@ -26,6 +26,25 @@ from supershelf.scan.match import Matcher
 from supershelf.scan.walk import InputFile, InputScanResult, KeptPath
 from supershelf.vars import VarPlan
 
+_SCAN_PREFIX = ("profile", "input", "sha", "path", "status")
+
+
+def order_scan_row(row: dict[str, object], *, profiles: int) -> dict[str, object]:
+    """Scan stdout order. profile is included only when more than one is selected."""
+    source = dict(row)
+    if "sha" not in source and "sha256" in source:
+        source["sha"] = source.pop("sha256")
+    if profiles <= 1:
+        source.pop("profile", None)
+    ordered: dict[str, object] = {}
+    for key in _SCAN_PREFIX:
+        if key not in source:
+            continue
+        ordered[key] = source.pop(key)
+    ordered.update(source)
+    return ordered
+
+
 _FILE_STATUSES = frozenset(
     {
         EVENT_NEW,
@@ -265,7 +284,8 @@ class ShelfRuns:
                         }
                     )
             rows.extend(shown)
-        return rows
+        profiles = len(self.shelves)
+        return [order_scan_row(row, profiles=profiles) for row in rows]
 
     @staticmethod
     def _file_row(shelf: ShelfProfile, file, status: str) -> dict[str, object]:
@@ -330,7 +350,8 @@ class ShelfRuns:
                             status,
                         )
                     )
-        return rows
+        profiles = len(self.shelves)
+        return [order_scan_row(row, profiles=profiles) for row in rows]
 
     def changed_resolves(
         self,

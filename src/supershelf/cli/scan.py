@@ -10,7 +10,7 @@ from supershelf.cli.common import kept_path
 from supershelf.data import run_feed
 from supershelf.kind_file import KindOverrideMode
 from supershelf.record import RecordSession
-from supershelf.scan.runs import ShelfRuns
+from supershelf.scan.runs import ShelfRuns, order_scan_row
 from supershelf.vars import FileVars
 
 _STRUCTURED_FORMATS = frozenset({"json", "yaml"})
@@ -33,10 +33,16 @@ def present_vars(resolved: FileVars, fmt: str | None, *, show_all: bool = False)
     )
 
 
-def variable_rows(walk, fmt: str | None, *, show_all: bool = False) -> list[dict[str, object]]:
+def variable_rows(
+    walk,
+    fmt: str | None,
+    *,
+    show_all: bool = False,
+    profiles: int,
+) -> list[dict[str, object]]:
     """Table rows for a resolved walk. `fmt` selects the vars cell."""
     rows: list[dict[str, object]] = []
-    for _shelf, _result, _found, matched, resolved, _plan in walk:
+    for _shelf, _result, found, matched, resolved, _plan in walk:
         presented = present_vars(resolved, fmt, show_all=show_all)
         row: dict[str, object] = {
             "profile": matched.profile,
@@ -45,10 +51,11 @@ def variable_rows(walk, fmt: str | None, *, show_all: bool = False) -> list[dict
             "kind": resolved.kind,
             "rule": matched.rule,
             "vars": presented,
+            "sha": found.sha256 or "",
         }
         if isinstance(presented, str):
             row["sources"] = present_sources(resolved, show_all=show_all)
-        rows.append(row)
+        rows.append(order_scan_row(row, profiles=profiles))
     return rows
 
 
@@ -112,7 +119,12 @@ class ScanVarsCommand(ListViewMixin, Parser):
             mode=kind_overrides_mode,
             dry_run=bool(dry_run),
         )
-        return variable_rows(walk, fmt, show_all=bool(show_all))
+        return variable_rows(
+            walk,
+            fmt,
+            show_all=bool(show_all),
+            profiles=len(runs.shelves),
+        )
 
 
 class ScanFeedsCommand(ListViewMixin, Parser):
@@ -214,6 +226,7 @@ class ScanCommand(CompositeViewMixin, Parser):
         var_rows = variable_rows(
             runs.changed_resolves(path, mode=kind_overrides_mode, dry_run=dry),
             fmt,
+            profiles=len(runs.shelves),
         )
         sections = [
             ("files", runs.file_rows(path), "files"),
