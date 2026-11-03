@@ -4,7 +4,6 @@ import hashlib
 import io
 import json
 import sqlite3
-import sys
 from pathlib import Path
 
 import pytest
@@ -12,19 +11,34 @@ from pypdf import PdfWriter
 
 from supershelf.cli import App
 from supershelf.constants import EVENT_NEW
+from supershelf.data import run_prune, run_show
 from supershelf.database import DatabaseChange, ShelfDatabase, StoredFile
+from supershelf.errors import VarConfigError
 from tests.helpers import isolate_env, write_text
-
-
-class _Terminal(io.StringIO):
-    """A stdin that claims to be a terminal."""
-
-    def isatty(self) -> bool:
-        return True
 
 
 def _dispatch(argv: list[str]) -> None:
     App(parse=False).dispatch(argv)
+
+
+def _prune(
+    *,
+    empty_fields: bool = False,
+    missing: bool = False,
+    clear: bool = False,
+    every: bool = False,
+) -> None:
+    run_prune(
+        None,
+        None,
+        empty_fields=empty_fields,
+        missing=missing,
+        clear=clear,
+        every=every,
+        force=True,
+        dry_run=False,
+        verbosity=0,
+    )
 
 
 def _profile(tmp_path: Path, body: str, files: dict[str, bytes] | None = None) -> None:
@@ -136,14 +150,11 @@ def test_empty_cell_is_filled_and_filled_cell_stays(
         "PATH,vendor,issued,__date__,owner\na.pdf,Bank2000,,,Clerk2000\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(sys, "stdin", _Terminal("yes\n"))
+    _dispatch(["scan", "feeds"])
 
-    _dispatch(["data", "feed"])
-
-    err = capsys.readouterr().err
-    assert "Continue? [y/N]" in err
-    assert "uppercase columns" in err
-    assert "invoice" in err
+    captured = capsys.readouterr()
+    assert "VENDOR" in captured.out
+    assert "Continue?" not in captured.err
     rows = _cells(kind)
     assert rows[0]["vendor"] == "Bank2000"
     assert rows[0]["VENDOR"] == "Bank2000"
@@ -152,7 +163,7 @@ def test_empty_cell_is_filled_and_filled_cell_stays(
     assert rows[0]["__date__"] == ""
     assert rows[0]["__DATE__"] == "25/04/2026"
     assert rows[0]["owner"] == "Clerk2000"
-    assert rows[0]["OWNER"] == "Clerk2000"
+    assert "OWNER" not in rows[0]
     assert (tmp_path / "profile.work.sqlite").exists() is False
 
 
@@ -165,14 +176,14 @@ def test_unset_var_does_not_blank_or_add_a_cell(
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor\na.pdf,\n", encoding="utf-8")
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
-    text = kind.read_text(encoding="utf-8")
-    assert "owner" not in text.splitlines()[0]
-    assert "OWNER" not in text.splitlines()[0]
+    header = kind.read_text(encoding="utf-8").splitlines()[0].split(",")
+    assert "OWNER" not in header
     row = _cells(kind)[0]
     assert row["vendor"] == ""
     assert row["VENDOR"] == "Bank2000"
+    assert row.get("owner", "") == ""
 
 
 def test_date_round_trip_uses_the_kind_format(
@@ -184,7 +195,7 @@ def test_date_round_trip_uses_the_kind_format(
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,issued,__date__\na.pdf,,\n", encoding="utf-8")
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     row = _cells(kind)[0]
     assert row["__date__"] == ""
@@ -196,6 +207,7 @@ def test_date_round_trip_uses_the_kind_format(
 def test_equal_uppercase_cell_is_not_a_change(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     isolate_env(monkeypatch, tmp_path)
     _profile(
@@ -223,9 +235,12 @@ glob = "**"
     original = "PATH,vendor,VENDOR\na.pdf,,Bank2000\n"
     kind.write_text(original, encoding="utf-8")
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
-    assert kind.read_text(encoding="utf-8") == original
+    row = _cells(kind)[0]
+    assert row["vendor"] == ""
+    assert row["VENDOR"] == "Bank2000"
+    assert "VENDOR" not in capsys.readouterr().out
 
 
 def test_different_uppercase_cell_is_replaced(
@@ -257,11 +272,11 @@ glob = "**"
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor,VENDOR\na.pdf,Mine,Old\n", encoding="utf-8")
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     row = _cells(kind)[0]
     assert row["vendor"] == "Mine"
-    assert row["VENDOR"] == "Mine"
+    assert row["VENDOR"] == "Bank2000"
 
 
 def test_reserved_names_use_wrapped_columns(
@@ -273,6 +288,7 @@ def test_reserved_names_use_wrapped_columns(
         tmp_path,
         """\
 [config]
+kind_overrides_mode = "always"
 kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [vars_schema.path]
@@ -299,7 +315,7 @@ glob = "**"
 """,
     )
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     row = _cells(tmp_path / "invoice.csv")[0]
     assert row["_PATH_"] == "rel/a.pdf"
@@ -313,42 +329,27 @@ glob = "**"
     assert header.split(",").count("DATE") == 0
 
 
-def test_ambiguous_kind_and_var_name(
+def test_path_filter_does_not_drop_rows_outside_the_selection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     isolate_env(monkeypatch, tmp_path)
-    _profile(
-        tmp_path,
-        """\
-[config]
-kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
-
-[vars_schema.invoice]
-type = "text"
-
-[[inputs]]
-path = "inbox"
-
-[[match_rules]]
-name = "bill"
-kind = "invoice"
-glob = "**"
-""",
+    _profile(tmp_path, _FEED, {"a.pdf": b"bank-2000", "b.pdf": b"other"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        "PATH,vendor\na.pdf,\nb.pdf,\ngone.pdf,Mine\n",
+        encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as caught:
-        _dispatch(["data", "feed", "invoice"])
+    _dispatch(["scan", "feeds", "a.pdf"])
 
-    assert caught.value.code == 2
-    err = capsys.readouterr().err
-    assert "--kind" in err
-    assert "--var" in err
-    assert (tmp_path / "invoice.csv").exists() is False
+    paths = [row["PATH"] for row in _cells(kind)]
+    assert paths == ["a.pdf", "b.pdf", "gone.pdf"]
+    assert _cells(kind)[0]["VENDOR"] == "Bank2000"
+    assert _cells(kind)[2]["vendor"] == "Mine"
 
 
-def test_not_a_terminal_asks_for_force(
+def test_feed_writes_without_a_prompt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -356,18 +357,16 @@ def test_not_a_terminal_asks_for_force(
     isolate_env(monkeypatch, tmp_path)
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
-    original = "PATH,vendor\na.pdf,\n"
-    kind.write_text(original, encoding="utf-8")
+    kind.write_text("PATH,vendor\na.pdf,\n", encoding="utf-8")
 
-    with pytest.raises(SystemExit) as caught:
-        _dispatch(["data", "feed"])
+    _dispatch(["scan", "feeds"])
 
-    assert caught.value.code == 1
-    assert "--force" in capsys.readouterr().err
-    assert kind.read_text(encoding="utf-8") == original
+    assert "Continue?" not in capsys.readouterr().err
+    assert _cells(kind)[0]["VENDOR"] == "Bank2000"
+    assert _cells(kind)[0]["vendor"] == ""
 
 
-def test_disabled_mode_still_writes_the_first_template(
+def test_disabled_mode_does_not_read_or_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -392,23 +391,21 @@ glob = "**"
 """,
     )
 
-    _dispatch(["data", "feed", "--force"])
-
     created = tmp_path / "kinds" / "invoice.csv"
-    assert "Bank2000" in created.read_text(encoding="utf-8")
-    created.write_text("PATH,vendor,owner\na.pdf,,Clerk2000\n", encoding="utf-8")
+    _dispatch(["scan", "feeds"])
+    assert created.exists() is False
 
-    _dispatch(["data", "feed", "--force"])
-
-    row = _cells(created)[0]
-    assert row["vendor"] == ""
-    assert row["VENDOR"] == "Bank2000"
-    assert row["owner"] == "Clerk2000"
+    created.parent.mkdir()
+    original = "PATH,vendor,owner\na.pdf,,Clerk2000\n"
+    created.write_text(original, encoding="utf-8")
+    _dispatch(["scan", "feeds"])
+    assert created.read_text(encoding="utf-8") == original
 
 
 def test_empty_kind_config_stops(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     isolate_env(monkeypatch, tmp_path)
     _profile(
@@ -427,14 +424,14 @@ glob = "**"
 """,
     )
 
-    for argv in (
-        ["data", "feed", "--force"],
-        ["data", "prune", "--force"],
-        ["data", "show"],
-    ):
-        with pytest.raises(SystemExit) as caught:
-            _dispatch(argv)
-        assert caught.value.code == 2
+    _dispatch(["scan", "feeds"])
+    assert "has no kind file" in capsys.readouterr().err
+    assert list(tmp_path.glob("*.csv")) == []
+
+    with pytest.raises(VarConfigError):
+        _prune()
+    with pytest.raises(VarConfigError):
+        run_show(None, None, None, dry_run=False)
 
 
 def test_shared_path_stops_when_values_differ(
@@ -470,7 +467,7 @@ vars.vendor = "{{ __file__.hash }}"
     )
 
     with pytest.raises(SystemExit) as caught:
-        _dispatch(["data", "feed", "--force"])
+        _dispatch(["scan", "feeds"])
 
     assert caught.value.code == 2
     err = capsys.readouterr().err
@@ -508,7 +505,7 @@ glob = "**"
         encoding="utf-8",
     )
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     body = kind.read_text(encoding="utf-8")
     assert body.count("Later") == 1
@@ -527,7 +524,7 @@ def test_duplicate_raw_row_is_kept(
         encoding="utf-8",
     )
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     rows = _cells(kind)
     assert rows[0]["vendor"] == ""
@@ -544,6 +541,7 @@ def test_no_schema_feeds_visible_names(
         tmp_path,
         """\
 [config]
+kind_overrides_mode = "always"
 kind_overrides_config = ["{{ __config__.root_dir }}/note.csv"]
 kind_overrides_date_format = "%d/%m/%Y"
 
@@ -561,13 +559,13 @@ glob = "**"
 """,
     )
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     row = _cells(tmp_path / "note.csv")[0]
     assert row["VENDOR"] == "Bank2000"
     assert row["__DATE__"] == "25/04/2026"
-    assert "vendor" not in row
-    assert "__date__" not in row
+    assert row.get("vendor", "") == ""
+    assert row.get("__date__", "") == ""
 
 
 def test_feed_does_not_write_documents(
@@ -577,12 +575,12 @@ def test_feed_does_not_write_documents(
     isolate_env(monkeypatch, tmp_path)
     _profile(tmp_path, _FEED)
     (tmp_path / "invoice.csv").write_text("PATH,vendor\na.pdf,\n", encoding="utf-8")
-    _dispatch(["record", "run"])
+    _dispatch(["scan", "import"])
     database = tmp_path / "profile.work.sqlite"
     documents = _count(database, "documents")
     events = _count(database, "events")
 
-    _dispatch(["data", "feed", "--force"])
+    _dispatch(["scan", "feeds"])
 
     assert _count(database, "documents") == documents
     assert _count(database, "events") == events
@@ -591,7 +589,7 @@ def test_feed_does_not_write_documents(
     assert row["VENDOR"] == "Bank2000"
 
 
-def test_cache_is_written_before_a_no(
+def test_feed_writes_the_cell_and_leaves_the_database(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -621,12 +619,10 @@ glob = "**"
     kind.write_text(original, encoding="utf-8")
     database = tmp_path / "profile.work.sqlite"
     _version_one(database)
-    monkeypatch.setattr(sys, "stdin", _Terminal("no\n"))
+    _dispatch(["scan", "feeds"])
 
-    _dispatch(["data", "feed"])
-
-    assert "Continue? [y/N]" in capsys.readouterr().err
-    assert kind.read_text(encoding="utf-8") == original
+    assert "Continue?" not in capsys.readouterr().err
+    assert _cells(kind)[0]["AUTHOR"] == "Bank2000"
     raw = sqlite3.connect(database)
     version = raw.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0]
     tables = {row[0] for row in raw.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
@@ -668,11 +664,12 @@ glob = "**"
     original = "PATH,author\na.pdf,\n"
     kind.write_text(original, encoding="utf-8")
 
-    _dispatch(["data", "feed", "--dry-run"])
+    _dispatch(["scan", "feeds", "--dry-run"])
 
-    err = capsys.readouterr().err
-    assert "Continue?" not in err
-    assert "1 cell" in err
+    captured = capsys.readouterr()
+    assert "Continue?" not in captured.err
+    assert "AUTHOR" in captured.out
+    assert "Bank2000" in captured.out
     assert kind.read_text(encoding="utf-8") == original
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "profile.work.cache").exists() is False
@@ -688,7 +685,7 @@ def test_prune_drops_an_empty_feed_column(
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor,VENDOR\na.pdf,Bank2000,\n", encoding="utf-8")
 
-    _dispatch(["data", "prune", "--force"])
+    _prune()
 
     header = kind.read_text(encoding="utf-8").splitlines()[0]
     assert "vendor" in header.split(",")
@@ -707,7 +704,7 @@ def test_prune_default_drops_only_empty_extra_columns(
         encoding="utf-8",
     )
 
-    _dispatch(["data", "prune", "--force"])
+    _prune()
 
     header = kind.read_text(encoding="utf-8").splitlines()[0]
     assert header == "PATH,vendor,extra"
@@ -726,13 +723,13 @@ def test_missing_drops_the_kind_row_and_keeps_the_document(
         "PATH,vendor,note\na.pdf,Bank2000,\ngone.pdf,Bank2000,\n",
         encoding="utf-8",
     )
-    _dispatch(["record", "run"])
+    _dispatch(["scan", "import"])
     (tmp_path / "inbox" / "gone.pdf").unlink()
-    _dispatch(["record", "run"])
+    _dispatch(["scan", "import"])
     database = tmp_path / "profile.work.sqlite"
     before = _count(database, "documents")
 
-    _dispatch(["data", "prune", "--missing", "--force"])
+    _prune(missing=True)
 
     rows = _cells(kind)
     assert [row["PATH"] for row in rows] == ["a.pdf"]
@@ -754,12 +751,12 @@ def test_clear_leaves_the_database(
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor,note\na.pdf,Bank2000,\n", encoding="utf-8")
-    _dispatch(["record", "run"])
+    _dispatch(["scan", "import"])
     database = tmp_path / "profile.work.sqlite"
     documents = _count(database, "documents")
     events = _count(database, "events")
 
-    _dispatch(["data", "prune", "--clear", "--force"])
+    _prune(clear=True)
 
     assert kind.read_text(encoding="utf-8") == "PATH,vendor,note\n"
     assert kind.is_file()
@@ -780,7 +777,7 @@ def test_prune_flags_are_independent(
     )
     (tmp_path / "inbox" / "gone.pdf").unlink()
 
-    _dispatch(["data", "prune", "--empty-fields", "--force"])
+    _prune(empty_fields=True)
 
     assert "gone.pdf" in kind.read_text(encoding="utf-8")
     assert "note" not in kind.read_text(encoding="utf-8").splitlines()[0]
@@ -794,11 +791,11 @@ def test_all_clears_rows_and_leaves_the_database(
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,vendor\na.pdf,Bank2000\n", encoding="utf-8")
-    _dispatch(["record", "run"])
+    _dispatch(["scan", "import"])
     database = tmp_path / "profile.work.sqlite"
     documents = _count(database, "documents")
 
-    _dispatch(["data", "prune", "--all", "--force"])
+    _prune(every=True)
 
     assert kind.read_text(encoding="utf-8") == "PATH,vendor\n"
     assert _count(database, "documents") == documents
@@ -843,15 +840,14 @@ filename_glob = "note-*"
         encoding="utf-8",
     )
 
-    _dispatch(["data", "show"])
-
-    output = capsys.readouterr().out
-    assert output.count("profile work kind invoice") == 1
-    assert "invoice.csv" in output
-    assert output.count("profile work kind note") == 1
-    assert "Bank2000" in output
-    assert "Statement" in output
-    assert "Continue?" not in capsys.readouterr().err
+    tables = run_show(None, None, None, dry_run=False)
+    by_kind = {table.kind: table for table in tables}
+    assert by_kind["invoice"].kind_file is not None
+    assert "invoice.csv" in by_kind["invoice"].kind_file
+    assert "note" in by_kind
+    rendered = " ".join(str(row) for table in tables for row in table.rows)
+    assert "Bank2000" in rendered
+    assert "Statement" in rendered
 
 
 def test_show_unknown_kind_stops(
@@ -861,10 +857,8 @@ def test_show_unknown_kind_stops(
     isolate_env(monkeypatch, tmp_path)
     _profile(tmp_path, _FEED)
 
-    with pytest.raises(SystemExit) as caught:
-        _dispatch(["data", "show", "missing"])
-
-    assert caught.value.code == 2
+    with pytest.raises(VarConfigError):
+        run_show(None, None, "missing", dry_run=False)
 
 
 def test_show_known_kind_with_no_files_prints_the_title(
@@ -895,11 +889,10 @@ filename_glob = "note-*"
         {"note-1.pdf": b"note"},
     )
 
-    _dispatch(["data", "show", "invoice"])
-
-    output = capsys.readouterr().out
-    assert "profile work kind invoice" in output
-    assert "note-1.pdf" not in output
+    tables = run_show(None, None, "invoice", dry_run=False)
+    assert [table.kind for table in tables] == ["invoice"]
+    rendered = " ".join(str(row) for table in tables for row in table.rows)
+    assert "note-1.pdf" not in rendered
 
 
 def test_show_can_write_the_meta_cache(
@@ -929,7 +922,7 @@ glob = "**"
     kind = tmp_path / "invoice.csv"
     kind.write_text("PATH,author\na.pdf,\n", encoding="utf-8")
 
-    _dispatch(["data", "show"])
+    run_show(None, None, None, dry_run=False)
 
     assert kind.read_text(encoding="utf-8") == "PATH,author\na.pdf,\n"
     assert (tmp_path / "profile.work.sqlite").exists() is False
@@ -960,7 +953,7 @@ def test_prune_missing_lists_the_row_and_follows_the_hash(
         encoding="utf-8",
     )
 
-    _dispatch(["data", "prune", "--missing", "--force"])
+    _prune(missing=True)
 
     rows = _cells(kind)
     assert [row["PATH"] for row in rows] == ["old.pdf"]
@@ -992,7 +985,7 @@ def test_prune_missing_keeps_the_live_hash_when_the_path_is_shared(
         encoding="utf-8",
     )
 
-    _dispatch(["data", "prune", "--missing", "--force"])
+    _prune(missing=True)
 
     rows = _cells(kind)
     assert [(row["PATH"], row["SHA"], row["vendor"]) for row in rows] == [

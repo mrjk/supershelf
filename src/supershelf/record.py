@@ -986,7 +986,11 @@ class _ProfileRun:
         """Clak rows for this profile."""
         shown = rows
         if changes_only:
-            shown = [row for row in rows if row.status != STATUS_UNCHANGED]
+            shown = [
+                row
+                for row in rows
+                if row.status == STATUS_DUPLICATE or row.change() is not None
+            ]
         return [
             {
                 "profile": self.shelf.name,

@@ -10,6 +10,7 @@ import pytest
 
 from supershelf.cli import App, PackageVersion
 from supershelf.constants import LOGGER_NAME
+from supershelf.record import RecordSession
 from tests.helpers import isolate_env as _isolate
 from tests.helpers import write_text as _write
 
@@ -123,12 +124,14 @@ def test_scan_files_table(
     _write(
         tmp_path / "profile.work.toml",
         "[config]\nprofile = 'work'\ndefault_date_format = '%d/%m/%Y'\n\n"
-        "[[inputs]]\npath = 'inbox'\n",
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'file'\nglob = '**'\n",
     )
     _write(
         tmp_path / "profile.home.toml",
         "[config]\nprofile = 'home'\ndefault_date_format = '%d/%m/%Y'\n\n"
-        "[[inputs]]\npath = 'other'\n",
+        "[[inputs]]\npath = 'other'\n\n"
+        "[[match_rules]]\nname = 'file'\nglob = '**'\n",
     )
 
     app = App(parse=False)
@@ -153,7 +156,7 @@ def test_scan_files_table(
     assert (tmp_path / "profile.home.sqlite").exists() is False
 
 
-def test_scan_files_quick_omits_metadata(
+def test_scan_files_always_includes_the_hash(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -162,15 +165,20 @@ def test_scan_files_quick_omits_metadata(
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "a.txt").write_bytes(b"hello")
-    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[[inputs]]\npath = 'inbox'\n\n[[match_rules]]\nname = 'file'\nglob = '**'\n",
+    )
 
     app = App(parse=False)
-    app.dispatch(["scan", "files", "--quick"])
+    app.dispatch(["scan", "files"])
     output = capsys.readouterr().out
 
     assert "a.txt" in output
-    assert "sha256" not in output
-    assert "mtime" not in output
+    assert "sha256" in output
+    assert "mtime" in output
+    assert "new" in output
+    assert (tmp_path / "profile.work.sqlite").exists() is False
 
 
 def test_scan_files_prefix_selects_paths_that_start_with(
@@ -185,10 +193,13 @@ def test_scan_files_prefix_selects_paths_that_start_with(
     (inbox / "Bank2000" / "file.pdf").write_bytes(b"hello")
     (inbox / "Bank.txt").write_bytes(b"hello")
     (inbox / "notes" / "readme.txt").write_bytes(b"hello")
-    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[[inputs]]\npath = 'inbox'\n\n[[match_rules]]\nname = 'file'\nglob = '**'\n",
+    )
 
     app = App(parse=False)
-    app.dispatch(["scan", "files", "--quick", "Bank"])
+    app.dispatch(["scan", "files", "Bank"])
     output = capsys.readouterr().out
 
     assert "Bank2000/file.pdf" in output
@@ -206,10 +217,13 @@ def test_scan_files_exact_file_omits_a_longer_prefix(
     inbox.mkdir()
     (inbox / "a.txt").write_bytes(b"hello")
     (inbox / "a.txt.bak").write_bytes(b"hello")
-    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[[inputs]]\npath = 'inbox'\n\n[[match_rules]]\nname = 'file'\nglob = '**'\n",
+    )
 
     app = App(parse=False)
-    app.dispatch(["scan", "files", "--quick", "a.txt"])
+    app.dispatch(["scan", "files", "a.txt"])
     output = capsys.readouterr().out
 
     assert "a.txt" in output
@@ -233,6 +247,60 @@ def test_scan_files_unknown_path_exits(
 
     assert caught.value.code == 1
     assert "No kept file 'missing.pdf'" in capsys.readouterr().err
+
+
+def test_scan_diffs_hide_rows_import_would_not_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    target = inbox / "a.txt"
+    target.write_bytes(b"hello")
+    (inbox / "b.txt").write_bytes(b"there")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+    app = App(parse=False)
+    RecordSession.load(None, None, None).run(None, dry_run=False)
+    capsys.readouterr()
+
+    app.dispatch(["scan", "files"])
+    app.dispatch(["scan", "kinds"])
+    app.dispatch(["scan", "vars"])
+    quiet = capsys.readouterr()
+    assert "a.txt" not in quiet.out
+    assert "b.txt" in quiet.out
+    assert "unmatched" in quiet.out
+
+    target.write_bytes(b"hello!")
+    app.dispatch(["scan", "files"])
+    changed = capsys.readouterr().out
+    assert "generation" in changed
+    assert "a.txt" in changed
+    RecordSession.load(None, None, None).run(None, dry_run=False)
+
+    (tmp_path / "profile.work.toml").write_text(
+        "[default_vars]\nvendor = 'Other'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'bills'\nkind = 'bill'\nfilename_glob = 'a.txt'\n",
+        encoding="utf-8",
+    )
+    app.dispatch(["scan", "files"])
+    assert "a.txt" not in capsys.readouterr().out
+    app.dispatch(["scan", "kinds"])
+    kinds = capsys.readouterr().out
+    assert "bill" in kinds
+    assert "bills" in kinds
+    app.dispatch(["scan", "vars"])
+    assert "vendor: Other" in capsys.readouterr().out
 
 
 def test_scan_kinds_lists_matches_and_warns_for_the_rest(
@@ -261,7 +329,8 @@ def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     assert "note" in captured.out
     assert "notes" in captured.out
     assert "a.txt" in captured.out
-    assert "b.txt" not in captured.out
+    assert "b.txt" in captured.out
+    assert "unmatched" in captured.out
     assert "sha256" not in captured.out
     assert "No match_rule for b.txt in profile work input 1" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
@@ -551,7 +620,7 @@ def test_scan_vars_manual_flag_does_not_append(
     assert kind_file.read_text(encoding="utf-8") == "PATH\n"
 
     app.dispatch(["scan", "vars"])
-    assert "a.txt" in kind_file.read_text(encoding="utf-8")
+    assert kind_file.read_text(encoding="utf-8") == "PATH\n"
 
 
 def test_scan_vars_rejects_a_bad_kind_mode(
@@ -593,7 +662,7 @@ def test_scan_vars_dry_run_does_not_append(
     app.dispatch(["-v", "--dry-run", "scan", "vars"])
     captured = capsys.readouterr()
     assert kind_file.read_text(encoding="utf-8") == "PATH\n"
-    assert f"Would append 1 rows to kind file {kind_file.resolve()}" in captured.err
+    assert "Would append" not in captured.err
 
 
 def test_scan_kinds_rejects_a_bad_regex_before_walking(
@@ -637,7 +706,7 @@ def test_scan_inspect_named_file_prints_the_pattern(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "inspect", "company/bank2000_card/file.pdf"])
+    app.dispatch(["inspect", "scan", "kinds", "company/bank2000_card/file.pdf"])
     captured = capsys.readouterr()
 
     assert (
@@ -670,7 +739,7 @@ def test_scan_inspect_without_a_path_does_not_print_patterns(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "inspect"])
+    app.dispatch(["inspect", "scan", "kinds"])
     captured = capsys.readouterr()
 
     assert "match profile work input 1 a.txt rule notes kind note" in captured.out
@@ -699,7 +768,7 @@ def test_scan_inspect_prefix_traces_only_selected_files(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "inspect", "company"])
+    app.dispatch(["inspect", "scan", "kinds", "company"])
     captured = capsys.readouterr()
 
     assert "against 'a.txt': hit" in captured.out
@@ -725,7 +794,7 @@ def test_scan_inspect_verbose_prints_skipped_fields(
     )
 
     app = App(parse=False)
-    app.dispatch(["-v", "scan", "inspect", "b.txt"])
+    app.dispatch(["-v", "inspect", "scan", "kinds", "b.txt"])
     captured = capsys.readouterr()
 
     assert "rule notes regex: skipped, no patterns" in captured.out
@@ -751,7 +820,7 @@ def test_scan_inspect_debug_prints_rules_that_were_not_tried(
     )
 
     app = App(parse=False)
-    app.dispatch(["-vv", "scan", "inspect", "a.txt"])
+    app.dispatch(["-vv", "inspect", "scan", "kinds", "a.txt"])
     captured = capsys.readouterr()
 
     assert "filename_glob 'a.txt' against 'a.txt': hit" in captured.out
@@ -779,7 +848,7 @@ def test_scan_inspect_traces_the_same_path_in_each_input(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "inspect", "a.txt"])
+    app.dispatch(["inspect", "scan", "kinds", "a.txt"])
     captured = capsys.readouterr()
 
     assert "profile work input 1" in captured.out
@@ -801,7 +870,7 @@ def test_scan_inspect_unknown_path_exits(
 
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["scan", "inspect", "missing.pdf"])
+        app.dispatch(["inspect", "scan", "kinds", "missing.pdf"])
 
     assert caught.value.code == 1
     assert "No kept file 'missing.pdf'" in capsys.readouterr().err
@@ -823,11 +892,70 @@ def test_scan_inspect_rejects_a_bad_regex_before_walking(
 
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["scan", "inspect", "a.txt"])
+        app.dispatch(["inspect", "scan", "kinds", "a.txt"])
 
     assert caught.value.code == 1
     assert "Invalid regex" in capsys.readouterr().err
     assert "missing-inbox" not in caplog.text
+
+
+def test_bare_scan_dry_run_creates_nothing_and_a_second_run_is_quiet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.pdf").write_bytes(b"bank-2000")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\n"
+        "kind_overrides_mode = 'always'\n"
+        "kind_overrides_config = ['{{ __config__.root_dir }}/invoice.csv']\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'bill'\nkind = 'invoice'\nglob = '**'\n",
+    )
+    app = App(parse=False)
+    app.dispatch(
+        [
+            "scan",
+            "--dry-run",
+            "--kind-overrides-mode",
+            "always",
+            "--record-identity",
+            "path",
+        ]
+    )
+    preview = capsys.readouterr().out
+    assert "a.pdf" in preview
+    assert "new" in preview
+    assert (tmp_path / "invoice.csv").exists() is False
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+    assert (tmp_path / "profile.work.cache").exists() is False
+
+    app.dispatch(["scan"])
+    assert "new" in capsys.readouterr().out
+    assert (tmp_path / "invoice.csv").is_file()
+    assert (tmp_path / "profile.work.sqlite").is_file()
+
+    app.dispatch(["scan"])
+    again = capsys.readouterr().out
+    assert "import" in again
+    assert "a.pdf" not in again.split("import", 1)[-1]
+
+
+def test_removed_commands_fail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(tmp_path / "profile.work.toml", "[[inputs]]\npath = 'inbox'\n")
+    app = App(parse=False)
+    for argv in (["data"], ["record"], ["schema"], ["scan", "inspect"]):
+        with pytest.raises(SystemExit) as caught:
+            app.dispatch(argv)
+        assert caught.value.code != 0
 
 
 def test_schema_prints_json_for_the_profile(
@@ -845,7 +973,7 @@ def test_schema_prints_json_for_the_profile(
     )
 
     app = App(parse=False)
-    app.dispatch(["schema"])
+    app.dispatch(["inspect", "schema"])
     document = json.loads(capsys.readouterr().out)
     invoice = document["work"]["$defs"]["invoice"]
 
@@ -864,7 +992,7 @@ def test_schema_without_declarations_exits(
 
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["schema"])
+        app.dispatch(["inspect", "schema"])
 
     assert caught.value.code == 2
     assert "vars_schema or kind_schema" in capsys.readouterr().err

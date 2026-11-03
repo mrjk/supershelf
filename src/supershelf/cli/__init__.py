@@ -3,13 +3,11 @@
 from clak import Argument, Command, LoggingOptMixin, Parser
 
 from supershelf.cli.common import GlobalFlags, PackageVersion
-from supershelf.cli.data import DataCommand
+from supershelf.cli.db import DbCommand
 from supershelf.cli.inspect import InspectCommand
 from supershelf.cli.output import OutputCommand
 from supershelf.cli.profiles import ProfilesCommand
-from supershelf.cli.record import RecordCommand
 from supershelf.cli.scan import ScanCommand, present_sources, present_vars
-from supershelf.cli.schema import SchemaCommand
 from supershelf.constants import LOGGER_NAME
 
 __all__ = [
@@ -22,7 +20,7 @@ __all__ = [
 
 
 class App(LoggingOptMixin, GlobalFlags, Parser):
-    """Load profiles, inspect config, scan inputs, record matched files, write outputs, and edit kind files."""
+    """Load profiles, inspect config, scan inputs, and write outputs."""
 
     version = Argument(
         "--version",
@@ -42,14 +40,9 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
         ]
 
     profiles = Command(ProfilesCommand, help="List profile names and config paths")
-    inspect = Command(InspectCommand, help="Show how profile init read the config")
-    schema = Command(
-        SchemaCommand,
-        help="Print JSON Schema for declared variables and kinds",
-    )
+    inspect = Command(InspectCommand, help="Read config, schema, and scan plans")
     scan = Command(ScanCommand, help="Scan profile inputs")
-    data = Command(DataCommand, help="Read and write kind files")
-    record = Command(RecordCommand, help="Record matched files and read that history")
+    db = Command(DbCommand, help="Read the profile database")
     output = Command(OutputCommand, help="Write destinations for recorded files")
 
 

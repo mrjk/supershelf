@@ -47,12 +47,12 @@ STATUS_CONFLICT = "conflict"
 SHARED_KEYS = frozenset({"name", "driver", "kinds", "when"})
 _PASSING = frozenset({STATUS_UNCHANGED, STATUS_REFRESH})
 _APPLY = frozenset({STATUS_WRITE, STATUS_REPLACE})
-_RECORD_TIP = "Run record status, then record run."
+_RECORD_TIP = "Run scan import."
 _VARS_TIP = (
-    "Run record status, then record run, if those live values are the ones you want. "
-    "If a live value is wrong, fix the match rule, the kind file, or the profile, then record again."
+    "Run scan import, if those live values are the ones you want. "
+    "If a live value is wrong, fix the match rule, the kind file, or the profile, then scan import again."
 )
-_UNMATCHED_TIP = "Change the match rule so this path matches, then run record status and record run."
+_UNMATCHED_TIP = "Change the match rule so this path matches, then run scan import."
 _LOGGER = logging.getLogger(LOGGER_NAME)
 _WHEN_TRUE = frozenset({"true", "yes", "1"})
 _WHEN_FALSE = frozenset({"false", "no", "0"})
@@ -446,7 +446,7 @@ def record_status_message(
     index = match.row.file.input_index
     return (
         f"Profile {profile.shelf.name} input {index} "
-        f"{match.found.path} record status is {status}. "
+        f"{match.found.path} status is {status}. "
         f"{_status_facts(status, match, document)} {_status_fix(status)}"
     )
 
@@ -478,7 +478,7 @@ def _status_facts(status: str, match: LinkedMatch, document: DocumentRow | None)
 
 def _short_fact(status: str) -> str:
     facts = {
-        EVENT_NEW: "This file is not recorded.",
+        EVENT_NEW: "This file is not in the library.",
         EVENT_VARS: "Kind, rule, or variables differ from the stored document.",
         EVENT_GENERATION: "The file bytes changed.",
         EVENT_MOVE: "The file moved.",
@@ -503,7 +503,7 @@ def _record_status_error(profile: OutputProfile, match: LinkedMatch) -> OutputRe
     index = match.row.file.input_index
     return OutputResolveError(
         f"Profile {profile.shelf.name} input {index} "
-        f"{match.found.path} record status is {status}",
+        f"{match.found.path} status is {status}",
         advice=_RECORD_TIP,
     )
 

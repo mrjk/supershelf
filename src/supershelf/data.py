@@ -8,13 +8,21 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from supershelf.constants import IDENTITY_HASH, LOGGER_NAME, VAR_DATE
+from supershelf.constants import (
+    IDENTITY_HASH,
+    KIND_MODE_ALWAYS,
+    KIND_MODE_AUTO,
+    KIND_MODE_DISABLED,
+    KIND_MODE_MANUAL,
+    LOGGER_NAME,
+    VAR_DATE,
+)
 from supershelf.errors import SupershelfError, VarConfigError
-from supershelf.kind_file import KindFiles, KindTable
+from supershelf.kind_file import KindFiles, KindLine, KindTable
 from supershelf.profile import ShelfProfile
 from supershelf.scan.match import Matcher
 from supershelf.scan.runs import ResolvedWalk, ShelfRuns
-from supershelf.scan.walk import InputScanResult
+from supershelf.scan.walk import InputScanResult, KeptPath
 from supershelf.vars import VarCatalog, VarPlan, reserved_var_name
 
 
@@ -41,6 +49,7 @@ class _Resolved:
     rule: str
     sha: str
     values: Mapping[str, str]
+    rule_layer: Mapping[str, str]
     plan: VarPlan
 
 
@@ -51,6 +60,17 @@ class _CellWrite:
     name: str
     value: str
     sha: str
+    profile: str
+
+
+@dataclass(frozen=True)
+class _FeedDrop:
+    table: KindTable
+    index: int
+    path: str
+    sha: str
+    user_cells: bool
+    profile: str
 
 
 @dataclass(frozen=True)
@@ -83,30 +103,44 @@ class _PruneFile:
 def run_feed(
     config: str | None,
     profile: str | None,
-    names: str | None,
+    path: str | None = None,
     *,
-    kind: str | None,
-    var: str | None,
-    force: bool,
-    dry_run: bool,
-    verbosity: int,
-) -> None:
-    """Write resolved values into uppercase columns. The prompt guards the kind-file write only."""
+    mode: str | None = None,
+    dry_run: bool = False,
+    verbosity: int = 0,
+    changes_only: bool = True,
+) -> list[dict[str, object]]:
+    """Write rule-layer display strings into uppercase columns.
+
+    Resolve every selected profile first. A resolve error writes nothing.
+    auto and always commit path and hash, then drop, then write feed cells.
+    """
     runs = ShelfRuns.load(config, profile)
-    prepared = runs.plans(dry_run=dry_run)
-    _require_kind_files(prepared)
-    kind_names, var_names = _feed_selectors(prepared, names, kind, var)
-    resolved = _resolve(prepared, runs.scans(quick=False, path=None))
-    selected_kinds, selected_vars, per_kind = _feed_selection(
-        prepared,
+    prepared = runs.plans(mode=mode, dry_run=dry_run)
+    groups = [shelf.scan(quick=False) for shelf in runs.shelves]
+    kept = [
+        found.path
+        for scans in groups
+        for scan in scans
+        for found in scan.results
+    ]
+    selector = KeptPath.from_paths(path, kept)
+    resolved = _resolve(prepared, selector.narrow(groups))
+    _warn_missing_files(resolved)
+    if _feeds_disabled(prepared):
+        return []
+    _reject_feed_conflicts(resolved)
+    _commit_identity(prepared, dry_run=dry_run)
+    writes, drops = _feed_plan(
         resolved,
-        kind_names,
-        var_names,
+        selector,
+        verbosity,
+        changes_only=changes_only,
     )
-    writes = _feed_writes(resolved, per_kind, verbosity)
-    summary = _feed_summary(selected_kinds, selected_vars, writes)
-    if _confirm(summary, force=force, dry_run=dry_run, changes=bool(writes)):
-        _apply_writes(writes)
+    rows = _feed_rows(writes, drops)
+    if not dry_run:
+        _apply_feed(writes, drops)
+    return rows
 
 
 def run_prune(
@@ -200,125 +234,46 @@ def _resolve(
                 rule=matched.rule,
                 sha=walked.sha256 or "",
                 values=dict(resolved.items),
+                rule_layer=dict(resolved.rule_layer),
                 plan=plan,
             )
         )
     return tuple(found)
 
 
-def _feed_selectors(
-    prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
-    names: str | None,
-    kind: str | None,
-    var: str | None,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    kinds: list[str] = []
-    variables: list[str] = []
-    for token in _split_names(names):
-        kind_hit, var_hit = _classify(prepared, token)
-        if kind_hit and var_hit:
-            raise VarConfigError(
-                f"{token} is a kind and a var",
-                advice="Pass --kind or --var to choose which one.",
-            )
-        if kind_hit:
-            kinds.append(token)
-            continue
-        if var_hit:
-            _reject_internal(token, "names")
-            variables.append(token)
-            continue
-        raise VarConfigError(
-            f"{token} is not a kind or a var",
-            advice="Use a match rule kind, a kind_schema name, or a var name.",
-        )
-    for token in _split_names(kind):
-        if not any(token in _known_kinds(matcher, plan.catalog) for _shelf, matcher, plan in prepared):
-            raise VarConfigError(
-                f"Unknown kind {token}",
-                advice="Use a match rule kind or a kind_schema name.",
-            )
-        kinds.append(token)
-    for token in _split_names(var):
-        _reject_internal(token, "--var")
-        if not any(_is_var(plan.catalog, token) for _shelf, _matcher, plan in prepared):
-            raise VarConfigError(
-                f"Unknown var {token}",
-                advice="Use a declared name, a rule var, or __date__.",
-            )
-        variables.append(token)
-    return tuple(_unique(kinds)), tuple(_unique(variables))
+def _feeds_disabled(prepared: list[tuple[ShelfProfile, Matcher, VarPlan]]) -> bool:
+    return all(plan.kind_files.mode == KIND_MODE_DISABLED for _shelf, _matcher, plan in prepared)
 
 
-def _feed_selection(
-    prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
-    resolved: tuple[_Resolved, ...],
-    kind_names: tuple[str, ...],
-    var_names: tuple[str, ...],
-) -> tuple[tuple[str, ...], tuple[str, ...], dict[tuple[str, str], tuple[str, ...]]]:
-    visible = _visible_by_kind(resolved)
-    matched = _matched_kinds(resolved)
-    per_kind: dict[tuple[str, str], tuple[str, ...]] = {}
-    selected_kinds: list[str] = []
-    selected_vars: list[str] = []
-    defined_union: set[str] = set()
-    for shelf, matcher, plan in prepared:
-        known = _known_kinds(matcher, plan.catalog)
-        if kind_names:
-            kinds = tuple(name for name in kind_names if name in known)
-        else:
-            kinds = tuple(name for name in matched.get(shelf.name, ()) if name in known)
-        for kind in kinds:
-            defined = _defined_names(plan.catalog, kind, visible.get((shelf.name, kind), ()))
-            chosen = defined if not var_names else tuple(name for name in defined if name in var_names)
-            per_kind[(shelf.name, kind)] = chosen
-            if kind not in selected_kinds:
-                selected_kinds.append(kind)
-            defined_union.update(defined)
-            for name in chosen:
-                if name not in selected_vars:
-                    selected_vars.append(name)
-    if var_names:
-        missing = next((name for name in var_names if name not in defined_union), None)
-        if missing is not None:
-            raise VarConfigError(
-                f"{missing} is not defined by the selected kinds",
-                advice="Choose a var those kinds define, or omit --kind.",
-            )
-    return tuple(selected_kinds), tuple(selected_vars), per_kind
-
-
-def _feed_writes(
-    resolved: tuple[_Resolved, ...],
-    per_kind: dict[tuple[str, str], tuple[str, ...]],
-    verbosity: int,
-) -> tuple[_CellWrite, ...]:
-    choices: dict[tuple[Path, str, str], _Choice] = {}
-    writes: list[_CellWrite] = []
-    warned: set[tuple[Path, str]] = set()
-    blocked = _shared_hash_without_row(resolved)
+def _warn_missing_files(resolved: tuple[_Resolved, ...]) -> None:
+    seen: set[tuple[str, str]] = set()
     for item in resolved:
-        names = per_kind.get((item.profile, item.kind), ())
+        kinds = item.plan.kind_files
+        if kinds.mode == KIND_MODE_DISABLED or kinds.templates_for(item.kind):
+            continue
+        key = (item.profile, item.kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        logger.warning("Profile %s kind %s has no kind file", item.profile, item.kind)
+
+
+def _reject_feed_conflicts(resolved: tuple[_Resolved, ...]) -> None:
+    choices: dict[tuple[Path, str, str], _Choice] = {}
+    for item in resolved:
+        if item.plan.kind_files.mode == KIND_MODE_DISABLED:
+            continue
+        names = _feed_names(item)
         if not names:
             continue
-        table = item.plan.kind_files.open_table(item.kind, item.input_path, create=True)
-        if table is None:
+        path = item.plan.kind_files.path_for(item.kind, item.input_path)
+        if path is None:
             continue
         identity = item.plan.kind_files.identity_for(item.rule)
-        if (table.path.resolve(), item.sha) in blocked and identity == IDENTITY_HASH:
-            continue
-        found = table.row_for(item.relative, item.sha, identity)
-        if found is None:
-            target = item.relative
-            create_sha = item.sha
-            current: Mapping[str, str] = {}
-        else:
-            target, current = found
-            create_sha = ""
-        row_key = item.sha if identity == IDENTITY_HASH and item.sha else target
+        row_key = item.sha if identity == IDENTITY_HASH and item.sha else item.relative
         for name in names:
-            value = _cell_text(name, item.values.get(name), item.plan.kind_files)
-            key = (table.path.resolve(), row_key, name)
+            value = _cell_text(name, item.rule_layer.get(name), item.plan.kind_files)
+            key = (path.resolve(), row_key, name)
             previous = choices.get(key)
             if previous is not None and previous.value != value:
                 raise VarConfigError(
@@ -331,8 +286,68 @@ def _feed_writes(
                     ),
                 )
             choices[key] = _Choice(item.profile, item.index, item.input_path, value)
+
+
+def _commit_identity(
+    prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
+    *,
+    dry_run: bool,
+) -> None:
+    for _shelf, _matcher, plan in prepared:
+        kinds = plan.kind_files
+        if kinds.mode not in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
+            continue
+        kinds.commit()
+        if dry_run:
+            kinds.stage_identity()
+            continue
+        kinds.reload_tables()
+
+
+def _feed_plan(
+    resolved: tuple[_Resolved, ...],
+    selector: KeptPath,
+    verbosity: int,
+    *,
+    changes_only: bool = True,
+) -> tuple[tuple[_CellWrite, ...], tuple[_FeedDrop, ...]]:
+    blocked = _shared_hash_without_row(resolved)
+    writes: list[_CellWrite] = []
+    tables: list[KindTable] = []
+    warned: set[tuple[Path, str]] = set()
+    seen_tables: set[int] = set()
+    for item in resolved:
+        kinds = item.plan.kind_files
+        if kinds.mode == KIND_MODE_DISABLED:
+            continue
+        table = _open_feed_table(item)
+        if table is None:
+            continue
+        if id(table) not in seen_tables:
+            seen_tables.add(id(table))
+            tables.append(table)
+        names = _feed_names(item)
+        if not names:
+            continue
+        identity = kinds.identity_for(item.rule)
+        if (table.path.resolve(), item.sha) in blocked and identity == IDENTITY_HASH:
+            continue
+        found = table.row_for(item.relative, item.sha, identity)
+        if found is None:
+            if kinds.mode == KIND_MODE_MANUAL:
+                continue
+            target = item.relative
+            create_sha = item.sha
+            current: Mapping[str, str] = {}
+        else:
+            target, current = found
+            create_sha = ""
+        for name in names:
+            value = _cell_text(name, item.rule_layer.get(name), kinds)
+            if value is None:
+                continue
             column = KindTable.feed_column_name(name)
-            if value is None or current.get(column) == value:
+            if changes_only and current.get(column) == value:
                 continue
             if not table.accepts_name(column):
                 mark = (table.path, column)
@@ -345,15 +360,123 @@ def _feed_writes(
                     )
                 continue
             if verbosity >= 1:
-                logger.info(
-                    "Would set %s %s to %s in %s",
-                    target,
-                    column,
-                    value,
-                    table.path,
-                )
-            writes.append(_CellWrite(table, target, column, value, create_sha))
-    return tuple(writes)
+                logger.info("Would set %s %s to %s in %s", target, column, value, table.path)
+            writes.append(_CellWrite(table, target, column, value, create_sha, item.profile))
+    drops = [
+        drop
+        for table in tables
+        for drop in _drop_rows(table, resolved, selector)
+    ]
+    return tuple(writes), tuple(drops)
+
+
+def _feed_names(item: _Resolved) -> tuple[str, ...]:
+    """feeds when set, otherwise the schema names, otherwise printed names."""
+    catalog = item.plan.catalog
+    schema = catalog.kind_schema(item.kind)
+    if schema is not None and schema.feeds is not None:
+        return schema.feeds
+    shown = tuple(name for name in item.values if not reserved_var_name(name))
+    return _defined_names(catalog, item.kind, shown)
+
+
+def _open_feed_table(item: _Resolved) -> KindTable | None:
+    create = item.plan.kind_files.mode == KIND_MODE_ALWAYS
+    return item.plan.kind_files.open_table(item.kind, item.input_path, create=create)
+
+
+def _drop_rows(
+    table: KindTable,
+    resolved: tuple[_Resolved, ...],
+    selector: KeptPath,
+) -> list[_FeedDrop]:
+    """auto and always only. A path filter keeps rows outside the selection."""
+    live_paths: set[str] = set()
+    live_hashes: set[str] = set()
+    profile = ""
+    writable = False
+    for item in resolved:
+        opened = _open_feed_table(item)
+        if opened is None or opened.path.resolve() != table.path.resolve():
+            continue
+        profile = item.profile
+        if item.plan.kind_files.mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
+            writable = True
+        if item.plan.kind_files.identity_for(item.rule) == IDENTITY_HASH:
+            if item.sha:
+                live_hashes.add(item.sha)
+            continue
+        live_paths.add(item.relative)
+    if not writable:
+        return []
+    dropped: list[_FeedDrop] = []
+    for index, line in table.unmatched(live_paths, live_hashes):
+        if selector.text is not None and not selector.matches(line.path):
+            continue
+        dropped.append(
+            _FeedDrop(table, index, line.path, line.sha, _user_cell(line), profile)
+        )
+    return dropped
+
+
+def _user_cell(line: KindLine) -> bool:
+    return any(
+        value.strip() and not KindTable.is_feed_column(name)
+        for name, value in line.cells.items()
+    )
+
+
+def _feed_rows(
+    writes: tuple[_CellWrite, ...],
+    drops: tuple[_FeedDrop, ...],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for write in writes:
+        rows.append(
+            {
+                "profile": write.profile,
+                "path": write.relative,
+                "column": write.name,
+                "value": write.value,
+                "sha": "",
+                "user_cells": "",
+            }
+        )
+    for drop in drops:
+        rows.append(
+            {
+                "profile": drop.profile,
+                "path": drop.path,
+                "column": "",
+                "value": "",
+                "sha": drop.sha,
+                "user_cells": "yes" if drop.user_cells else "no",
+            }
+        )
+    return rows
+
+
+def _apply_feed(writes: tuple[_CellWrite, ...], drops: tuple[_FeedDrop, ...]) -> None:
+    indexes: dict[int, set[int]] = {}
+    tables: dict[int, KindTable] = {}
+    for drop in drops:
+        identity = id(drop.table)
+        tables[identity] = drop.table
+        indexes.setdefault(identity, set()).add(drop.index)
+    for identity, table in tables.items():
+        table.drop_indexes(indexes[identity])
+    dirty: list[KindTable] = list(tables.values())
+    seen = set(tables)
+    for write in writes:
+        if not write.table.set_cell(write.relative, write.name, write.value, write.sha):
+            continue
+        identity = id(write.table)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        dirty.append(write.table)
+    for table in dirty:
+        table.save()
 
 
 def _shared_hash_without_row(resolved: tuple[_Resolved, ...]) -> set[tuple[Path, str]]:
@@ -376,7 +499,6 @@ def _shared_hash_without_row(resolved: tuple[_Resolved, ...]) -> set[tuple[Path,
         if len(paths) < 2:
             continue
         blocked.add((path, digest))
-        logger.warning("Kind file %s hash %s is shared by %s", path, digest, ", ".join(paths))
     return blocked
 
 
@@ -386,47 +508,6 @@ def _cell_text(name: str, display: str | None, kinds: KindFiles) -> str | None:
     if name == VAR_DATE:
         return kinds.dates.show(display)
     return display
-
-
-def _feed_summary(
-    kinds: tuple[str, ...],
-    variables: tuple[str, ...],
-    writes: tuple[_CellWrite, ...],
-) -> str:
-    kind_text = ", ".join(kinds) if kinds else "(none)"
-    var_text = ", ".join(variables) if variables else "(none)"
-    lines = [
-        f"Selected kinds: {kind_text}. Selected vars: {var_text}.",
-        "Writes those resolved values into the uppercase columns. "
-        "A cell is replaced when the text changes. Lowercase cells stay.",
-    ]
-    counts: dict[Path, int] = {}
-    order: list[Path] = []
-    for write in writes:
-        if write.table.path not in counts:
-            order.append(write.table.path)
-            counts[write.table.path] = 0
-        counts[write.table.path] += 1
-    if not order:
-        lines.append("No kind file would change.")
-    for path in order:
-        lines.append(f"{path}: {_count(counts[path], 'cell')}")
-    return "\n".join(lines) + "\n"
-
-
-def _apply_writes(writes: tuple[_CellWrite, ...]) -> None:
-    tables: list[KindTable] = []
-    seen: set[int] = set()
-    for write in writes:
-        if not write.table.set_cell(write.relative, write.name, write.value, write.sha):
-            continue
-        identity = id(write.table)
-        if identity in seen:
-            continue
-        seen.add(identity)
-        tables.append(write.table)
-    for table in tables:
-        table.save()
 
 
 def _prune_flags(
@@ -698,15 +779,6 @@ def _visible_by_kind(resolved: tuple[_Resolved, ...]) -> dict[tuple[str, str], t
     return {key: tuple(sorted(names)) for key, names in found.items()}
 
 
-def _matched_kinds(resolved: tuple[_Resolved, ...]) -> dict[str, tuple[str, ...]]:
-    found: dict[str, list[str]] = {}
-    for item in resolved:
-        names = found.setdefault(item.profile, [])
-        if item.kind not in names:
-            names.append(item.kind)
-    return {profile: tuple(names) for profile, names in found.items()}
-
-
 def _defined_names(catalog: VarCatalog, kind: str, visible: tuple[str, ...]) -> tuple[str, ...]:
     headers = catalog.csv_headers(kind)
     if headers:
@@ -723,58 +795,6 @@ def _known_kinds(matcher: Matcher, catalog: VarCatalog) -> tuple[str, ...]:
         if schema.name not in names:
             names.append(schema.name)
     return tuple(names)
-
-
-def _classify(
-    prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
-    token: str,
-) -> tuple[bool, bool]:
-    kind_hit = False
-    var_hit = False
-    for _shelf, matcher, plan in prepared:
-        if token in _known_kinds(matcher, plan.catalog):
-            kind_hit = True
-        if _is_var(plan.catalog, token):
-            var_hit = True
-    return kind_hit, var_hit
-
-
-def _is_var(catalog: VarCatalog, name: str) -> bool:
-    if name in catalog:
-        return True
-    return any(name in schema.vars for schema in catalog.kind_schemas())
-
-
-def _reject_internal(name: str, label: str) -> None:
-    if not reserved_var_name(name):
-        return
-    raise VarConfigError(
-        f"{label} cannot select {name}",
-        advice="Internal names stay out. __date__ is allowed.",
-    )
-
-
-def _split_names(text: str | None) -> tuple[str, ...]:
-    if text is None:
-        return ()
-    parts = tuple(part.strip() for part in text.split(","))
-    if any(part == "" for part in parts):
-        raise VarConfigError(
-            "A name list has an empty item",
-            advice="Separate names with commas. Spaces around commas are ignored.",
-        )
-    return parts
-
-
-def _unique(names: list[str]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for name in names:
-        if name in seen:
-            continue
-        seen.add(name)
-        result.append(name)
-    return result
 
 
 def _confirm(summary: str, *, force: bool, dry_run: bool, changes: bool) -> bool:

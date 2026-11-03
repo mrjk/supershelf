@@ -173,9 +173,9 @@ def test_new_file_stops_before_any_write(
     assert caught.value.code == 1
     captured = capsys.readouterr()
     assert "write" not in captured.out
-    assert "record status is new" in captured.err
-    assert "This file is not recorded." in captured.err
-    assert "Run record status, then record run." in captured.err
+    assert "status is new" in captured.err
+    assert "This file is not in the library." in captured.err
+    assert "Run scan import." in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "output").exists() is False
 
@@ -194,8 +194,8 @@ def test_preview_of_a_new_file_prints_the_row(
     captured = capsys.readouterr()
     assert "write" in captured.out
     assert "a.pdf" in captured.out
-    assert "This file is not recorded." in captured.err
-    assert "record status is new" in captured.err
+    assert "This file is not in the library." in captured.err
+    assert "status is new" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "output").exists() is False
 
@@ -208,7 +208,7 @@ def test_preview_and_dry_run_write_nothing(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path, extra=_BOOKS + 'layout = "{{ vendor }}/{{ __file__.name }}"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "preview"])
     preview = capsys.readouterr().out
@@ -230,7 +230,7 @@ def test_run_copies_and_second_run_is_unchanged(
     _isolate(monkeypatch, tmp_path)
     inbox = _write(tmp_path, extra=_BOOKS + 'layout = "{{ vendor }}/{{ __file__.name }}"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "run"])
     first = capsys.readouterr().out
@@ -258,11 +258,11 @@ def test_new_bytes_replace_and_keep_the_old_hash(
     _isolate(monkeypatch, tmp_path)
     inbox = _write(tmp_path)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     app.dispatch(["output", "run"])
     capsys.readouterr()
     (inbox / "a.pdf").write_bytes(b"bank-2001")
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "run"])
     assert "replace" in capsys.readouterr().out
@@ -286,7 +286,7 @@ def test_foreign_conflict_preview_exits_zero_and_run_writes_nothing(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     dest = tmp_path / "output" / "books" / "a.pdf"
     dest.parent.mkdir(parents=True)
@@ -309,7 +309,7 @@ def test_skip_leaves_a_foreign_file(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path, extra=_BOOKS + 'on_conflict = "skip"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     dest = tmp_path / "output" / "books" / "a.pdf"
     dest.parent.mkdir(parents=True)
@@ -328,7 +328,7 @@ def test_overwrite_replaces_a_foreign_file(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path, extra=_BOOKS + 'on_conflict = "overwrite"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     dest = tmp_path / "output" / "books" / "a.pdf"
     dest.parent.mkdir(parents=True)
@@ -347,11 +347,11 @@ def test_other_document_is_not_taken(
     _isolate(monkeypatch, tmp_path)
     inbox = _write(tmp_path, extra=_BOOKS + 'layout = "shared.pdf"\non_conflict = "overwrite"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     app.dispatch(["output", "run", "a.pdf"])
     capsys.readouterr()
     (inbox / "b.pdf").write_bytes(b"other-file")
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run", "b.pdf"])
@@ -372,7 +372,7 @@ def test_layout_move_keeps_the_old_file(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     app.dispatch(["output", "run"])
     capsys.readouterr()
     path = tmp_path / "profile.work.toml"
@@ -391,7 +391,7 @@ def test_layout_escape_creates_nothing(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path, extra=_BOOKS + 'layout = "../outside.pdf"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run"])
@@ -420,7 +420,7 @@ layout = "same.pdf"
 """
     _write(tmp_path, extra=extra)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "preview"])
@@ -438,7 +438,7 @@ def test_duplicate_path_is_left_out(
     inbox = _write(tmp_path, profile='[config]\nrecord_identity = "hash"\n' + _PROFILE)
     (inbox / "b.pdf").write_bytes((inbox / "a.pdf").read_bytes())
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "run"])
     assert (tmp_path / "output" / "books" / "a.pdf").is_file()
@@ -447,7 +447,7 @@ def test_duplicate_path_is_left_out(
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run", "b.pdf"])
     assert caught.value.code == 1
-    assert "record status is new" in capsys.readouterr().err
+    assert "status is new" in capsys.readouterr().err
     assert (tmp_path / "output" / "books" / "b.pdf").exists() is False
 
 
@@ -474,7 +474,7 @@ glob = "b.pdf"
 """
     inbox = _write(tmp_path, profile=profile, extra=_BOOKS + 'kinds = ["bill"]\n')
     app = App(parse=False)
-    app.dispatch(["record", "run", "a.pdf"])
+    app.dispatch(["scan", "import", "a.pdf"])
     capsys.readouterr()
     (inbox / "b.pdf").write_bytes(b"note-file")
     app.dispatch(["output", "run"])
@@ -491,7 +491,7 @@ def test_when_template_casts_bool_words_and_rejects_other_text(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path, extra=_BOOKS + "when = '{{ __match__.kind == \"bill\" }}'\n")
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "preview"])
     assert "true" in capsys.readouterr().out
@@ -512,7 +512,7 @@ def test_symlink_and_hardlink(
     _isolate(monkeypatch, tmp_path)
     inbox = _write(tmp_path, extra=_BOOKS + 'operation = "symlink"\nlayout = "link.pdf"\n')
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "run"])
     link = tmp_path / "output" / "books" / "link.pdf"
@@ -537,7 +537,7 @@ def test_refresh_is_allowed_and_vars_stops(
     _isolate(monkeypatch, tmp_path)
     inbox = _write(tmp_path)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     os.utime(inbox / "a.pdf", (1_700_000_000, 1_700_000_000))
     app.dispatch(["output", "preview"])
@@ -563,7 +563,7 @@ def test_refresh_is_allowed_and_vars_stops(
     assert caught.value.code == 1
     error = capsys.readouterr()
     assert "Bank2001/a.pdf" not in error.out
-    assert "record status is vars" in error.err
+    assert "status is vars" in error.err
     assert 'vendor was "Bank2000", now "Bank2001".' in error.err
     assert "if those live values are the ones you want." in error.err
     assert (tmp_path / "output").exists() is False
@@ -577,7 +577,7 @@ def test_dry_run_does_not_migrate_schema_1(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     database = tmp_path / "profile.work.sqlite"
     raw = sqlite3.connect(database)
@@ -610,7 +610,7 @@ def test_output_does_not_write_a_kind_file(
     _isolate(monkeypatch, tmp_path)
     _write(tmp_path, profile='[config]\nkind_overrides_mode = "always"\n' + _PROFILE)
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     app.dispatch(["output", "run"])
     capsys.readouterr()
     assert (tmp_path / "profile.work.bill.csv").exists() is False
@@ -635,7 +635,7 @@ label = "hello"
         extra=extra,
     )
     app = App(parse=False)
-    app.dispatch(["record", "run"])
+    app.dispatch(["scan", "import"])
     capsys.readouterr()
     app.dispatch(["output", "run"])
     assert "note" in capsys.readouterr().out

@@ -3,6 +3,8 @@
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from supershelf.constants import (
     ENV_RECORD_IDENTITY,
     EVENT_GENERATION,
@@ -19,20 +21,19 @@ from supershelf.constants import (
     STATUS_REFRESH,
     STATUS_UNCHANGED,
 )
-from supershelf.database import DocumentRow
+from supershelf.database import DocumentRow, ShelfDatabase
 from supershelf.errors import RecordConfigError
 from supershelf.record import (
     DuplicateListing,
     LiveFile,
     RecordIdentity,
     RecordPlan,
+    RecordSession,
 )
 from supershelf.scan import KeptPath
 from supershelf.scan.match import Matcher
-from supershelf.vars import VarState
-from supershelf.vars import FileVars, VarPlan
-
-import pytest
+from supershelf.vars import FileVars, VarPlan, VarState
+from tests.helpers import isolate_env
 
 _IN = "/inbox"
 _H1 = "a" * 64
@@ -709,3 +710,36 @@ def test_snapshot_keeps_date_and_drops_identity_facts(tmp_path: Path) -> None:
     assert "Bank2000" in text
     assert "__date__" in text
     assert "empty" not in text
+
+
+def test_a_second_missing_run_prints_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    target = inbox / "a.pdf"
+    target.write_bytes(b"bank-2000")
+    (tmp_path / "profile.work.toml").write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+""",
+        encoding="utf-8",
+    )
+    first = RecordSession.load(None, None, None).run(None, dry_run=False)
+    assert [row["status"] for row in first] == ["new"]
+    target.unlink()
+    missing = RecordSession.load(None, None, None).run(None, dry_run=False)
+    assert [row["status"] for row in missing] == ["missing"]
+    again = RecordSession.load(None, None, None).run(None, dry_run=False)
+    assert again == []
+    with ShelfDatabase.open_read(tmp_path / "profile.work.sqlite") as database:
+        documents = database.documents()
+    assert len(documents) == 1
+    assert documents[0].presence == PRESENCE_MISSING

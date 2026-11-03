@@ -600,6 +600,26 @@ class KindTable:
             ordered.append(KindLine(relative, self.row_sha.get(relative, ""), cells))
         return ordered
 
+    def reload(self, logger: logging.Logger) -> None:
+        """Replace the in-memory rows with the file on disk."""
+        if not self.path.is_file():
+            return
+        fresh = type(self).read(self.path, logger, self.sep)
+        self.columns = fresh.columns
+        self.rows = fresh.rows
+        self.raw_rows = fresh.raw_rows
+        self.row_sha = fresh.row_sha
+        self.blank = fresh.blank
+        self.missing = fresh.missing
+        self._bom = fresh._bom
+        self._pending.clear()
+        self._pending_seen.clear()
+        self._extra_columns.clear()
+        self._notes.clear()
+        self._sha_sets.clear()
+        self._path_sets.clear()
+        self._prepared = True
+
     def save(self) -> None:
         """Rewrite the kind file. A later duplicate row is kept."""
         self._require_parent()
@@ -1446,8 +1466,45 @@ class KindFiles:
 
     @property
     def templates(self) -> tuple[str, ...]:
-        """Path templates. An empty tuple means there is no kind file."""
+        """Config path templates. A kind feed_file replaces this list."""
         return self._templates
+
+    @property
+    def mode(self) -> str:
+        """Kind file mode for this profile."""
+        return self._mode
+
+    def path_for(self, kind: str, input_dir: Path) -> Path | None:
+        """The winning file, or the first template when every candidate is missing."""
+        table = self.open_table(kind, input_dir, create=False)
+        if table is not None:
+            return table.path
+        templates = self.templates_for(kind)
+        if not templates:
+            return None
+        scope = dict(self._profile_scope)
+        scope[VAR_MATCH] = ScopeObject({FIELD_KIND: kind}, FIELD_KIND)
+        scope[VAR_INPUT] = ScopeObject({FIELD_PATH: str(input_dir)}, FIELD_PATH)
+        return self._render_path(templates[0], scope)
+
+    def templates_for(self, kind: str) -> tuple[str, ...]:
+        """Path templates for one kind. A set feed_file replaces the config list."""
+        catalog = self._catalog
+        if catalog is not None:
+            schema = catalog.kind_schema(kind)
+            if schema is not None and schema.feed_file is not None:
+                return schema.feed_file
+        return self._templates
+
+    def stage_identity(self) -> None:
+        """Apply queued path and hash edits in memory. Does not write."""
+        for table in self._tables.values():
+            table._apply_edits()
+
+    def reload_tables(self) -> None:
+        """Reread every loaded kind file after an identity write."""
+        for table in self._tables.values():
+            table.reload(self._logger)
 
     @property
     def dates(self) -> KindDateFormat:
@@ -1512,14 +1569,15 @@ class KindFiles:
             table.commit(self._dry_run, self._logger, writable=writable)
 
     def _find_table(self, kind: str, input_dir: Path, *, create: bool) -> KindTable | None:
-        if not self._templates:
+        templates = self.templates_for(kind)
+        if not templates:
             self._logger.debug("No kind_overrides_config for kind %s", kind)
             return None
         scope = dict(self._profile_scope)
         scope[VAR_MATCH] = ScopeObject({FIELD_KIND: kind}, FIELD_KIND)
         scope[VAR_INPUT] = ScopeObject({FIELD_PATH: str(input_dir)}, FIELD_PATH)
         rendered: list[Path] = []
-        for template in self._templates:
+        for template in templates:
             path = self._render_path(template, scope)
             rendered.append(path)
             if not path.exists():
@@ -1532,7 +1590,7 @@ class KindFiles:
             if not path.is_file():
                 raise VarConfigError(
                     f"Kind file {path} is not a file",
-                    advice="Point kind_overrides_config at a csv, toml, or yaml file.",
+                    advice="Point the kind file at a csv, toml, or yaml file.",
                 )
             return self._with_headers(self._load_existing(path, kind), kind)
         if create and rendered:

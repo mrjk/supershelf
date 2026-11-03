@@ -2,58 +2,32 @@
 
 from __future__ import annotations
 
-from clak import Argument, Command, Parser
+from clak import Argument, Command, ListViewMixin, Parser
 from clak.comp.views import CompositeViewMixin
 from clak.views import CompositeView, ListView
 
+from supershelf.cli.common import kept_path
 from supershelf.data import ShowTable, run_feed, run_prune, run_show
 
 
-class DataFeedCommand(Parser):
-    """Fill empty kind-file cells with resolved values."""
+class DataFeedCommand(ListViewMixin, Parser):
+    """Write rule-layer values into the uppercase kind-file columns."""
 
-    names = Argument(
-        "names",
-        nargs="?",
-        default=None,
-        help=(
-            "Comma-separated kinds or var names. Spaces around commas are ignored. "
-            "A name that is both needs --kind or --var."
-        ),
-    )
-    kind = Argument(
-        "--kind",
-        help="Comma-separated kinds. Each selected kind enables its schema vars.",
-    )
-    var = Argument(
-        "--var",
-        help="Comma-separated var names. With --kind, only these vars are written.",
-    )
-    force = Argument(
-        "--force",
-        action="store_true",
-        help="Write kind files without asking. Required when stdin is not a terminal.",
-    )
+    path = kept_path()
 
     def cli_run(
         self,
         config=None,
         profile=None,
-        names=None,
-        kind=None,
-        var=None,
-        force=False,
+        path=None,
         dry_run=False,
         verbosity=0,
         **_,
     ):
-        run_feed(
+        return run_feed(
             config,
             profile,
-            names,
-            kind=kind,
-            var=var,
-            force=bool(force),
+            path,
             dry_run=bool(dry_run),
             verbosity=int(verbosity or 0),
         )
@@ -151,7 +125,7 @@ def _show_view(tables: tuple[ShowTable, ...]) -> CompositeView:
 class DataCommand(Parser):
     """Read and write kind files."""
 
-    feed = Command(DataFeedCommand, help="Fill empty kind-file cells with resolved values")
+    feed = Command(DataFeedCommand, help="Write rule-layer values into uppercase columns")
     prune = Command(
         DataPruneCommand,
         help="Drop empty columns, unmatched rows, or every row",

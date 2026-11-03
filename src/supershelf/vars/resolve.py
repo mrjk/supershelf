@@ -253,7 +253,7 @@ class VarPlan:
 
     @property
     def kind_files(self) -> KindFiles:
-        """Kind files for this profile. Commit stays with scan vars."""
+        """Kind files for this profile. The feed writer commits them."""
         return self._kinds
 
     @classmethod

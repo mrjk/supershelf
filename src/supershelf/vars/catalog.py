@@ -480,6 +480,10 @@ class VarCatalog:
         """Parsed kinds, in profile order."""
         return self._kinds.items()
 
+    def kind_schema(self, kind: str) -> KindSchema | None:
+        """The kind_schema entry, or none when this kind is not listed."""
+        return self._kinds.get(kind)
+
     @classmethod
     def load(
         cls,
