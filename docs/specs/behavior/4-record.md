@@ -4,7 +4,7 @@ Behavior. Index: [README](../README.md).
 
 `supershelf db import` stores matched files in the profile sqlite file from `config.database_file`. There is no `record` command. There is no `scan import` command. The schema, the decision order, and the output-event slot are architecture 3. One file per profile. Profiles do not share rows. User vars stay in `vars_json`. The sqlite schema does not follow the user's config. Architecture 3.2. `cache_file` is the metadata cache in behavior 2.3.3. This step does not write an output tree. Behavior 5 does. This step does not write a kind file. Behavior 3 does.
 
-`scan vars`, `scan feeds`, and `db import` create `cache_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `inspect`, `profiles`, `db show`, and `output` do not. `db import` creates `database_file` when a document row would change. `scan` does not. `scan feeds` does not insert a document or an event.
+`scan vars`, `scan feeds`, and `db import` create `cache_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan match`, `inspect`, `profiles`, `db show`, and `output` do not. `db import` creates `database_file` when a document row would change. `scan` does not. `scan feeds` does not insert a document or an event.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. The kind-file row is chosen by the first step of `record_identity`, as in 2.3.2. The `--record-identity` flag does not change that key.
 

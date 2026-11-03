@@ -308,7 +308,7 @@ def test_scan_diffs_hide_rows_import_would_not_write(
     capsys.readouterr()
 
     app.dispatch(["scan", "files"])
-    app.dispatch(["scan", "kinds"])
+    app.dispatch(["scan", "match"])
     app.dispatch(["scan", "vars"])
     quiet = capsys.readouterr()
     assert "a.txt" not in quiet.out
@@ -331,7 +331,7 @@ def test_scan_diffs_hide_rows_import_would_not_write(
     )
     app.dispatch(["scan", "files"])
     assert "a.txt" not in capsys.readouterr().out
-    app.dispatch(["scan", "kinds"])
+    app.dispatch(["scan", "match"])
     kinds = capsys.readouterr().out
     assert "bill" in kinds
     assert "bills" in kinds
@@ -357,7 +357,7 @@ def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "kinds"])
+    app.dispatch(["scan", "match"])
     captured = capsys.readouterr()
 
     assert "kind" in captured.out
@@ -370,6 +370,50 @@ def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     assert "sha256" not in captured.out
     assert "No match_rule for b.txt in profile work input 1" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_match_prints_captured_groups(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "2000_acme.pdf").write_bytes(b"bill")
+    (inbox / "a.txt").write_bytes(b"note")
+    (inbox / "b.txt").write_bytes(b"other")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'dated'\nkind = 'invoice'\n"
+        "filename_regex = '(?P<year>\\d{4})_(?P<vendor>\\w+)\\.pdf'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\n"
+        "filename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "match"])
+    table = capsys.readouterr().out
+    assert "groups" in table
+    assert "year: 2000" in table
+    assert "vendor: acme" in table
+
+    app.dispatch(["scan", "match", "--format", "json"])
+    rows = {row["path"]: row for row in json.loads(capsys.readouterr().out)}
+    assert list(rows["2000_acme.pdf"]) == [
+        "input",
+        "path",
+        "status",
+        "kind",
+        "rule",
+        "groups",
+    ]
+    assert rows["2000_acme.pdf"]["groups"] == "year: 2000\nvendor: acme"
+    assert rows["a.txt"]["groups"] == ""
+    assert rows["b.txt"]["groups"] == ""
+    assert rows["b.txt"]["status"] == "unmatched"
 
 
 def test_scan_kinds_prefix_warns_only_for_selected_files(
@@ -391,7 +435,7 @@ def test_scan_kinds_prefix_warns_only_for_selected_files(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "kinds", "sub"])
+    app.dispatch(["scan", "match", "sub"])
     captured = capsys.readouterr()
 
     assert "a.txt" not in captured.out
@@ -717,7 +761,7 @@ def test_scan_kinds_rejects_a_bad_regex_before_walking(
 
     app = App(parse=False)
     with pytest.raises(SystemExit) as caught:
-        app.dispatch(["scan", "kinds"])
+        app.dispatch(["scan", "match"])
 
     assert caught.value.code == 1
     assert "Invalid regex" in capsys.readouterr().err

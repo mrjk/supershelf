@@ -75,8 +75,8 @@ class ScanFilesCommand(ListViewMixin, Parser):
         return ShelfRuns.load(config, profile).file_rows(path)
 
 
-class ScanKindsCommand(ListViewMixin, Parser):
-    """List kind and rule changes, and files no rule claims."""
+class ScanMatchCommand(ListViewMixin, Parser):
+    """List kind and rule changes, captured groups, and files no rule claims."""
 
     path = kept_path()
 
@@ -166,7 +166,10 @@ class ScanCommand(CompositeViewMixin, Parser):
     )
 
     files = Command(ScanFilesCommand, help="List file-identity changes")
-    kinds = Command(ScanKindsCommand, help="List kind and rule changes")
+    match = Command(
+        ScanMatchCommand,
+        help="List kind and rule changes, and captured groups",
+    )
     vars = Command(ScanVarsCommand, help="List variable changes for each matched file")
     feeds = Command(ScanFeedsCommand, help="Write rule-layer values into kind files")
 

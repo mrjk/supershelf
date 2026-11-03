@@ -302,7 +302,7 @@ class ShelfRuns:
         }
 
     def kind_rows(self, path: str | None, *, changes_only: bool = True) -> list[dict[str, object]]:
-        """Kind and rule changes, plus every unmatched kept file. Does not hash."""
+        """Kind and rule changes, captured groups, and unmatched files. Does not hash."""
         groups = self.scans(quick=True, path=path)
         rows: list[dict[str, object]] = []
         for shelf, scans in zip(self.shelves, groups, strict=True):
@@ -327,6 +327,7 @@ class ShelfRuns:
                                 "",
                                 "",
                                 EVENT_UNMATCHED,
+                                {},
                             )
                         )
                         continue
@@ -348,6 +349,7 @@ class ShelfRuns:
                             hit.kind,
                             hit.rule,
                             status,
+                            hit.groups,
                         )
                     )
         profiles = len(self.shelves)
@@ -401,6 +403,7 @@ class ShelfRuns:
         kind: str,
         rule: str,
         status: str,
+        groups: dict[str, str],
     ) -> dict[str, object]:
         return {
             "profile": profile,
@@ -408,5 +411,6 @@ class ShelfRuns:
             "path": path,
             "kind": kind,
             "rule": rule,
+            "groups": "\n".join(f"{name}: {value}" for name, value in groups.items()),
             "status": status,
         }

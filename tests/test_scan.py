@@ -365,7 +365,7 @@ record_identity = "key"
         encoding="utf-8",
     )
     app = App(parse=False)
-    app.dispatch(["scan", "kinds"])
+    app.dispatch(["scan", "match"])
     output = capsys.readouterr().out
     assert "a.pdf" in output
     assert "bill" in output

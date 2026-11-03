@@ -87,7 +87,7 @@ def test_run_records_and_scan_commands_stay_free_of_sqlite(
     inbox = _profile(tmp_path)
     app = App(parse=False)
     app.dispatch(["scan", "files"])
-    app.dispatch(["scan", "kinds"])
+    app.dispatch(["scan", "match"])
     app.dispatch(["scan", "vars"])
     app.dispatch(["inspect", "scan", "kinds"])
     app.dispatch(["inspect", "schema"])
