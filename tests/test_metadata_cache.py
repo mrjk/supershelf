@@ -192,7 +192,7 @@ def test_stored_error_does_not_spawn_again(tmp_path: Path) -> None:
     second = _runner()
     second.codes["exiftool"] = 2
     again = _plan(document, tmp_path, second)
-    assert _values(again, _file("other.pdf", path, digest="abc"))["author"] == "UNKNOWN"
+    assert _values(again, _file("other.pdf", path))["author"] == "UNKNOWN"
     assert _tool_calls(second) == []
     assert _database(tmp_path).exists() is False
 

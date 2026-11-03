@@ -22,6 +22,7 @@ from supershelf.vars import VarPlan
 
 _MTIME = "2026-01-01T00:00:00+00:00"
 _CTIME = "2026-01-02T00:00:00+00:00"
+FILE_DIGEST = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 
 class FakeRunner(ProcessRunner):
@@ -54,7 +55,7 @@ class FakeRunner(ProcessRunner):
 def input_file(
     relative: str = "a.txt",
     absolute: Path | None = None,
-    digest: str = "abc",
+    digest: str = FILE_DIGEST,
 ) -> InputFile:
     """A kept file with ctime, mtime, and a hash already filled in."""
     path = Path("/tmp") / relative if absolute is None else absolute

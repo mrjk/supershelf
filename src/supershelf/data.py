@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from supershelf.constants import LOGGER_NAME, VAR_DATE
+from supershelf.constants import IDENTITY_HASH, LOGGER_NAME, VAR_DATE
 from supershelf.errors import SupershelfError, VarConfigError
 from supershelf.kind_file import KindFiles, KindTable
 from supershelf.profile import ShelfProfile
@@ -38,6 +38,8 @@ class _Resolved:
     input_path: Path
     relative: str
     kind: str
+    rule: str
+    sha: str
     values: Mapping[str, str]
     plan: VarPlan
 
@@ -48,6 +50,7 @@ class _CellWrite:
     relative: str
     name: str
     value: str
+    sha: str
 
 
 @dataclass(frozen=True)
@@ -58,13 +61,22 @@ class _Choice:
     value: str | None
 
 
+@dataclass(frozen=True)
+class _DroppedRow:
+    index: int
+    path: str
+    sha: str
+    user_cells: bool
+
+
 @dataclass
 class _PruneFile:
     table: KindTable
     kind: str
-    matched: set[str]
+    live_paths: set[str]
+    live_hashes: set[str]
     drop_columns: tuple[str, ...]
-    drop_paths: tuple[str, ...]
+    drop_rows: tuple[_DroppedRow, ...]
     clear: bool
 
 
@@ -119,7 +131,13 @@ def run_prune(
         clear=clear,
         every=every,
     )
-    files = _prune_files(prepared, runs.scans(quick=True, path=None), flags, verbosity)
+    hash_rows = missing and not clear and not every
+    files = _prune_files(
+        prepared,
+        runs.scans(quick=not hash_rows, path=None),
+        flags,
+        verbosity,
+    )
     summary = _prune_summary(flags, files)
     if _confirm(summary, force=force, dry_run=dry_run, changes=bool(files)):
         _apply_prune(files)
@@ -171,7 +189,7 @@ def _resolve(
 ) -> tuple[_Resolved, ...]:
     found: list[_Resolved] = []
     walk = ResolvedWalk(prepared, groups)
-    for _shelf, result, _file, matched, resolved, plan in walk:
+    for _shelf, result, walked, matched, resolved, plan in walk:
         found.append(
             _Resolved(
                 profile=matched.profile,
@@ -179,6 +197,8 @@ def _resolve(
                 input_path=result.config.path,
                 relative=matched.path,
                 kind=resolved.kind,
+                rule=matched.rule,
+                sha=walked.sha256 or "",
                 values=dict(resolved.items),
                 plan=plan,
             )
@@ -276,6 +296,7 @@ def _feed_writes(
     choices: dict[tuple[Path, str, str], _Choice] = {}
     writes: list[_CellWrite] = []
     warned: set[tuple[Path, str]] = set()
+    blocked = _shared_hash_without_row(resolved)
     for item in resolved:
         names = per_kind.get((item.profile, item.kind), ())
         if not names:
@@ -283,10 +304,21 @@ def _feed_writes(
         table = item.plan.kind_files.open_table(item.kind, item.input_path, create=True)
         if table is None:
             continue
-        current = table.rows.get(item.relative, {})
+        identity = item.plan.kind_files.identity_for(item.rule)
+        if (table.path.resolve(), item.sha) in blocked and identity == IDENTITY_HASH:
+            continue
+        found = table.row_for(item.relative, item.sha, identity)
+        if found is None:
+            target = item.relative
+            create_sha = item.sha
+            current: Mapping[str, str] = {}
+        else:
+            target, current = found
+            create_sha = ""
+        row_key = item.sha if identity == IDENTITY_HASH and item.sha else target
         for name in names:
             value = _cell_text(name, item.values.get(name), item.plan.kind_files)
-            key = (table.path.resolve(), item.relative, name)
+            key = (table.path.resolve(), row_key, name)
             previous = choices.get(key)
             if previous is not None and previous.value != value:
                 raise VarConfigError(
@@ -294,7 +326,7 @@ def _feed_writes(
                     f"differs for input {previous.index} ({previous.input_path}) "
                     f"and input {item.index} ({item.input_path})",
                     advice=(
-                        "Two inputs share this kind file and this relative path. "
+                        "Two inputs share this kind file and this row. "
                         "Put {{ __input__.path }} in the kind path when they must not share rows."
                     ),
                 )
@@ -315,13 +347,37 @@ def _feed_writes(
             if verbosity >= 1:
                 logger.info(
                     "Would set %s %s to %s in %s",
-                    item.relative,
+                    target,
                     column,
                     value,
                     table.path,
                 )
-            writes.append(_CellWrite(table, item.relative, column, value))
+            writes.append(_CellWrite(table, target, column, value, create_sha))
     return tuple(writes)
+
+
+def _shared_hash_without_row(resolved: tuple[_Resolved, ...]) -> set[tuple[Path, str]]:
+    """Hash-identity files that share a digest and have no row yet."""
+    groups: dict[tuple[Path, str], list[str]] = {}
+    for item in resolved:
+        if item.plan.kind_files.identity_for(item.rule) != IDENTITY_HASH or not item.sha:
+            continue
+        table = item.plan.kind_files.open_table(item.kind, item.input_path, create=False)
+        if table is None or table.missing:
+            continue
+        if table.row_for(item.relative, item.sha, IDENTITY_HASH) is not None:
+            continue
+        key = (table.path.resolve(), item.sha)
+        paths = groups.setdefault(key, [])
+        if item.relative not in paths:
+            paths.append(item.relative)
+    blocked: set[tuple[Path, str]] = set()
+    for (path, digest), paths in groups.items():
+        if len(paths) < 2:
+            continue
+        blocked.add((path, digest))
+        logger.warning("Kind file %s hash %s is shared by %s", path, digest, ", ".join(paths))
+    return blocked
 
 
 def _cell_text(name: str, display: str | None, kinds: KindFiles) -> str | None:
@@ -362,7 +418,7 @@ def _apply_writes(writes: tuple[_CellWrite, ...]) -> None:
     tables: list[KindTable] = []
     seen: set[int] = set()
     for write in writes:
-        if not write.table.set_cell(write.relative, write.name, write.value):
+        if not write.table.set_cell(write.relative, write.name, write.value, write.sha):
             continue
         identity = id(write.table)
         if identity in seen:
@@ -409,7 +465,8 @@ def _prune_files(
         order: list[Path] = []
         kinds = _known_kinds(matcher, plan.catalog)
         for result in scans:
-            matched = _matches_by_kind(matcher, result)
+            claimed = matcher.collect(result)
+            by_path = {item.path: item for item in result.results}
             for kind in kinds:
                 table = plan.kind_files.open_table(kind, result.config.path, create=False)
                 if table is None or table.missing or not table.path.is_file():
@@ -417,12 +474,22 @@ def _prune_files(
                 key = table.path.resolve()
                 current = grouped.get(key)
                 if current is None:
-                    current = _PruneFile(table, kind, set(), (), (), False)
+                    current = _PruneFile(table, kind, set(), set(), (), (), False)
                     grouped[key] = current
                     order.append(key)
                 elif current.kind != kind:
                     continue
-                current.matched.update(matched.get(kind, set()))
+                for matched in claimed:
+                    if matched.kind != kind:
+                        continue
+                    walked = by_path.get(matched.path)
+                    if walked is None:
+                        continue
+                    if plan.kind_files.identity_for(matched.rule) == IDENTITY_HASH:
+                        if walked.sha256:
+                            current.live_hashes.add(walked.sha256)
+                        continue
+                    current.live_paths.add(matched.path)
         for key in order:
             item = grouped[key]
             planned = _plan_prune(
@@ -451,9 +518,17 @@ def _plan_prune(
     if clear:
         if not item.table.rows and not item.table.raw_rows:
             return None
-        return _PruneFile(item.table, item.kind, item.matched, (), tuple(item.table.rows), True)
+        return _PruneFile(
+            item.table,
+            item.kind,
+            item.live_paths,
+            item.live_hashes,
+            (),
+            (),
+            True,
+        )
     columns: tuple[str, ...] = ()
-    paths: tuple[str, ...] = ()
+    dropped: tuple[_DroppedRow, ...] = ()
     if drop_empty:
         schema = set(catalog.csv_headers(item.kind))
         columns = tuple(
@@ -462,17 +537,33 @@ def _plan_prune(
             if name not in schema and not item.table.column_filled(name)
         )
     if drop_missing:
-        paths = tuple(path for path in item.table.rows if path not in item.matched)
-    if not columns and not paths:
+        dropped = tuple(
+            _DroppedRow(
+                index,
+                line.path,
+                line.sha,
+                any(value.strip() for value in line.cells.values()),
+            )
+            for index, line in item.table.unmatched(item.live_paths, item.live_hashes)
+        )
+    if not columns and not dropped:
         return None
-    return _PruneFile(item.table, item.kind, item.matched, columns, paths, False)
+    return _PruneFile(
+        item.table,
+        item.kind,
+        item.live_paths,
+        item.live_hashes,
+        columns,
+        dropped,
+        False,
+    )
 
 
 def _log_prune(item: _PruneFile) -> None:
     for name in item.drop_columns:
         logger.info("Would drop column %s from %s", name, item.table.path)
-    for path in item.drop_paths:
-        logger.info("Would drop row %s from %s", path, item.table.path)
+    for row in item.drop_rows:
+        logger.info("Would drop row %s from %s", row.path, item.table.path)
     if item.clear:
         logger.info("Would clear %s", item.table.path)
 
@@ -486,6 +577,13 @@ def _prune_summary(flags: tuple[str, ...], files: tuple[_PruneFile, ...]) -> str
         lines.append(
             f"{item.table.path}: {_count(rows, 'row')}, {_count(len(item.drop_columns), 'column')}"
         )
+        if item.clear:
+            lines.append(f"{item.table.path}: {_count(rows, 'row')} would be cleared")
+            continue
+        for row in item.drop_rows:
+            sha_text = f" SHA {row.sha}" if row.sha else ""
+            filled = "user cells" if row.user_cells else "no user cells"
+            lines.append(f"drop {row.path}{sha_text}, {filled}")
     return "\n".join(lines) + "\n"
 
 
@@ -494,23 +592,18 @@ def _apply_prune(files: tuple[_PruneFile, ...]) -> None:
         if item.clear:
             item.table.clear_rows()
         else:
-            if item.drop_paths:
-                item.table.drop_paths(set(item.drop_paths))
+            if item.drop_rows:
+                item.table.drop_indexes({row.index for row in item.drop_rows})
             for name in item.drop_columns:
                 item.table.drop_column(name)
         item.table.save()
 
 
 def _listed_rows(item: _PruneFile) -> int:
-    raw = item.table.raw_rows
     if item.clear:
+        raw = item.table.raw_rows
         return len(raw) if raw else len(item.table.rows)
-    if not item.drop_paths:
-        return 0
-    dropped = set(item.drop_paths)
-    if raw:
-        return sum(1 for path, _cells in raw if path in dropped)
-    return len(item.drop_paths)
+    return len(item.drop_rows)
 
 
 def _show_tables(
@@ -592,13 +685,6 @@ def _kind_path(kinds: KindFiles, kind: str, scans: tuple[InputScanResult, ...]) 
     if not found:
         return None
     return ", ".join(found)
-
-
-def _matches_by_kind(matcher: Matcher, result: InputScanResult) -> dict[str, set[str]]:
-    found: dict[str, set[str]] = {}
-    for matched in matcher.collect(result):
-        found.setdefault(matched.kind, set()).add(matched.path)
-    return found
 
 
 def _visible_by_kind(resolved: tuple[_Resolved, ...]) -> dict[tuple[str, str], tuple[str, ...]]:

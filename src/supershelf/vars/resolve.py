@@ -290,6 +290,8 @@ class VarPlan:
             environment=environment,
         )
         rules, rule_kinds = cls._rule_tables(matcher, environment)
+        env = os.environ if environ is None else environ
+        identity, default_identity = cls._kind_identity(document, profile_name, section, env)
         kinds = KindFiles.from_section(
             section,
             root_dir,
@@ -297,6 +299,8 @@ class VarPlan:
             chosen,
             dates,
             dry_run,
+            identity,
+            default_identity,
         )
         names: list[str] = list(defaults.keys)
         for table in rules.values():
@@ -316,6 +320,20 @@ class VarPlan:
                 rule_kinds[rule_name],
             )
         return cls(environment, catalog, rules, kinds, profile_scope, session)
+
+    @staticmethod
+    def _kind_identity(
+        document: Mapping[str, Any],
+        profile_name: str,
+        section: Mapping[str, Any],
+        environ: Mapping[str, str],
+    ) -> tuple[dict[str, str], str]:
+        """First record_identity step per rule. The record flag is not read."""
+        from supershelf.record import RecordIdentity
+
+        steps = RecordIdentity.resolve(section, None, environ)
+        rules = RecordIdentity.rule_lists(document, profile_name, steps)
+        return {name: item[0] for name, item in rules.items()}, steps[0]
 
     def resolve(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
         """Resolve one matched file."""
@@ -346,7 +364,7 @@ class VarPlan:
             match.kind,
         )
         self._apply_cells(
-            self._kinds.cells_for(match.kind, input_dir, file.path, match),
+            self._kinds.cells_for(match.kind, input_dir, file.path, match, file.sha256 or ""),
             scope,
             states,
             order,

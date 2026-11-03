@@ -175,9 +175,9 @@ outputs:
 `profile.default.invoice.csv`
 
 ```csv
-PATH;__date__;vendor;owner
-banking_1/REL_20260425.pdf;25/04/2026;Bank2000;
-Bank2000/card/CARD_1234_20211231.pdf;15/01/2026;;sample
+PATH;SHA;__date__;vendor;owner
+banking_1/REL_20260425.pdf;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;25/04/2026;Bank2000;
+Bank2000/card/CARD_1234_20211231.pdf;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;15/01/2026;;sample
 ```
 
 `profile.default.invoice.toml`
@@ -185,6 +185,7 @@ Bank2000/card/CARD_1234_20211231.pdf;15/01/2026;;sample
 ```toml
 [[rows]]
 path = "banking_1/REL_20260425.pdf"
+sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 [rows.vars]
 vendor = "Bank2000"
@@ -192,6 +193,7 @@ __date__ = "25/04/2026"
 
 [[rows]]
 path = "Bank2000/card/CARD_1234_20211231.pdf"
+sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 [rows.vars]
 __date__ = "15/01/2026"
@@ -202,11 +204,13 @@ owner = "sample"
 
 ```yaml
 - path: banking_1/REL_20260425.pdf
+  sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   vars:
     vendor: Bank2000
     __date__: "25/04/2026"
 
 - path: Bank2000/card/CARD_1234_20211231.pdf
+  sha: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   vars:
     __date__: "15/01/2026"
     owner: sample

@@ -6,7 +6,7 @@ Behavior. Index: [README](../README.md).
 
 `scan vars`, `record run`, `data feed`, and `data show` create `cache_file` when `meta()` runs and the cache misses. `--dry-run` does not. `scan files`, `scan kinds`, `scan inspect`, `schema`, `profiles`, `data prune`, `record status`, and `output` do not. `record run` creates `database_file` when a document row would change. `data feed` and `data show` do not insert a document or an event. A feed prompt answer of no leaves `cache_file` in place and does not open the sqlite file.
 
-The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. `record` does not call the kind-file commit, so it does not create or append a kind file.
+The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads. The kind-file row is chosen by the first step of `record_identity`, as in 2.3.2. The `--record-identity` flag does not change that key. `record` does not call the kind-file commit, so it does not create, append, or rewrite a kind file.
 
 ## 4.1 Commands
 
@@ -69,7 +69,9 @@ Columns are a clak table.
   A match rule's `record_identity` wins over that default. Omitted or null on the rule inherits the default.
   The flag and the environment variable are a word or a comma-separated list. Spaces around a comma are ignored.
   The profile value and the rule value are a string or a list of strings.
-  Kind files do not carry this key. Two rules may share a kind and use different lists.
+  Kind files do not store this key. The kind-file row identifier is the first step. 2.3.2.
+  The `--record-identity` flag does not change that key.
+  Two rules may share a kind and use different lists.
 - A bad value stops `record status` and `record run` before the walk. Exit 2. Nothing is written.
   Bad: a different case, an empty string, an empty list, an empty comma item, a repeated step, a step other than `path` or `hash`, or a template string.
   The word `key` is reserved and is bad in this version. drafts/record-key.md.

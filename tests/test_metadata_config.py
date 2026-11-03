@@ -176,7 +176,7 @@ def test_file_fields_are_template_values(tmp_path: Path) -> None:
     assert values["ext"] == "pdf"
     assert values["path"] == "sub/report.pdf"
     assert values["folder"] == "sub"
-    assert values["digest"] == "abc"
+    assert values["digest"] == nested.sha256
     assert values["created"] == nested.ctime
     assert values["modified"] == nested.mtime
     assert values["missing"] == "FALLBACK"

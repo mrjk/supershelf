@@ -133,7 +133,7 @@ def test_nonzero_exit_fails_the_candidate_and_is_not_rerun(tmp_path: Path) -> No
     )
     first = _file("scan.pdf", path)
     assert _values(plan, first)["author"] == "UNKNOWN"
-    second = _file("other.pdf", path, digest="abc")
+    second = _file("other.pdf", path)
     assert _values(plan, second)["author"] == "UNKNOWN"
     assert len([call for call in runner.calls if call[0] == "exiftool"]) == 1
 

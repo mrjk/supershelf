@@ -11,7 +11,7 @@ from supershelf.errors import VarConfigError, VarResolveError
 from supershelf.scan.match import FileMatch
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
-from tests.metadata_helpers import input_file as _file
+from tests.metadata_helpers import FILE_DIGEST, input_file as _file
 from tests.metadata_helpers import resolve_values, var_plan
 
 
@@ -591,16 +591,21 @@ def test_wrapped_feed_columns_are_ignored(tmp_path: Path) -> None:
     assert "__date__" not in values
 
 
-def test_date_and_sha_headers_stay_errors(tmp_path: Path) -> None:
+def test_date_header_and_bad_sha_stay_errors(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,DATE\na.txt,2026-04-25\n", encoding="utf-8")
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     with pytest.raises(VarConfigError, match="is not the date column"):
         _values(plan)
 
+    kind.write_text("PATH,sha\na.txt,abc\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with pytest.raises(VarConfigError, match="Use SHA"):
+        _values(plan)
+
     kind.write_text("PATH,SHA\na.txt,abc\n", encoding="utf-8")
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
-    with pytest.raises(VarConfigError, match="Rows match on PATH"):
+    with pytest.raises(VarConfigError, match="64 lowercase hex"):
         _values(plan)
 
 
@@ -638,7 +643,9 @@ def test_schema_append_keeps_a_feed_column(tmp_path: Path) -> None:
     )
     assert _values(plan)["vendor"] == "RuleCo"
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == ("PATH,VENDOR,vendor\na.txt,Generated,\n")
+    assert kind.read_text(encoding="utf-8") == (
+        f"PATH,SHA,VENDOR,vendor\na.txt,{FILE_DIGEST},Generated,\n"
+    )
 
 
 def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
@@ -698,8 +705,9 @@ def test_auto_appends_only_when_the_file_exists(tmp_path: Path) -> None:
     assert values["owner"] == "DEFAULT-rule"
     plan.commit()
     text = kind.read_bytes()
-    assert text.startswith(b"PATH,owner\na.txt,ada\n")
-    assert text.endswith(b"\nb.txt,\n")
+    assert text == (
+        b"PATH,SHA,owner\na.txt,,ada\nb.txt," + FILE_DIGEST.encode("ascii") + b",\n"
+    )
 
     missing = tmp_path / "other.csv"
     skipped = _plan(_kind_document("{{ __config__.root_dir }}/other.csv"), tmp_path)
@@ -714,7 +722,7 @@ def test_empty_kind_file_is_filled_in_auto(tmp_path: Path) -> None:
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     _values(plan)
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+    assert kind.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
 
 
 def test_manual_reads_and_does_not_append(tmp_path: Path) -> None:
@@ -738,14 +746,14 @@ def test_always_creates_the_first_template(tmp_path: Path) -> None:
     assert values["owner"] == "DEFAULT-rule"
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
     again = _plan(
         _kind_document("{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv", kind_overrides_mode="always"),
         tmp_path,
     )
     _values(again)
     again.commit()
-    assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
 
 
 def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
@@ -766,7 +774,9 @@ def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == "PATH,amount,__date__,vendor\na.txt,,,\n"
+    assert created.read_text(encoding="utf-8") == (
+        f"PATH,SHA,amount,__date__,vendor\na.txt,{FILE_DIGEST},,,\n"
+    )
 
 
 def test_always_creates_kind_schema_local_names(tmp_path: Path) -> None:
@@ -794,7 +804,9 @@ def test_always_creates_kind_schema_local_names(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == "PATH,company,employee\na.txt,,\n"
+    assert created.read_text(encoding="utf-8") == (
+        f"PATH,SHA,company,employee\na.txt,{FILE_DIGEST},,\n"
+    )
 
 
 def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
@@ -815,7 +827,7 @@ def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == "PATH,amount,vendor\na.txt,,\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA,amount,vendor\na.txt,{FILE_DIGEST},,\n"
 
 
 def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
@@ -833,7 +845,7 @@ def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == "PATH,__date__\na.txt,\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
 
 
 def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> None:
@@ -854,7 +866,7 @@ def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> No
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == "PATH,vendor\na.txt,\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA,vendor\na.txt,{FILE_DIGEST},\n"
 
 
 def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
@@ -869,7 +881,7 @@ def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
     )
     _values(plan)
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == "PATH,amount\na.txt,\n"
+    assert kind.read_text(encoding="utf-8") == f"PATH,SHA,amount\na.txt,{FILE_DIGEST},\n"
 
 
 def test_missing_schema_columns_are_appended_on_the_right(tmp_path: Path) -> None:
@@ -892,11 +904,11 @@ def test_missing_schema_columns_are_appended_on_the_right(tmp_path: Path) -> Non
     _values(plan, file=_file("b.txt"), match=_match("b.txt"))
     plan.commit()
     assert kind.read_text(encoding="utf-8") == (
-        "PATH,amount,notes,vendor\n"
-        'a.txt,"12,50",ada,\n'
+        "PATH,SHA,amount,notes,vendor\n"
+        f'a.txt,{FILE_DIGEST},"12,50",ada,\n'
         "\n"
-        "short.txt,,,\n"
-        "b.txt,,,\n"
+        "short.txt,,,,\n"
+        f"b.txt,{FILE_DIGEST},,,\n"
     )
 
 
@@ -912,7 +924,11 @@ def test_added_columns_keep_quoted_cell_text(tmp_path: Path) -> None:
     )
     _values(plan)
     plan.commit()
-    assert kind.read_bytes() == b'PATH,note,vendor\r\na.txt,"hello\nworld",\r\n'
+    assert kind.read_bytes() == (
+        b"PATH,SHA,note,vendor\r\na.txt,"
+        + FILE_DIGEST.encode("ascii")
+        + b',"hello\nworld",\r\n'
+    )
 
 
 def test_semicolon_schema_columns_use_the_separator(tmp_path: Path) -> None:
@@ -927,7 +943,11 @@ def test_semicolon_schema_columns_use_the_separator(tmp_path: Path) -> None:
     )
     _values(plan, file=_file("b.txt"), match=_match("b.txt"))
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == "PATH;amount;vendor\na.txt;12,50;\nb.txt;;\n"
+    assert kind.read_text(encoding="utf-8") == (
+        "PATH;SHA;amount;vendor\n"
+        "a.txt;;12,50;\n"
+        f"b.txt;{FILE_DIGEST};;\n"
+    )
 
 
 def test_manual_does_not_add_schema_columns(tmp_path: Path) -> None:
@@ -1083,7 +1103,7 @@ def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None
         _values(plan)
     assert caught.value.advice is not None
     assert "kind_overrides_sep is ';'" in caught.value.advice
-    assert "For example: PATH;amount" in caught.value.advice
+    assert "For example: PATH;SHA;amount" in caught.value.advice
 
 
 def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:
@@ -1416,3 +1436,123 @@ def test_kind_cell_cast_failure_stops_the_file(tmp_path: Path) -> None:
     )
     with pytest.raises(VarResolveError, match="variable amount failed"):
         _values(plan)
+
+
+def test_hash_identity_rewrites_the_path_and_keeps_cells(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\nold.txt,{FILE_DIGEST},Kept\n",
+        encoding="utf-8",
+    )
+    plan = _plan(_hash_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    values = _values(plan, file=_file("new.txt"), match=_match("new.txt"))
+    assert values["owner"] == "Kept"
+    plan.commit()
+    text = kind.read_text(encoding="utf-8")
+    assert text == f"PATH,SHA,owner\nnew.txt,{FILE_DIGEST},Kept\n"
+    assert f'path was "old.txt", now "new.txt" for hash {FILE_DIGEST}' in caplog.text
+
+
+def test_hash_identity_fills_an_empty_sha_on_the_same_path(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner\na.txt,Kept\n", encoding="utf-8")
+    document = _hash_document("{{ __config__.root_dir }}/note.csv")
+    plan = _plan(document, tmp_path)
+    _values(plan)
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == f"PATH,SHA,owner\na.txt,{FILE_DIGEST},Kept\n"
+    again = _plan(document, tmp_path)
+    assert _values(again)["owner"] == "Kept"
+
+
+def test_hash_identity_keeps_an_unmapped_row(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner\na.txt,Kept\ngone.txt,Old\n", encoding="utf-8")
+    plan = _plan(_hash_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    _values(plan)
+    plan.commit()
+    text = kind.read_text(encoding="utf-8")
+    assert f"a.txt,{FILE_DIGEST},Kept" in text
+    assert "gone.txt,,Old" in text
+    assert "path gone.txt was not remapped" in caplog.text
+
+
+def test_shared_hash_does_not_move_the_row(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\nold.txt,{FILE_DIGEST},Kept\n",
+        encoding="utf-8",
+    )
+    plan = _plan(_hash_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    _values(plan, file=_file("a.txt"), match=_match("a.txt"))
+    _values(plan, file=_file("b.txt"), match=_match("b.txt"))
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == f"PATH,SHA,owner\nold.txt,{FILE_DIGEST},Kept\n"
+    assert f"hash {FILE_DIGEST} is shared by a.txt, b.txt" in caplog.text
+
+
+def test_path_identity_refreshes_sha_and_leaves_a_rename(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    previous = "b" * 64
+    kind.write_text(f"PATH,SHA,owner\nold.txt,{previous},Kept\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    _values(plan, file=_file("old.txt"), match=_match("old.txt"))
+    _values(plan, file=_file("new.txt", digest="c" * 64), match=_match("new.txt"))
+    plan.commit()
+    text = kind.read_text(encoding="utf-8")
+    assert f"old.txt,{FILE_DIGEST},Kept" in text
+    assert f"new.txt,{'c' * 64}," in text
+    assert f'hash was "{previous}", now "{FILE_DIGEST}" for path old.txt' in caplog.text
+
+
+def test_hash_identity_keeps_the_old_row_when_the_digest_changes(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    previous = "b" * 64
+    kind.write_text(f"PATH,SHA,owner\na.txt,{previous},Kept\n", encoding="utf-8")
+    plan = _plan(_hash_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    _values(plan)
+    plan.commit()
+    text = kind.read_text(encoding="utf-8")
+    assert f"a.txt,{previous},Kept" in text
+    assert f"a.txt,{FILE_DIGEST}," in text
+    assert f"path a.txt now has hash {FILE_DIGEST} and the old row was kept" in caplog.text
+
+
+def test_duplicate_sha_is_an_error(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\na.txt,{FILE_DIGEST},One\nb.txt,{FILE_DIGEST},Two\n",
+        encoding="utf-8",
+    )
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with pytest.raises(VarConfigError, match="is on a.txt and b.txt"):
+        _values(plan)
+
+
+def _hash_document(path: str) -> dict[str, object]:
+    document = _kind_document(path)
+    config = document["config"]
+    assert isinstance(config, dict)
+    config["record_identity"] = "hash"
+    return document
+

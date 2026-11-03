@@ -10,7 +10,7 @@ from supershelf.metadata.parse import OutputParser
 from supershelf.metadata.process import ProcessRunner
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
-from tests.metadata_helpers import FakeRunner, input_file as _file
+from tests.metadata_helpers import FILE_DIGEST, FakeRunner, input_file as _file
 from tests.metadata_helpers import resolve_values, var_plan
 
 
@@ -111,7 +111,7 @@ def test_script_path_is_the_program(tmp_path: Path) -> None:
         "--file",
         str(tmp_path / "report.pdf"),
         "--hash",
-        "abc",
+        FILE_DIGEST,
         "--lang",
         "eng",
     ]

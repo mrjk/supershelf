@@ -24,6 +24,10 @@ from supershelf.constants import (
     KEY_KIND_OVERRIDES_MODE,
     KEY_KIND_OVERRIDES_SEP,
     KIND_CSV_PATH,
+    KIND_CSV_SHA,
+    KIND_ROW_SHA,
+    IDENTITY_HASH,
+    IDENTITY_PATH,
     KIND_MODE_ALWAYS,
     KIND_MODE_AUTO,
     KIND_MODE_DISABLED,
@@ -185,15 +189,25 @@ class KindCsvSep:
         return cls(raw)
 
 
+class KindLine:
+    """One kind-file row. `sha` is empty when the file has no digest yet."""
+
+    def __init__(self, path: str, sha: str, cells: dict[str, str]) -> None:
+        self.path = path
+        self.sha = sha
+        self.cells = cells
+
+
 class KindTable:
-    """One kind file. Rows are literal cells keyed by the relative path."""
+    """One kind file. The row identifier is the path or the hash."""
 
     _SUFFIXES = (".csv", ".toml", ".yaml", ".yml")
-    _FRESH_COLUMNS = (KIND_CSV_PATH, VAR_DATE)
+    _FRESH_COLUMNS = (KIND_CSV_PATH, KIND_CSV_SHA, VAR_DATE)
     _LOWER_NAME = re.compile(r"[a-z_][a-z0-9_]*\Z")
     _FEED_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
     _DATE_ALIASES = frozenset({"DATE", "Date", "date"})
-    _SHA_ALIASES = frozenset({"SHA", "sha", "Sha"})
+    _SHA_BAD = frozenset({"sha", "Sha"})
+    _SHA_TEXT = re.compile(r"[0-9a-f]{64}\Z")
     _WRAPPED_FEED = frozenset({KIND_CSV_PATH, "SHA", "DATE"})
 
     def __init__(
@@ -206,7 +220,7 @@ class KindTable:
         *,
         blank: bool = False,
         missing: bool = False,
-        raw_rows: list[tuple[str, dict[str, str]]] | None = None,
+        raw_rows: list[KindLine] | None = None,
         bom: bool = False,
     ) -> None:
         self.path = path
@@ -217,10 +231,18 @@ class KindTable:
         self.blank = blank
         self.missing = missing
         self.raw_rows = [] if raw_rows is None else raw_rows
+        self.row_sha = {}
+        for line in self.raw_rows:
+            if line.path not in self.row_sha:
+                self.row_sha[line.path] = line.sha
         self._bom = bom
-        self._pending: list[str] = []
-        self._pending_seen: set[str] = set()
+        self._pending: list[tuple[str, str]] = []
+        self._pending_seen: set[tuple[str, str]] = set()
         self._extra_columns: list[str] = []
+        self._notes: list[tuple[str, str, str, int]] = []
+        self._sha_sets: dict[str, str] = {}
+        self._path_sets: list[tuple[str, str, str]] = []
+        self._prepared = False
 
     @classmethod
     def missing(cls, path: Path, sep: str) -> KindTable:
@@ -245,19 +267,30 @@ class KindTable:
             return cls(path, suffix, None, {}, sep, blank=True, bom=bom)
         if suffix == ".csv":
             columns, rows, raw_rows = cls._parse_csv(path, text, logger, sep)
-            return cls(path, suffix, columns, rows, sep, raw_rows=raw_rows, bom=bom)
-        if suffix == ".toml":
+            table = cls(path, suffix, columns, rows, sep, raw_rows=raw_rows, bom=bom)
+        elif suffix == ".toml":
             rows, raw_rows = cls._parse_toml(path, text, logger)
-            return cls(path, suffix, None, rows, sep, raw_rows=raw_rows, bom=bom)
-        rows, raw_rows = cls._parse_yaml(path, text, logger)
-        return cls(path, suffix, None, rows, sep, raw_rows=raw_rows, bom=bom)
+            table = cls(path, suffix, None, rows, sep, raw_rows=raw_rows, bom=bom)
+        else:
+            rows, raw_rows = cls._parse_yaml(path, text, logger)
+            table = cls(path, suffix, None, rows, sep, raw_rows=raw_rows, bom=bom)
+        table._reject_duplicate_sha()
+        return table
 
     def ensure(self, relative: str) -> None:
         """Remember a matched path that is not already a row."""
-        if relative in self.rows or relative in self._pending_seen:
+        self._queue_append(relative, "")
+
+    def note(self, relative: str, digest: str, identity: str, index: int) -> None:
+        """Remember one matched file for the write after this run."""
+        self._notes.append((relative, digest, identity, index))
+
+    def prepare_identity(self, logger: logging.Logger) -> None:
+        """Queue path and hash edits. Log warnings before any write."""
+        if self._prepared:
             return
-        self._pending.append(relative)
-        self._pending_seen.add(relative)
+        self._prepared = True
+        self._plan_notes(logger)
 
     def add_schema_columns(self, names: tuple[str, ...]) -> None:
         """Remember schema columns this CSV does not already have."""
@@ -284,13 +317,26 @@ class KindTable:
         if self._extend_columns():
             logger.debug("Added columns %s to kind file %s", added, self.path)
 
-    def commit(self, dry_run: bool, logger: logging.Logger) -> None:
-        """Create or append after the run. A dry run only logs a real change."""
-        if not self._pending:
+    def commit(self, dry_run: bool, logger: logging.Logger, *, writable: bool = True) -> None:
+        """Create, append, or rewrite after the run. A dry run only logs a real change."""
+        if writable and not self._prepared:
+            self.prepare_identity(logger)
+        if writable and self._structural_rewrite():
+            self._commit_rewrite(dry_run, logger)
+            return
+        if writable and self._needs_sha_insert():
+            if dry_run:
+                logger.info("Would add column SHA to kind file %s", self.path)
+            else:
+                self._insert_sha_column()
+                logger.debug("Added column SHA to kind file %s", self.path)
+        if writable:
+            self.sync_schema_columns(dry_run, logger)
+        if not writable or not self._pending:
             return
         count = len(self._pending)
         if dry_run:
-            if self.missing:
+            if self.missing or self.blank:
                 logger.info("Would create kind file %s with %s rows", self.path, count)
                 return
             logger.info("Would append %s rows to kind file %s", count, self.path)
@@ -302,15 +348,14 @@ class KindTable:
 
     def _create_columns(self) -> tuple[str, ...]:
         if self.suffix == ".csv" and self._extra_columns:
-            return (KIND_CSV_PATH, *self._extra_columns)
+            return (KIND_CSV_PATH, KIND_CSV_SHA, *self._extra_columns)
         return self._FRESH_COLUMNS
 
     def _write_new(self) -> None:
-        self._require_parent()
-        self.path.write_text(
-            self._rendered(self._create_columns(), header=True),
-            encoding="utf-8",
-        )
+        text = self._rendered(self._create_columns(), header=True)
+        self._replace_bytes(text.encode("utf-8"))
+        self.missing = False
+        self.blank = False
 
     def _extend_columns(self) -> bool:
         """Append empty cells. Existing cell text stays on each line."""
@@ -338,7 +383,7 @@ class KindTable:
                 updated.append(f"{body}{self.sep * missing}{ending}")
                 continue
             updated.append(body + ending)
-        self.path.write_bytes(bom + "".join(updated).encode("utf-8"))
+        self._replace_bytes(bom + "".join(updated).encode("utf-8"))
         self.columns = tuple(self.columns or ()) + added
         self._extra_columns.clear()
         return True
@@ -406,7 +451,7 @@ class KindTable:
             return False
         if not any("A" <= char <= "Z" for char in name):
             return False
-        if name == KIND_CSV_PATH or name in cls._SHA_ALIASES or name in cls._DATE_ALIASES:
+        if name == KIND_CSV_PATH or name == KIND_CSV_SHA or name in cls._SHA_BAD or name in cls._DATE_ALIASES:
             return False
         return True
 
@@ -418,7 +463,7 @@ class KindTable:
 
     @classmethod
     def _legal_column(cls, name: str) -> bool:
-        if name == KIND_CSV_PATH or name in cls._SHA_ALIASES or name in cls._DATE_ALIASES:
+        if name == KIND_CSV_PATH or name == KIND_CSV_SHA or name in cls._SHA_BAD or name in cls._DATE_ALIASES:
             return False
         if cls._LOWER_NAME.fullmatch(name) is None:
             return False
@@ -430,7 +475,7 @@ class KindTable:
             return False
         return True
 
-    def set_cell(self, relative: str, name: str, value: str) -> bool:
+    def set_cell(self, relative: str, name: str, value: str, sha: str = "") -> bool:
         """Set one cell on the first row. An illegal CSV column is refused."""
         if value.strip() == "":
             return False
@@ -440,10 +485,19 @@ class KindTable:
         if row is None:
             row = {}
             self.rows[relative] = row
+            self.row_sha[relative] = sha
+            self.raw_rows.append(KindLine(relative, sha, row))
+            if self.suffix == ".csv" and sha and (self.columns is None or KIND_CSV_SHA not in self.columns):
+                base = list(self.columns or (KIND_CSV_PATH,))
+                if KIND_CSV_PATH in base:
+                    base.insert(base.index(KIND_CSV_PATH) + 1, KIND_CSV_SHA)
+                else:
+                    base.insert(0, KIND_CSV_SHA)
+                self.columns = tuple(base)
         row[name] = value
         if self.suffix == ".csv":
             if self.columns is None:
-                self.columns = (KIND_CSV_PATH,)
+                self.columns = (KIND_CSV_PATH, KIND_CSV_SHA)
             if name not in self.columns:
                 self.columns = (*self.columns, name)
         return True
@@ -455,61 +509,95 @@ class KindTable:
         for cells in self.rows.values():
             cells.pop(name, None)
         self.raw_rows = [
-            (path, {key: item for key, item in cells.items() if key != name})
-            for path, cells in self.raw_rows
+            KindLine(line.path, line.sha, {key: item for key, item in line.cells.items() if key != name})
+            for line in self.raw_rows
         ]
 
     def drop_paths(self, paths: set[str]) -> None:
         """Drop every row for these relative paths, including later duplicates."""
-        for path in paths:
-            self.rows.pop(path, None)
-        self.raw_rows = [(path, cells) for path, cells in self.raw_rows if path not in paths]
+        indexes = {index for index, line in enumerate(self.raw_rows) if line.path in paths}
+        self.drop_indexes(indexes)
+
+    def unmatched(
+        self,
+        live_paths: set[str],
+        live_hashes: set[str],
+    ) -> tuple[tuple[int, KindLine], ...]:
+        """Rows whose path is not a path-identity file and whose hash is not a hash-identity file."""
+        found: list[tuple[int, KindLine]] = []
+        for index, line in enumerate(self.raw_rows):
+            if line.path in live_paths:
+                continue
+            if line.sha and line.sha in live_hashes:
+                continue
+            found.append((index, line))
+        return tuple(found)
+
+    def drop_indexes(self, indexes: set[int]) -> None:
+        """Drop these raw rows. The first remaining row of a path becomes the lookup row."""
+        if not indexes:
+            return
+        self.raw_rows = [
+            line for index, line in enumerate(self.raw_rows) if index not in indexes
+        ]
+        self.rows.clear()
+        self.row_sha.clear()
+        for line in self.raw_rows:
+            if line.path in self.rows:
+                continue
+            self.rows[line.path] = line.cells
+            self.row_sha[line.path] = line.sha
 
     def clear_rows(self) -> None:
         """Remove every data row. A CSV header stays on the table."""
         self.rows.clear()
         self.raw_rows.clear()
+        self.row_sha.clear()
 
     def column_filled(self, name: str) -> bool:
         """True when any raw row, including a later duplicate, has this cell."""
         for cells in self.rows.values():
             if cells.get(name, "").strip():
                 return True
-        for _path, cells in self.raw_rows:
-            if cells.get(name, "").strip():
+        for line in self.raw_rows:
+            if line.cells.get(name, "").strip():
                 return True
         return False
 
     def data_columns(self) -> tuple[str, ...]:
         """CSV header names after PATH, or TOML and YAML keys in file order."""
         if self.suffix == ".csv":
-            return tuple(name for name in (self.columns or ()) if name != KIND_CSV_PATH)
+            return tuple(
+                name
+                for name in (self.columns or ())
+                if name != KIND_CSV_PATH and name != KIND_CSV_SHA
+            )
         names: list[str] = []
         seen: set[str] = set()
-        for _path, cells in self.output_rows():
-            for name in cells:
+        for line in self.output_rows():
+            for name in line.cells:
                 if name in seen:
                     continue
                 seen.add(name)
                 names.append(name)
         return tuple(names)
 
-    def output_rows(self) -> list[tuple[str, dict[str, str]]]:
+    def output_rows(self) -> list[KindLine]:
         """File order. The first row of a path is the edited one. Later rows stay."""
         emitted: set[str] = set()
-        ordered: list[tuple[str, dict[str, str]]] = []
-        for relative, cells in self.raw_rows:
-            if relative not in self.rows:
+        ordered: list[KindLine] = []
+        for line in self.raw_rows:
+            if line.path not in self.rows:
                 continue
-            if relative not in emitted:
-                emitted.add(relative)
-                ordered.append((relative, self.rows[relative]))
+            if line.path not in emitted:
+                emitted.add(line.path)
+                ordered.append(KindLine(line.path, self.row_sha.get(line.path, line.sha), self.rows[line.path]))
                 continue
-            ordered.append((relative, cells))
+            ordered.append(line)
         for relative, cells in self.rows.items():
             if relative in emitted:
                 continue
-            ordered.append((relative, cells))
+            ordered.append(KindLine(relative, self.row_sha.get(relative, ""), cells))
         return ordered
 
     def save(self) -> None:
@@ -519,7 +607,7 @@ class KindTable:
         payload = text.encode("utf-8")
         if self._bom:
             payload = b"\xef\xbb\xbf" + payload
-        self.path.write_bytes(payload)
+        self._replace_bytes(payload)
         self.missing = False
         self.blank = False
 
@@ -528,46 +616,63 @@ class KindTable:
         if self.suffix == ".csv":
             columns = self.columns
             if columns is None:
-                columns = (KIND_CSV_PATH, *(name for _path, cells in rows for name in cells))
+                columns = (
+                    KIND_CSV_PATH,
+                    KIND_CSV_SHA,
+                    *(name for line in rows for name in line.cells),
+                )
                 columns = tuple(dict.fromkeys(columns))
             return self._csv_rows(columns, rows)
         if self.suffix == ".toml":
-            return "".join(self._toml_row(relative, cells) for relative, cells in rows)
+            return "".join(self._toml_row(line) for line in rows)
         return self._yaml_rows(rows)
 
-    def _csv_rows(self, columns: tuple[str, ...], rows: list[tuple[str, dict[str, str]]]) -> str:
+    def _csv_rows(self, columns: tuple[str, ...], rows: list[KindLine]) -> str:
         buffer = io.StringIO()
         writer = csv.writer(buffer, delimiter=self.sep, lineterminator="\n")
         writer.writerow(columns)
-        for relative, cells in rows:
-            writer.writerow(
-                [relative if name == KIND_CSV_PATH else cells.get(name, "") for name in columns]
-            )
+        for line in rows:
+            writer.writerow([self._csv_cell(line, name) for name in columns])
         return buffer.getvalue()
 
-    def _toml_row(self, relative: str, cells: dict[str, str]) -> str:
-        lines = [f"[[rows]]\npath = {self._toml_string(relative)}\n"]
-        if cells:
+    def _csv_cell(self, line: KindLine, name: str) -> str:
+        if name == KIND_CSV_PATH:
+            return line.path
+        if name == KIND_CSV_SHA:
+            return line.sha
+        return line.cells.get(name, "")
+
+    def _toml_row(self, line: KindLine) -> str:
+        lines = [f"[[rows]]\npath = {self._toml_string(line.path)}\n"]
+        if line.sha:
+            lines.append(f"sha = {self._toml_string(line.sha)}\n")
+        if line.cells:
             lines.append("[rows.vars]\n")
-            for key, value in cells.items():
+            for key, value in line.cells.items():
                 lines.append(f"{key} = {self._toml_string(value)}\n")
         return "".join(lines)
 
-    @classmethod
-    def _yaml_rows(cls, rows: list[tuple[str, dict[str, str]]]) -> str:
+    def _yaml_rows(self, rows: list[KindLine]) -> str:
         if not rows:
             return "[]\n"
         chunks: list[str] = []
-        for relative, cells in rows:
+        for line in rows:
             dumped_path = yaml.safe_dump(
-                relative,
+                line.path,
                 allow_unicode=True,
                 default_style='"',
             ).strip()
             lines = [f"- path: {dumped_path}\n"]
-            if cells:
+            if line.sha:
+                dumped_sha = yaml.safe_dump(
+                    line.sha,
+                    allow_unicode=True,
+                    default_style='"',
+                ).strip()
+                lines.append(f"  sha: {dumped_sha}\n")
+            if line.cells:
                 lines.append("  vars:\n")
-                for key, value in cells.items():
+                for key, value in line.cells.items():
                     dumped = yaml.safe_dump(
                         value,
                         allow_unicode=True,
@@ -611,17 +716,40 @@ class KindTable:
         writer = csv.writer(buffer, delimiter=self.sep, lineterminator="\n")
         if header:
             writer.writerow(columns)
-        for relative in self._pending:
-            writer.writerow([relative if name == KIND_CSV_PATH else "" for name in columns])
+        for relative, digest in self._pending:
+            writer.writerow(
+                [
+                    relative
+                    if name == KIND_CSV_PATH
+                    else digest
+                    if name == KIND_CSV_SHA
+                    else ""
+                    for name in columns
+                ]
+            )
         return buffer.getvalue()
 
     def _toml_text(self) -> str:
         return "".join(
-            f"[[rows]]\npath = {self._toml_string(relative)}\n" for relative in self._pending
+            self._pending_toml(relative, digest) for relative, digest in self._pending
         )
 
+    def _pending_toml(self, relative: str, digest: str) -> str:
+        lines = [f"[[rows]]\npath = {self._toml_string(relative)}\n"]
+        if digest:
+            lines.append(f"sha = {self._toml_string(digest)}\n")
+        return "".join(lines)
+
     def _yaml_text(self) -> str:
-        return "".join(self._yaml_item(relative) for relative in self._pending)
+        return "".join(self._pending_yaml(relative, digest) for relative, digest in self._pending)
+
+    def _pending_yaml(self, relative: str, digest: str) -> str:
+        dumped = yaml.safe_dump(relative, allow_unicode=True).strip()
+        lines = [f"- path: {dumped}\n"]
+        if digest:
+            dumped_sha = yaml.safe_dump(digest, allow_unicode=True).strip()
+            lines.append(f"  sha: {dumped_sha}\n")
+        return "".join(lines)
 
     @classmethod
     def _suffix(cls, path: Path) -> str:
@@ -640,7 +768,7 @@ class KindTable:
         text: str,
         logger: logging.Logger,
         sep: str,
-    ) -> tuple[tuple[str, ...], dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
+    ) -> tuple[tuple[str, ...], dict[str, dict[str, str]], list[KindLine]]:
         try:
             parsed = [
                 row
@@ -660,7 +788,7 @@ class KindTable:
         header = tuple(cell.strip() for cell in parsed[0])
         cls._check_header(path, header, sep)
         rows: dict[str, dict[str, str]] = {}
-        raw_rows: list[tuple[str, dict[str, str]]] = []
+        raw_rows: list[KindLine] = []
         for raw in parsed[1:]:
             if len(raw) > len(header):
                 raise VarConfigError(
@@ -669,22 +797,29 @@ class KindTable:
                 )
             padded = list(raw) + [""] * (len(header) - len(raw))
             relative = ""
+            digest = ""
             cells: dict[str, str] = {}
             for name, cell in zip(header, padded, strict=True):
                 if name == KIND_CSV_PATH:
                     relative = cell
                     continue
+                if name == KIND_CSV_SHA:
+                    text_sha = cls._plain(cell)
+                    if text_sha is not None:
+                        digest = cls._check_sha(path, relative or cell, text_sha)
+                    continue
                 text_cell = cls._plain(cell)
                 if text_cell is not None:
                     cells[name] = text_cell
             if relative.strip() == "":
-                if cells:
+                if cells or digest:
                     raise VarConfigError(
                         f"{path} has a row with an empty PATH",
                         advice=cls._header_advice(sep, header),
                     )
                 continue
-            raw_rows.append((relative, dict(cells)))
+            line = KindLine(relative, digest, cells if relative not in rows else dict(cells))
+            raw_rows.append(line)
             if relative in rows:
                 logger.warning(
                     "Kind file %s path %r is duplicated; keeping the first row",
@@ -692,7 +827,7 @@ class KindTable:
                     relative,
                 )
                 continue
-            rows[relative] = cells
+            rows[relative] = line.cells
         return header, rows, raw_rows
 
     @classmethod
@@ -711,9 +846,11 @@ class KindTable:
                 advice=advice,
             )
         for name in header[1:]:
-            if name in cls._SHA_ALIASES:
+            if name == KIND_CSV_SHA:
+                continue
+            if name in cls._SHA_BAD:
                 raise VarConfigError(
-                    f"{path} column {name!r} is not a kind-file column. Rows match on PATH.",
+                    f"{path} column {name!r} is not the hash column. Use SHA.",
                     advice=advice,
                 )
             if name in cls._DATE_ALIASES:
@@ -735,20 +872,20 @@ class KindTable:
     def _header_advice(cls, sep: str, columns: tuple[str, ...]) -> str:
         example = cls._header_example(sep, columns)
         return (
-            "The first column must be PATH. __date__ is optional. "
+            "The first column must be PATH. SHA is the hash. __date__ is optional. "
             "Other columns are lowercase names. "
             f"kind_overrides_sep is {sep!r}. For example: {example}"
         )
 
     @classmethod
     def _header_example(cls, sep: str, columns: tuple[str, ...]) -> str:
-        names = [KIND_CSV_PATH]
+        names = [KIND_CSV_PATH, KIND_CSV_SHA]
         for name in columns[1:]:
             if name in cls._DATE_ALIASES or name == VAR_DATE:
                 if VAR_DATE not in names:
                     names.append(VAR_DATE)
                 continue
-            if name in cls._SHA_ALIASES or name == KIND_CSV_PATH:
+            if name in cls._SHA_BAD or name == KIND_CSV_SHA or name == KIND_CSV_PATH:
                 continue
             lowered = name.lower()
             if (
@@ -767,7 +904,7 @@ class KindTable:
         path: Path,
         text: str,
         logger: logging.Logger,
-    ) -> tuple[dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
+    ) -> tuple[dict[str, dict[str, str]], list[KindLine]]:
         try:
             raw = yaml.safe_load(text)
         except yaml.YAMLError as exc:
@@ -790,7 +927,7 @@ class KindTable:
         path: Path,
         text: str,
         logger: logging.Logger,
-    ) -> tuple[dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
+    ) -> tuple[dict[str, dict[str, str]], list[KindLine]]:
         try:
             raw = tomllib.loads(text)
         except tomllib.TOMLDecodeError as exc:
@@ -814,9 +951,9 @@ class KindTable:
         path: Path,
         items: list[object],
         logger: logging.Logger,
-    ) -> tuple[dict[str, dict[str, str]], list[tuple[str, dict[str, str]]]]:
+    ) -> tuple[dict[str, dict[str, str]], list[KindLine]]:
         rows: dict[str, dict[str, str]] = {}
-        raw_rows: list[tuple[str, dict[str, str]]] = []
+        raw_rows: list[KindLine] = []
         for index, item in enumerate(items, start=1):
             if not isinstance(item, dict):
                 raise VarConfigError(
@@ -829,8 +966,10 @@ class KindTable:
                     f"{path} item {index} needs a path",
                     advice="Path is the file relative to the input.",
                 )
+            digest = cls._item_sha(path, relative, item.get(KIND_ROW_SHA))
             cells = cls._vars(path, index, item.get("vars"))
-            raw_rows.append((relative, dict(cells)))
+            line = KindLine(relative, digest, cells if relative not in rows else dict(cells))
+            raw_rows.append(line)
             if relative in rows:
                 logger.warning(
                     "Kind file %s path %r is duplicated; keeping the first row",
@@ -838,7 +977,7 @@ class KindTable:
                     relative,
                 )
                 continue
-            rows[relative] = cells
+            rows[relative] = line.cells
         return rows, raw_rows
 
     @classmethod
@@ -890,10 +1029,340 @@ class KindTable:
         )
         return f'"{escaped}"'
 
-    @staticmethod
-    def _yaml_item(relative: str) -> str:
-        dumped = yaml.safe_dump(relative, allow_unicode=True).strip()
-        return f"- path: {dumped}\n"
+    def cells_for_identity(self, relative: str, digest: str, identity: str) -> dict[str, str]:
+        """The cells for this file. Hash identity does not fall through to the path."""
+        found = self.row_for(relative, digest, identity)
+        if found is None:
+            return {}
+        return found[1]
+
+    def row_for(
+        self,
+        relative: str,
+        digest: str,
+        identity: str,
+    ) -> tuple[str, dict[str, str]] | None:
+        """The stored path and cells, or None when this identity has no row."""
+        if identity == IDENTITY_HASH and digest:
+            for line in self.raw_rows:
+                if line.sha != digest:
+                    continue
+                if line.path in self.rows and self.row_sha.get(line.path) == digest:
+                    return line.path, self.rows[line.path]
+                return line.path, line.cells
+            return None
+        cells = self.rows.get(relative)
+        if cells is None:
+            return None
+        return relative, cells
+
+    def _structural_rewrite(self) -> bool:
+        if self.missing or self.blank:
+            return False
+        if self._path_sets:
+            return True
+        for path, digest in self._sha_sets.items():
+            current = self.row_sha.get(path, "")
+            if current and current != digest:
+                return True
+        if self.suffix != ".csv" and self._sha_sets:
+            return True
+        if (
+            self.suffix == ".csv"
+            and self.columns is not None
+            and KIND_CSV_SHA in self.columns
+            and self._sha_sets
+        ):
+            return True
+        return False
+
+    def _needs_sha_insert(self) -> bool:
+        if self.suffix != ".csv" or self.missing or self.blank or self.columns is None:
+            return False
+        if KIND_CSV_SHA in self.columns:
+            return False
+        return bool(self._pending or self._sha_sets)
+
+    def _commit_rewrite(self, dry_run: bool, logger: logging.Logger) -> None:
+        adding_sha = (
+            self.suffix == ".csv"
+            and self.columns is not None
+            and KIND_CSV_SHA not in self.columns
+        )
+        if adding_sha and dry_run:
+            logger.info("Would add column SHA to kind file %s", self.path)
+        if self._extra_columns and dry_run:
+            logger.info(
+                "Would add columns %s to kind file %s",
+                ", ".join(self._extra_columns),
+                self.path,
+            )
+        if self._pending and dry_run:
+            logger.info("Would append %s rows to kind file %s", len(self._pending), self.path)
+        if dry_run:
+            return
+        self._apply_edits()
+        if self.suffix == ".csv":
+            self._ensure_sha_column()
+            if self._extra_columns:
+                self.columns = tuple(self.columns or ()) + tuple(self._extra_columns)
+                self._extra_columns.clear()
+        self.save()
+        self._pending.clear()
+        if adding_sha:
+            logger.debug("Added column SHA to kind file %s", self.path)
+
+    def _apply_edits(self) -> None:
+        for old, new, digest in self._path_sets:
+            self._retarget(old, new, digest)
+        for path, digest in self._sha_sets.items():
+            self._remember_sha(path, digest)
+        for relative, digest in self._pending:
+            self._add_line(relative, digest)
+        self._pending.clear()
+        self._path_sets.clear()
+        self._sha_sets.clear()
+
+    def _retarget(self, old: str, new: str, digest: str) -> None:
+        for line in self.raw_rows:
+            if line.sha == digest and line.path == old:
+                line.path = new
+                break
+        cells = self.rows.pop(old, None)
+        self.row_sha.pop(old, None)
+        if cells is None:
+            cells = {}
+        self.rows[new] = cells
+        self.row_sha[new] = digest
+
+    def _add_line(self, relative: str, digest: str) -> None:
+        if relative not in self.rows:
+            cells: dict[str, str] = {}
+            self.rows[relative] = cells
+            self.row_sha[relative] = digest
+            self.raw_rows.append(KindLine(relative, digest, cells))
+            return
+        self.raw_rows.append(KindLine(relative, digest, {}))
+
+    def _remember_sha(self, relative: str, digest: str) -> None:
+        self.row_sha[relative] = digest
+        for line in self.raw_rows:
+            if line.path == relative:
+                line.sha = digest
+                return
+
+    def _ensure_sha_column(self) -> None:
+        columns = list(self.columns or (KIND_CSV_PATH,))
+        if KIND_CSV_SHA in columns:
+            self.columns = tuple(columns)
+            return
+        if columns and columns[0] == KIND_CSV_PATH:
+            columns.insert(1, KIND_CSV_SHA)
+        else:
+            columns.insert(0, KIND_CSV_SHA)
+        self.columns = tuple(columns)
+
+    def _insert_sha_column(self) -> None:
+        raw = self.path.read_bytes()
+        bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+        text = raw.decode("utf-8-sig")
+        records = self._split_records(text)
+        header_at = self._header_record(records)
+        filled: set[str] = set()
+        updated: list[str] = []
+        for index, (body, ending) in enumerate(records):
+            if header_at is not None and index == header_at:
+                updated.append(self._insert_after_first(body, KIND_CSV_SHA) + ending)
+                continue
+            cells = self._record_cells(body)
+            if cells is None:
+                updated.append(body + ending)
+                continue
+            relative = cells[0]
+            value = ""
+            if relative not in filled:
+                value = self._sha_sets.get(relative, self.row_sha.get(relative, ""))
+                filled.add(relative)
+                if value:
+                    self._remember_sha(relative, value)
+            updated.append(self._insert_after_first(body, value) + ending)
+        self._replace_bytes(bom + "".join(updated).encode("utf-8"))
+        self._ensure_sha_column()
+        self._sha_sets.clear()
+
+    def _insert_after_first(self, body: str, value: str) -> str:
+        in_quotes = False
+        index = 0
+        while index < len(body):
+            char = body[index]
+            if char == '"':
+                if in_quotes and index + 1 < len(body) and body[index + 1] == '"':
+                    index += 2
+                    continue
+                in_quotes = not in_quotes
+                index += 1
+                continue
+            if not in_quotes and char == self.sep:
+                return f"{body[:index]}{self.sep}{value}{body[index:]}"
+            index += 1
+        return f"{body}{self.sep}{value}"
+
+    def _replace_bytes(self, payload: bytes) -> None:
+        self._require_parent()
+        temporary = self.path.parent / f".{self.path.name}.tmp"
+        temporary.write_bytes(payload)
+        temporary.replace(self.path)
+
+    def _plan_notes(self, logger: logging.Logger) -> None:
+        if not self._notes:
+            return
+        hash_groups: dict[str, list[tuple[str, int]]] = {}
+        hash_seen = False
+        for relative, digest, identity, index in self._notes:
+            if identity != IDENTITY_HASH:
+                continue
+            hash_seen = True
+            hash_groups.setdefault(digest, []).append((relative, index))
+        skipped: set[str] = set()
+        for digest, group in hash_groups.items():
+            paths: list[str] = []
+            for path, _index in sorted(group, key=lambda item: (item[1], item[0])):
+                if path not in paths:
+                    paths.append(path)
+            if len(paths) < 2:
+                continue
+            logger.warning(
+                "Kind file %s hash %s is shared by %s",
+                self.path,
+                digest,
+                ", ".join(paths),
+            )
+            skipped.add(digest)
+        if hash_seen:
+            live = {relative for relative, _digest, _identity, _index in self._notes}
+            warned: set[str] = set()
+            for line in self.raw_rows:
+                if line.sha or line.path in live or line.path in warned:
+                    continue
+                warned.add(line.path)
+                logger.warning("Kind file %s path %s was not remapped", self.path, line.path)
+        for relative, digest, identity, _index in self._notes:
+            if identity == IDENTITY_HASH:
+                if digest in skipped:
+                    continue
+                self._note_hash(relative, digest, logger)
+                continue
+            self._note_path(relative, digest, logger)
+
+    def _note_path(self, relative: str, digest: str, logger: logging.Logger) -> None:
+        if relative in self.rows or self._pending_sha(relative) is not None:
+            current = self._sha_sets.get(relative, self._pending_sha(relative))
+            if current is None:
+                current = self.row_sha.get(relative, "")
+            if current != digest:
+                if current:
+                    logger.warning('hash was "%s", now "%s" for path %s', current, digest, relative)
+                if relative in self.rows:
+                    self._sha_sets[relative] = digest
+                else:
+                    self._replace_pending(relative, digest)
+            return
+        self._queue_append(relative, digest)
+
+    def _note_hash(self, relative: str, digest: str, logger: logging.Logger) -> None:
+        matches = [line for line in self.raw_rows if line.sha == digest]
+        pending = [path for path, sha in self._pending if sha == digest]
+        if matches:
+            old = matches[0].path
+            if old == relative:
+                return
+            if self._path_owned(relative, old):
+                raise VarConfigError(
+                    f"Kind file {self.path} hash {digest} is on {old} and {relative}",
+                    advice="Another row already uses that path.",
+                )
+            logger.warning('path was "%s", now "%s" for hash %s', old, relative, digest)
+            self._path_sets.append((old, relative, digest))
+            return
+        if pending:
+            return
+        current = self.row_sha.get(relative, "")
+        if relative in self.rows and current == "":
+            self._sha_sets[relative] = digest
+            return
+        if relative in self.rows and current not in ("", digest):
+            logger.warning(
+                "Kind file %s path %s now has hash %s and the old row was kept",
+                self.path,
+                relative,
+                digest,
+            )
+            self._queue_append(relative, digest)
+            return
+        self._queue_append(relative, digest)
+
+    def _path_owned(self, relative: str, except_path: str) -> bool:
+        if relative == except_path:
+            return False
+        if relative in self.rows:
+            return True
+        return any(path == relative for path, _sha in self._pending)
+
+    def _pending_sha(self, relative: str) -> str | None:
+        for path, digest in self._pending:
+            if path == relative:
+                return digest
+        return None
+
+    def _replace_pending(self, relative: str, digest: str) -> None:
+        self._pending = [
+            (path, digest if path == relative else current) for path, current in self._pending
+        ]
+
+    def _queue_append(self, relative: str, digest: str) -> None:
+        mark = (relative, digest)
+        if mark in self._pending_seen:
+            return
+        if relative in self.rows and self.row_sha.get(relative, "") == digest and digest:
+            return
+        self._pending.append(mark)
+        self._pending_seen.add(mark)
+
+    def _reject_duplicate_sha(self) -> None:
+        seen: dict[str, str] = {}
+        for line in self.raw_rows:
+            if not line.sha:
+                continue
+            previous = seen.get(line.sha)
+            if previous is not None:
+                raise VarConfigError(
+                    f"Kind file {self.path} hash {line.sha} is on {previous} and {line.path}",
+                    advice="One hash identifies one row. Remove the extra row.",
+                )
+            seen[line.sha] = line.path
+
+    @classmethod
+    def _check_sha(cls, path: Path, relative: str, value: str) -> str:
+        if cls._SHA_TEXT.fullmatch(value) is None:
+            raise VarConfigError(
+                f"{path} path {relative} SHA {value!r} must be 64 lowercase hex digits",
+                advice="Use the sha256 of the file, in lowercase hex.",
+            )
+        return value
+
+    @classmethod
+    def _item_sha(cls, path: Path, relative: str, value: object) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise VarConfigError(
+                f"{path} path {relative} sha must be a string",
+                advice="Quote the sha256.",
+            )
+        text = value.strip()
+        if text == "":
+            return ""
+        return cls._check_sha(path, relative, text)
 
 
 class KindRow(NamedTuple):
@@ -915,6 +1384,8 @@ class KindFiles:
         date_format: KindDateFormat,
         sep: str,
         dry_run: bool,
+        identity: Mapping[str, str] | None = None,
+        default_identity: str = IDENTITY_PATH,
     ) -> None:
         self._templates = templates
         self._root = root_dir
@@ -923,6 +1394,8 @@ class KindFiles:
         self._dates = date_format
         self._sep = sep
         self._dry_run = dry_run
+        self._identity = dict(identity or {})
+        self._default_identity = default_identity
         self._tables: dict[Path, KindTable] = {}
         self._winners: dict[tuple[str, str], KindTable | None] = {}
         self._seen: set[tuple[str, str]] = set()
@@ -938,6 +1411,8 @@ class KindFiles:
         mode: KindMode,
         date_format: KindDateFormat,
         dry_run: bool,
+        identity: Mapping[str, str] | None = None,
+        default_identity: str = IDENTITY_PATH,
     ) -> KindFiles:
         """Check the path list. Files are read later, when a kind is used."""
         sep = KindCsvSep.from_section(section).text
@@ -953,7 +1428,17 @@ class KindFiles:
             )
         else:
             templates = tuple(raw)
-        return cls(templates, root_dir, profile_scope, mode, date_format, sep, dry_run)
+        return cls(
+            templates,
+            root_dir,
+            profile_scope,
+            mode,
+            date_format,
+            sep,
+            dry_run,
+            identity,
+            default_identity,
+        )
 
     def bind_catalog(self, catalog: VarCatalog) -> None:
         """Use this catalog when a kind file is chosen."""
@@ -984,14 +1469,19 @@ class KindFiles:
         self._winners[search] = table
         return table
 
+    def identity_for(self, rule: str) -> str:
+        """The first record_identity step for this match rule."""
+        return self._identity.get(rule, self._default_identity)
+
     def cells_for(
         self,
         kind: str,
         input_dir: Path,
         relative: str,
         match: FileMatch,
+        digest: str,
     ) -> KindRow:
-        """Return the literal cells for one file. auto and always record a missing path."""
+        """Return the literal cells for one file. auto and always record the file."""
         if self._mode == KIND_MODE_DISABLED:
             return KindRow(None, {})
         table = self.open_table(
@@ -1001,18 +1491,25 @@ class KindFiles:
         )
         if table is None:
             return KindRow(None, {})
-        cells = self._literals(table.rows.get(relative, {}), match, relative)
+        identity = self.identity_for(match.rule)
+        cells = self._literals(
+            table.cells_for_identity(relative, digest, identity),
+            match,
+            relative,
+        )
         if self._mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
-            table.ensure(relative)
+            table.note(relative, digest, identity, match.index)
         return KindRow(str(table.path), cells)
 
     def commit(self) -> None:
         """Write queued rows once. A failed resolve never reaches this."""
         writable = self._mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS)
-        for table in self._tables.values():
-            if writable:
-                table.sync_schema_columns(self._dry_run, self._logger)
-            table.commit(self._dry_run, self._logger)
+        tables = list(self._tables.values())
+        if writable:
+            for table in tables:
+                table.prepare_identity(self._logger)
+        for table in tables:
+            table.commit(self._dry_run, self._logger, writable=writable)
 
     def _find_table(self, kind: str, input_dir: Path, *, create: bool) -> KindTable | None:
         if not self._templates:

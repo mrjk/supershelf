@@ -1,5 +1,6 @@
 """data feed, data prune, and data show."""
 
+import hashlib
 import io
 import json
 import sqlite3
@@ -306,7 +307,9 @@ glob = "**"
     assert row["_DATE_"] == "2026-04-25"
     assert "PATH" == next(iter(row))
     header = (tmp_path / "invoice.csv").read_text(encoding="utf-8").splitlines()[0]
-    assert "SHA" not in header.split(",")
+    names = header.split(",")
+    assert "SHA" in names
+    assert "_SHA_" in names
     assert header.split(",").count("DATE") == 0
 
 
@@ -932,3 +935,70 @@ glob = "**"
     assert (tmp_path / "profile.work.sqlite").exists() is False
     cache = json.loads((tmp_path / "profile.work.cache").read_text(encoding="utf-8"))
     assert "Bank2000" in json.dumps(cache)
+
+
+def test_prune_missing_lists_the_row_and_follows_the_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    same = b"same-bytes"
+    other = b"other-bytes"
+    same_sha = hashlib.sha256(same).hexdigest()
+    other_sha = hashlib.sha256(other).hexdigest()
+    _profile(
+        tmp_path,
+        _FEED.replace("[config]\n", '[config]\nrecord_identity = "hash"\n'),
+        {"new.pdf": same},
+    )
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        "PATH,SHA,vendor\n"
+        f"old.pdf,{same_sha},Kept\n"
+        f"gone.pdf,{other_sha},Gone\n",
+        encoding="utf-8",
+    )
+
+    _dispatch(["data", "prune", "--missing", "--force"])
+
+    rows = _cells(kind)
+    assert [row["PATH"] for row in rows] == ["old.pdf"]
+    assert rows[0]["vendor"] == "Kept"
+    err = capsys.readouterr().err
+    assert f"drop gone.pdf SHA {other_sha}, user cells" in err
+    assert "drop old.pdf" not in err
+
+
+def test_prune_missing_keeps_the_live_hash_when_the_path_is_shared(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    live = b"live-bytes"
+    live_sha = hashlib.sha256(live).hexdigest()
+    old_sha = "b" * 64
+    _profile(
+        tmp_path,
+        _FEED.replace("[config]\n", '[config]\nrecord_identity = "hash"\n'),
+        {"a.pdf": live},
+    )
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        "PATH,SHA,vendor\n"
+        f"a.pdf,{old_sha},Old\n"
+        f"a.pdf,{live_sha},Kept\n",
+        encoding="utf-8",
+    )
+
+    _dispatch(["data", "prune", "--missing", "--force"])
+
+    rows = _cells(kind)
+    assert [(row["PATH"], row["SHA"], row["vendor"]) for row in rows] == [
+        ("a.pdf", live_sha, "Kept")
+    ]
+    err = capsys.readouterr().err
+    assert f"drop a.pdf SHA {old_sha}, user cells" in err
+    assert f"drop a.pdf SHA {live_sha}" not in err
+

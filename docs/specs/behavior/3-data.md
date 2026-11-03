@@ -38,11 +38,15 @@ Behavior. Index: [README](../README.md).
 - A new CSV column is appended on the right. Feed does not reorder columns.
   TOML and YAML append a new key and keep the existing key order.
 - The stored cell is the display string. A float stays 12.50. A bool stays true or false.
-  scan vars in auto and always must not rewrite existing cell text.
+  scan vars in auto and always must not rewrite a var cell, a __date__ cell, or a feed cell.
+  It may fill or replace SHA, and it may rewrite PATH, under 2.3.2.
   Feed and prune do rewrite the file. Values that were not selected stay.
+  A full rewrite writes a temporary file in the same directory and replaces the kind file.
+  A crash keeps the original.
   CSV quoting and column adds may change bytes.
-- Two inputs that share one kind file and the same relative path:
+- Two inputs that share one kind file and the same row identifier:
   if the selected values differ, stop and name both inputs. Do not pick one.
+  Path identity shares the relative path. Hash identity shares the SHA.
 - A mandatory var that is still unset stops the command before any write, same as scan vars.
 - Duplicate path rows: update the first, leave the later row, and keep the warning from 2.3.2.
   A rewrite must not drop that later row.
@@ -134,7 +138,11 @@ Dry run. `data feed --dry-run` prints the summary and does not create `cache_fil
   Other date vars stay YYYY-MM-DD. The kind-file format applies to `__date__` only, as in 2.3.2.
 - An unset var does not blank a cell and does not add an empty cell.
 - A missing feed column is appended on the right. TOML and YAML append the key.
-  A matched path with no row is added when a cell is written.
+  The row is the kind-file row for this file's identifier. 2.3.2.
+  Feed does not rewrite PATH or SHA on a row that already exists.
+  A matched file with no row is added when a cell is written. The new row sets PATH and SHA.
+  Several live files that share a digest, whose first step is hash, and that have no row:
+  do not pick a path and do not add a row. One warning names the digest and every path.
   Other columns and other rows stay.
 - CSV column rules from 2.3.2 still apply.
   A name that is not a legal feed column is left out of CSV and reported.
@@ -178,7 +186,13 @@ Reserved name. A var named `path`, `sha`, or `date` is written to `_PATH_`, `_SH
   With --clear, each file is left empty, so the other purges do not change that result.
 - --force skips the prompt.
 - The prompt names which purges are enabled, lists the files, and gives the row and column counts.
-  Same --force, terminal, and --dry-run rules as data feed.
+  --missing lists every row that would be dropped before the question: the path, the SHA when set,
+  and whether any user cell is non-empty.
+  --clear names each file and its row count before emptying it.
+  No row is deleted without that list.
+  --force skips the question and still prints the same list before the write.
+  --dry-run prints the list and writes nothing.
+  Same terminal rules as data feed.
 
 ### Purges
 
@@ -186,13 +200,21 @@ Reserved name. A var named `path`, `sha`, or `date` is written to `_PATH_`, `_SH
   Drop a column or key that is not in that kind's schema and whose cells are all empty.
   An empty schema column stays. A non-empty extra column stays. One filled cell keeps the column.
   A feed column is an extra column. An empty one is dropped. One filled cell keeps it.
+  SHA is an identity column. An empty SHA stays. It is not an empty-field drop.
   CSV drops the column. TOML and YAML omit the key.
 - --missing:
-  Drop a kind-file row whose path is not a matched file of that kind in this scan.
+  Drop a kind-file row whose identifier is not a matched file of that kind in this scan.
+  This does not retarget a path.
+  A row is kept when its path is a live file of that kind whose first step is path,
+  or its SHA is a live file of that kind whose first step is hash.
+  An empty SHA is not a live hash. A hash-identity rename is kept, including when the stored path is gone,
+  until scan vars rewrites that path. A path-identity rename is dropped.
   This is not document presence missing. It does not delete a document, an event, or a hash.
   A document can stay missing or unmatched in the database after its kind-file row is gone.
-  A file that moved to another kind is dropped from the old kind file.
-  Two inputs that share one kind file keep the row when either input still matches that path for that kind.
+  A file that moved to another kind is dropped from the old kind file when its identifier is not still live there.
+  Two inputs that share one kind file keep the row when either input still matches that identifier for that kind.
+  --missing without --clear reads sha256 for the walk. The other purges do not.
+  --clear does not read sha256. With --clear, the file is left empty, so the other purges do not change that result.
 - --clear:
   Rewrite each existing kind file with no rows. The file stays.
   CSV keeps its header. TOML and YAML keep an empty document.
@@ -205,7 +227,11 @@ Prune default. A column `note` is not in the schema and every cell is empty. No 
 
 Prune flags. `--missing` does not also drop empty columns. `--empty-fields` does not also drop missing rows. `--all` includes `--clear`, so the kind file ends with no rows. The database rows stay.
 
-Missing word. `--missing` drops a kind-file row for a path that is not matched as that kind. The document row stays, including when its presence is `missing`.
+Missing word. `--missing` drops a kind-file row whose identifier is not matched as that kind. The prompt names that row before the delete. The document row stays, including when its presence is `missing`.
+
+Hash rename. The first step is hash. The file moved and the digest is unchanged. `--missing` keeps the row, including when the stored path is gone. `scan vars` rewrites the path.
+
+Path rename. The first step is path. The file moved. `--missing` drops the old path and names it. The new path is not added by prune.
 
 ## 3.4 data show
 
