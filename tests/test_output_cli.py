@@ -171,9 +171,31 @@ def test_new_file_stops_before_any_write(
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run"])
     assert caught.value.code == 1
-    error = capsys.readouterr().err
-    assert "record status is new" in error
-    assert "Run record status, then record run." in error
+    captured = capsys.readouterr()
+    assert "write" not in captured.out
+    assert "record status is new" in captured.err
+    assert "This file is not recorded." in captured.err
+    assert "Run record status, then record run." in captured.err
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+    assert (tmp_path / "output").exists() is False
+
+
+def test_preview_of_a_new_file_prints_the_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(tmp_path)
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["output", "preview"])
+    assert caught.value.code == 1
+    captured = capsys.readouterr()
+    assert "write" in captured.out
+    assert "a.pdf" in captured.out
+    assert "This file is not recorded." in captured.err
+    assert "record status is new" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "output").exists() is False
 
@@ -336,7 +358,8 @@ def test_other_document_is_not_taken(
     assert caught.value.code == 1
     error = capsys.readouterr().err
     assert "shared.pdf" in error
-    assert "document" in error
+    assert "a.pdf" in error
+    assert "b.pdf" in error
     dest = tmp_path / "output" / "books" / "shared.pdf"
     assert dest.read_bytes() == b"bank-2000"
 
@@ -521,17 +544,28 @@ def test_refresh_is_allowed_and_vars_stops(
     assert "write" in capsys.readouterr().out
     capsys.readouterr()
     path = tmp_path / "profile.work.toml"
-    path.write_text(
-        path.read_text(encoding="utf-8").replace("Bank2000", "Bank2001"),
-        encoding="utf-8",
+    text = path.read_text(encoding="utf-8").replace("Bank2000", "Bank2001")
+    text = text.replace(
+        'path = "{{ __config__.root_dir }}/output/books"\n',
+        'path = "{{ __config__.root_dir }}/output/books"\n'
+        'layout = "{{ vendor }}/{{ __file__.name }}"\n',
     )
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["output", "preview"])
+    assert caught.value.code == 1
+    preview = capsys.readouterr()
+    assert "Bank2001/a.pdf" in preview.out
+    assert 'vendor was "Bank2000", now "Bank2001".' in preview.err
+    assert (tmp_path / "output").exists() is False
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run"])
     assert caught.value.code == 1
-    error = capsys.readouterr().err
-    assert "record status is vars" in error
-    assert "Kind, rule, or variables differ from the stored document." in error
-    assert "Run record status, then record run." in error
+    error = capsys.readouterr()
+    assert "Bank2001/a.pdf" not in error.out
+    assert "record status is vars" in error.err
+    assert 'vendor was "Bank2000", now "Bank2001".' in error.err
+    assert "if those live values are the ones you want." in error.err
     assert (tmp_path / "output").exists() is False
 
 

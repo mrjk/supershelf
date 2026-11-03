@@ -14,8 +14,15 @@ class OutputPreviewCommand(ListViewMixin, Parser):
 
     path = kept_path()
 
-    def cli_run(self, config=None, profile=None, path=None, **_):
-        return OutputSession.load(config, profile).preview(path)
+    def cli_run(self, config=None, profile=None, path=None, format=None, **_):
+        rows, stale = OutputSession.load(config, profile).preview(path)
+        if not stale:
+            return rows
+        if format:
+            ListView().render(rows, format=format)
+        else:
+            ListView().render(rows)
+        raise SystemExit(1)
 
 
 class OutputRunCommand(ListViewMixin, Parser):
@@ -24,7 +31,9 @@ class OutputRunCommand(ListViewMixin, Parser):
     path = kept_path()
 
     def cli_run(self, config=None, profile=None, path=None, dry_run=False, format=None, **_):
-        rows, failed = OutputSession.load(config, profile).run(path, dry_run=bool(dry_run))
+        rows, failed, stale = OutputSession.load(config, profile).run(path, dry_run=bool(dry_run))
+        if stale:
+            raise SystemExit(1)
         if failed:
             if format:
                 ListView().render(rows, format=format)

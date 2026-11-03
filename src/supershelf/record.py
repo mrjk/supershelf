@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Protocol
 
 from supershelf.common import WordChoice
 from supershelf.constants import (
@@ -261,6 +262,93 @@ class LiveFile:
     def stored(self) -> StoredFile:
         """Facts to write if this file is the document's new state."""
         return StoredFile.from_facts(self)
+
+
+class DriftFacts(Protocol):
+    """Stored or live facts that can make a record status `vars`."""
+
+    match_kind: str
+    rule: str
+    vars_json: str
+    file_dir: str
+    file_name: str
+    file_stem: str
+    file_ext: str
+
+
+def document_drift(stored: DriftFacts, live: DriftFacts) -> list[str]:
+    """Clauses for kind, rule, variables, and file fields that differ.
+
+    Variable text is the display string. An empty list means those facts match.
+    """
+    clauses: list[str] = []
+    if stored.match_kind != live.match_kind:
+        clauses.append(
+            f"kind was {_quoted(stored.match_kind)}, now {_quoted(live.match_kind)}."
+        )
+    if stored.rule != live.rule:
+        clauses.append(f"rule was {_quoted(stored.rule)}, now {_quoted(live.rule)}.")
+    clauses.extend(_variable_drift(stored.vars_json, live.vars_json))
+    for label in ("file_dir", "file_name", "file_stem", "file_ext"):
+        old = getattr(stored, label)
+        new = getattr(live, label)
+        if old != new:
+            clauses.append(f"{label} was {_quoted(old)}, now {_quoted(new)}.")
+    return clauses
+
+
+def _quoted(text: str) -> str:
+    return json.dumps(text)
+
+
+def _variable_drift(stored_raw: str, live_raw: str) -> list[str]:
+    stored = _var_object(stored_raw)
+    live = _var_object(live_raw)
+    if stored is None or live is None:
+        if stored_raw != live_raw:
+            return ["variables changed."]
+        return []
+    clauses: list[str] = []
+    for name in sorted(set(stored) | set(live)):
+        if name not in stored:
+            shown = _quoted(_display_text(live[name]))
+            clauses.append(f"{name} is {shown} and was not stored.")
+            continue
+        if name not in live:
+            shown = _quoted(_display_text(stored[name]))
+            clauses.append(f"{name} was {shown} and is no longer set.")
+            continue
+        old = stored[name]
+        new = live[name]
+        if old == new:
+            continue
+        old_display = _display_text(old)
+        new_display = _display_text(new)
+        if old_display != new_display:
+            clauses.append(f"{name} was {_quoted(old_display)}, now {_quoted(new_display)}.")
+        else:
+            clauses.append(
+                f"{name} is still {_quoted(old_display)} but its stored type or source changed."
+            )
+    if not clauses and stored_raw != live_raw:
+        clauses.append("variables changed.")
+    return clauses
+
+
+def _var_object(raw: str) -> dict[str, object] | None:
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _display_text(entry: object) -> str:
+    if isinstance(entry, dict) and isinstance(entry.get("display"), str):
+        return entry["display"]
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
@@ -658,15 +746,7 @@ class RecordPlan:
             )
 
     def _stay(self, document: DocumentRow, live: LiveFile) -> str:
-        facts = (
-            document.match_kind != live.match_kind
-            or document.rule != live.rule
-            or document.vars_json != live.vars_json
-            or document.file_dir != live.file_dir
-            or document.file_name != live.file_name
-            or document.file_stem != live.file_stem
-            or document.file_ext != live.file_ext
-        )
+        facts = bool(document_drift(document, live))
         clock = (
             document.mtime != live.mtime
             or document.ctime != live.ctime

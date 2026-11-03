@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import json
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -19,11 +21,12 @@ from supershelf.constants import (
     EVENT_VARS,
     KEY_OUTPUT_MODULES,
     KEY_OUTPUTS,
+    LOGGER_NAME,
     STATUS_DUPLICATE,
     STATUS_REFRESH,
     STATUS_UNCHANGED,
 )
-from supershelf.database import EventRow, OutputPrevious, ShelfDatabase
+from supershelf.database import DocumentRow, EventRow, OutputPrevious, ShelfDatabase
 from supershelf.errors import (
     OutputConfigError,
     OutputResolveError,
@@ -32,7 +35,7 @@ from supershelf.errors import (
     VarResolveError,
 )
 from supershelf.profile import ShelfProfile
-from supershelf.record import LinkedMatch, RecordSession
+from supershelf.record import LinkedMatch, RecordSession, document_drift
 from supershelf.scan.match import Matcher
 from supershelf.template.environment import is_template
 from supershelf.vars import VarPlan
@@ -45,15 +48,12 @@ SHARED_KEYS = frozenset({"name", "driver", "kinds", "when"})
 _PASSING = frozenset({STATUS_UNCHANGED, STATUS_REFRESH})
 _APPLY = frozenset({STATUS_WRITE, STATUS_REPLACE})
 _RECORD_TIP = "Run record status, then record run."
-_RECORD_GATE = {
-    EVENT_NEW: f"This file is not recorded. {_RECORD_TIP}",
-    EVENT_VARS: f"Kind, rule, or variables differ from the stored document. {_RECORD_TIP}",
-    EVENT_GENERATION: f"The file bytes changed. {_RECORD_TIP}",
-    EVENT_MOVE: f"The file moved. {_RECORD_TIP}",
-    EVENT_MISSING: f"The recorded file is missing from the walk. {_RECORD_TIP}",
-    EVENT_PRESENT: f"The file is back and is not stored as present. {_RECORD_TIP}",
-    EVENT_UNMATCHED: f"No rule matches this file. {_RECORD_TIP}",
-}
+_VARS_TIP = (
+    "Run record status, then record run, if those live values are the ones you want. "
+    "If a live value is wrong, fix the match rule, the kind file, or the profile, then record again."
+)
+_UNMATCHED_TIP = "Change the match rule so this path matches, then run record status and record run."
+_LOGGER = logging.getLogger(LOGGER_NAME)
 _WHEN_TRUE = frozenset({"true", "yes", "1"})
 _WHEN_FALSE = frozenset({"false", "no", "0"})
 
@@ -128,7 +128,7 @@ class OutputContext:
 
     shelf: ShelfProfile
     match: LinkedMatch
-    document_id: int
+    document_id: int | None
     events: list[EventRow]
     output_name: str
     driver_name: str
@@ -436,20 +436,75 @@ class OutputProfile:
             ) from exc
 
 
-def _record_status_error(
+def record_status_message(
     profile: OutputProfile,
     match: LinkedMatch,
-    advice: str | None = None,
-) -> OutputResolveError:
-    """Stop output until record run accepts this live status."""
+    document: DocumentRow | None,
+) -> str:
+    """One stale file: where it is, what changed, and how to fix it."""
     status = match.row.status
-    if advice is None:
-        advice = _RECORD_GATE.get(status, _RECORD_TIP)
+    index = match.row.file.input_index
+    return (
+        f"Profile {profile.shelf.name} input {index} "
+        f"{match.found.path} record status is {status}. "
+        f"{_status_facts(status, match, document)} {_status_fix(status)}"
+    )
+
+
+def _status_facts(status: str, match: LinkedMatch, document: DocumentRow | None) -> str:
+    if status == EVENT_NEW or document is None:
+        return _short_fact(status)
+    if status == EVENT_VARS:
+        clauses = document_drift(document, match.row.file)
+        if not clauses:
+            return "Kind, rule, or variables differ from the stored document."
+        return " ".join(clauses)
+    if status == EVENT_GENERATION:
+        parts = [
+            "The file bytes changed.",
+            f"hash was {json.dumps(document.hash)}, now {json.dumps(match.row.file.hash)}.",
+        ]
+        parts.extend(document_drift(document, match.row.file))
+        return " ".join(parts)
+    if status == EVENT_MOVE:
+        parts = [
+            "The file moved.",
+            f"path was {json.dumps(document.path)}, now {json.dumps(match.found.path)}.",
+        ]
+        parts.extend(document_drift(document, match.row.file))
+        return " ".join(parts)
+    return _short_fact(status)
+
+
+def _short_fact(status: str) -> str:
+    facts = {
+        EVENT_NEW: "This file is not recorded.",
+        EVENT_VARS: "Kind, rule, or variables differ from the stored document.",
+        EVENT_GENERATION: "The file bytes changed.",
+        EVENT_MOVE: "The file moved.",
+        EVENT_MISSING: "The recorded file is missing from the walk.",
+        EVENT_PRESENT: "The file is back and is not stored as present.",
+        EVENT_UNMATCHED: "No rule matches this file.",
+    }
+    return facts.get(status, _RECORD_TIP)
+
+
+def _status_fix(status: str) -> str:
+    if status == EVENT_VARS:
+        return _VARS_TIP
+    if status == EVENT_UNMATCHED:
+        return _UNMATCHED_TIP
+    return _RECORD_TIP
+
+
+def _record_status_error(profile: OutputProfile, match: LinkedMatch) -> OutputResolveError:
+    """A passing status with no document id. Preview and run both stop."""
+    status = match.row.status
     index = match.row.file.input_index
     return OutputResolveError(
         f"Profile {profile.shelf.name} input {index} "
         f"{match.found.path} record status is {status}",
-        advice=advice,
+        advice=_RECORD_TIP,
     )
 
 
@@ -459,6 +514,8 @@ class OutputSession:
     def __init__(self, session: RecordSession, profiles: list[OutputProfile]) -> None:
         self.session = session
         self.profiles = profiles
+        self.notices: list[str] = []
+        self._warned: set[tuple[str, int, str]] = set()
 
     @classmethod
     def load(
@@ -473,26 +530,33 @@ class OutputSession:
         profiles = [OutputProfile.load(run.shelf) for run in session.runs]
         return cls(session, profiles)
 
-    def preview(self, path: str | None) -> list[dict[str, object]]:
-        """Every selected row. Writes nothing. A conflict row is still exit 0."""
+    def preview(self, path: str | None) -> tuple[list[dict[str, object]], bool]:
+        """Every selected row, and whether a stale record was warned. Writes nothing."""
         actions = self._actions(path)
-        return [action.row() for action in actions]
+        return [action.row() for action in actions], bool(self.notices)
 
     def run(
         self,
         path: str | None,
         *,
         dry_run: bool,
-    ) -> tuple[list[dict[str, object]], bool]:
-        """Rows except unchanged. The bool is true when a conflict row stops the run."""
+    ) -> tuple[list[dict[str, object]], bool, bool]:
+        """Rows except unchanged, a conflict stop, and a stale-record stop.
+
+        A stale record yields no rows and does not apply. The warnings are already logged.
+        """
         actions = self._actions(path)
+        if self.notices:
+            return [], False, True
         failed = any(action.status == STATUS_CONFLICT for action in actions)
         if not dry_run and not failed:
             self._apply(actions)
         shown = [action for action in actions if action.status != STATUS_UNCHANGED]
-        return [action.row() for action in shown], failed
+        return [action.row() for action in shown], failed, False
 
     def _actions(self, path: str | None) -> list[OutputAction]:
+        self.notices = []
+        self._warned = set()
         matches = self.session.sources(path)
         if path is not None and matches and all(
             match.row.status == STATUS_DUPLICATE for match in matches
@@ -517,10 +581,11 @@ class OutputSession:
     ) -> list[OutputAction]:
         with ShelfDatabase.open_read(profile.shelf.database_file) as database:
             events = database.events()
+            documents = {row.id: row for row in database.documents()}
         actions: list[OutputAction] = []
         for item in profile.items:
             for match in matches:
-                planned = self._one(profile, item, match, events)
+                planned = self._one(profile, item, match, events, documents)
                 if planned is not None:
                     actions.append(planned)
         return actions
@@ -531,6 +596,7 @@ class OutputSession:
         item: OutputItem,
         match: LinkedMatch,
         events: list[EventRow],
+        documents: Mapping[int, DocumentRow],
     ) -> OutputAction | None:
         if match.row.status == STATUS_DUPLICATE:
             return None
@@ -553,10 +619,12 @@ class OutputSession:
                 dest="",
             )
         if match.row.status not in _PASSING:
-            raise _record_status_error(profile, match)
-        document_id = match.row.document_id
-        if document_id is None:
-            raise _record_status_error(profile, match, advice=_RECORD_TIP)
+            self._warn_stale(profile, match, documents)
+            document_id = match.row.document_id
+        else:
+            document_id = match.row.document_id
+            if document_id is None:
+                raise _record_status_error(profile, match)
         context = OutputContext(
             shelf=profile.shelf,
             match=match,
@@ -592,6 +660,24 @@ class OutputSession:
                 advice="Use true, false, yes, no, 1, or 0.",
             )
         return cast
+
+    def _warn_stale(
+        self,
+        profile: OutputProfile,
+        match: LinkedMatch,
+        documents: Mapping[int, DocumentRow],
+    ) -> None:
+        """One warning per live file, shared by every output item that selects it."""
+        key = (profile.shelf.name, match.row.file.input_index, match.found.path)
+        if key in self._warned:
+            return
+        self._warned.add(key)
+        document = None
+        if match.row.document_id is not None:
+            document = documents.get(match.row.document_id)
+        message = record_status_message(profile, match, document)
+        self.notices.append(message)
+        _LOGGER.warning("%s", message)
 
     @staticmethod
     def _one_dest(actions: list[OutputAction]) -> None:

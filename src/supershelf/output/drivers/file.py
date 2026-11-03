@@ -164,11 +164,15 @@ class FileOutputDriver(OutputDriver):
         prior = self._prior(context.events, context.document_id, context.output_name)
         claim = self._claim(context.events, dest_text)
         if claim is not None and (
-            claim.document_id != context.document_id or claim.output_name != context.output_name
+            context.document_id is None
+            or claim.document_id != context.document_id
+            or claim.output_name != context.output_name
         ):
+            profile = context.shelf.name
+            live = context.match.found.path
             raise OutputResolveError(
-                f"Destination {dest_text} belongs to document {claim.document_id} "
-                f"output {claim.output_name} and document {context.document_id} "
+                f"Destination {dest_text} belongs to profile {profile} {claim.path} "
+                f"output {claim.output_name} and profile {profile} {live} "
                 f"output {context.output_name}",
                 advice="Choose another layout. overwrite cannot take a path recorded for someone else.",
             )
@@ -306,7 +310,9 @@ class FileOutputDriver(OutputDriver):
             raise OutputResolveError(str(exc), advice=exc.advice) from exc
 
     @staticmethod
-    def _prior(events: list[EventRow], document_id: int, output_name: str) -> EventRow | None:
+    def _prior(events: list[EventRow], document_id: int | None, output_name: str) -> EventRow | None:
+        if document_id is None:
+            return None
         found = [
             event
             for event in events
