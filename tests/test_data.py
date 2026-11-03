@@ -120,13 +120,9 @@ type = "text"
 [vars_schema.issued]
 type = "date"
 
-[vars_schema.__date__]
-desc = "Document date"
-
 [default_vars]
 vendor = "Bank2000"
 issued = "2026-04-25"
-__date__ = "2026-04-25"
 
 [[inputs]]
 path = "inbox"
@@ -147,7 +143,7 @@ def test_empty_cell_is_filled_and_filled_cell_stays(
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
     kind.write_text(
-        "PATH,vendor,issued,__date__,owner\na.pdf,Bank2000,,,Clerk2000\n",
+        "PATH,vendor,issued,owner\na.pdf,Bank2000,,Clerk2000\n",
         encoding="utf-8",
     )
     _dispatch(["scan", "feeds"])
@@ -159,9 +155,7 @@ def test_empty_cell_is_filled_and_filled_cell_stays(
     assert rows[0]["vendor"] == "Bank2000"
     assert rows[0]["VENDOR"] == "Bank2000"
     assert rows[0]["issued"] == ""
-    assert rows[0]["ISSUED"] == "2026-04-25"
-    assert rows[0]["__date__"] == ""
-    assert rows[0]["__DATE__"] == "25/04/2026"
+    assert rows[0]["ISSUED"] == "25/04/2026"
     assert rows[0]["owner"] == "Clerk2000"
     assert "OWNER" not in rows[0]
     assert (tmp_path / "profile.work.sqlite").exists() is False
@@ -193,15 +187,13 @@ def test_date_round_trip_uses_the_kind_format(
     isolate_env(monkeypatch, tmp_path)
     _profile(tmp_path, _FEED)
     kind = tmp_path / "invoice.csv"
-    kind.write_text("PATH,issued,__date__\na.pdf,,\n", encoding="utf-8")
+    kind.write_text("PATH,issued\na.pdf,\n", encoding="utf-8")
 
     _dispatch(["scan", "feeds"])
 
     row = _cells(kind)[0]
-    assert row["__date__"] == ""
-    assert row["__DATE__"] == "25/04/2026"
     assert row["issued"] == ""
-    assert row["ISSUED"] == "2026-04-25"
+    assert row["ISSUED"] == "25/04/2026"
 
 
 def test_equal_uppercase_cell_is_not_a_change(
@@ -320,13 +312,14 @@ glob = "**"
     row = _cells(tmp_path / "invoice.csv")[0]
     assert row["_PATH_"] == "rel/a.pdf"
     assert row["_SHA_"] == "abc"
-    assert row["_DATE_"] == "2026-04-25"
+    assert row["DATE"] == "2026-04-25"
+    assert "_DATE_" not in row
     assert "PATH" == next(iter(row))
     header = (tmp_path / "invoice.csv").read_text(encoding="utf-8").splitlines()[0]
     names = header.split(",")
     assert "SHA" in names
     assert "_SHA_" in names
-    assert header.split(",").count("DATE") == 0
+    assert names.count("DATE") == 1
 
 
 def test_path_filter_does_not_drop_rows_outside_the_selection(
@@ -547,7 +540,7 @@ kind_overrides_date_format = "%d/%m/%Y"
 
 [default_vars]
 vendor = "Bank2000"
-__date__ = "2026-04-25"
+issued = "25/04/2026"
 
 [[inputs]]
 path = "inbox"
@@ -563,9 +556,9 @@ glob = "**"
 
     row = _cells(tmp_path / "note.csv")[0]
     assert row["VENDOR"] == "Bank2000"
-    assert row["__DATE__"] == "25/04/2026"
+    assert row["ISSUED"] == "25/04/2026"
     assert row.get("vendor", "") == ""
-    assert row.get("__date__", "") == ""
+    assert row.get("issued", "") == ""
 
 
 def test_feed_does_not_write_documents(

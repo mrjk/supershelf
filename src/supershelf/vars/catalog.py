@@ -18,9 +18,7 @@ from supershelf.constants import (
     KEY_DEFAULT_VARS,
     KEY_KIND_SCHEMA,
     KEY_VARS_SCHEMA,
-    TYPE_DATE,
     TYPE_TEXT,
-    VAR_DATE,
 )
 from supershelf.errors import VarConfigError
 from supershelf.template.environment import is_template
@@ -33,10 +31,6 @@ from supershelf.vars.spec import (
     check_var_name,
     reserved_var_name,
 )
-
-_DATE_LOCKED_KEYS = frozenset({"type", "internal"})
-_DATE_KEYS = frozenset({"desc", "unit", "mandatory", "default", "validation"})
-
 
 class KindSchema:
     """One kind: a description, local names, and optional feed settings."""
@@ -220,7 +214,7 @@ class KindSchemaSpec(BaseModel):
                 raise VarConfigError(
                     f"{label}.schema must be a string",
                     advice=(
-                        "Point schema at a vars_schema name, or at __date__. "
+                        "Point schema at a vars_schema name. "
                         "Leave it empty to use the local name."
                     ),
                 )
@@ -338,14 +332,14 @@ class KindCatalog:
         if not isinstance(ref, str) or ref == "":
             raise VarConfigError(
                 f"{label} needs schema",
-                advice="Point schema at a vars_schema name, or at __date__.",
+                advice="Point schema at a vars_schema name.",
             )
         if reserved_var_name(ref):
             raise VarConfigError(
                 f"{label} schema {ref} is reserved",
-                advice="Point schema at a vars_schema name, or at __date__.",
+                advice="Point schema at a vars_schema name.",
             )
-        if ref != VAR_DATE and ref not in declared:
+        if ref not in declared:
             raise VarConfigError(
                 f"{label} schema {ref} is not declared",
                 advice="Add that name to vars_schema first.",
@@ -454,8 +448,18 @@ class VarCatalog:
             return catalog_spec.candidates
         return None
 
+    def type_of(self, kind: str, name: str) -> str:
+        """Effective type. An unknown name is text, and this does not store a spec."""
+        overlay = self._kinds.var(kind, name)
+        if overlay is not None:
+            return overlay.type
+        found = self._specs.get(name)
+        if found is not None:
+            return found.type
+        return TYPE_TEXT
+
     def domain_specs(self) -> tuple[tuple[str, VarSpec], ...]:
-        """Declared user names. Locked internals are left out. __date__ stays when declared."""
+        """Declared user names. A name that starts with __ is left out."""
         rows: list[tuple[str, VarSpec]] = []
         for name in self._declared:
             if reserved_var_name(name):
@@ -493,7 +497,7 @@ class VarCatalog:
         names: Iterable[str] = (),
     ) -> VarCatalog:
         """Build the catalog before the walk, including kind_schema overlays."""
-        specs = cls._builtins()
+        specs: dict[str, VarSpec] = {}
         raw_schema = document.get(KEY_VARS_SCHEMA)
         declared: list[str] = []
         if raw_schema is not None:
@@ -525,10 +529,6 @@ class VarCatalog:
                         advice="Use a catalog name or a local name of this kind.",
                     )
 
-    @staticmethod
-    def _builtins() -> dict[str, VarSpec]:
-        return {VAR_DATE: VarSpec(type=TYPE_DATE, internal=False, mandatory=False)}
-
     @classmethod
     def _load_schema(
         cls,
@@ -550,10 +550,6 @@ class VarCatalog:
                     f"{label} must be a mapping",
                     advice="Set type, desc, unit, mandatory, default, or validation.",
                 )
-            if name == VAR_DATE:
-                specs[name] = cls._overlay_builtin(name, specs[name], body, compile_source)
-                declared.append(str(name))
-                continue
             if str(name).startswith("__"):
                 raise VarConfigError(
                     f"{label} is not a supershelf variable",
@@ -562,41 +558,6 @@ class VarCatalog:
             specs[str(name)] = cls._user_spec(str(name), body, compile_source)
             declared.append(str(name))
         return declared
-
-    @staticmethod
-    def _overlay_builtin(
-        name: str,
-        base: VarSpec,
-        raw: Mapping[str, Any],
-        compile_source: Callable[[str], None] | None,
-    ) -> VarSpec:
-        label = f"vars_schema.{name}"
-        allowed = _DATE_KEYS
-        forbidden = _DATE_LOCKED_KEYS
-        advice = "On __date__, set desc, unit, mandatory, default, or validation."
-        blocked = [key for key in forbidden if key in raw]
-        if blocked:
-            joined = ", ".join(blocked)
-            raise VarConfigError(
-                f"{label} cannot set {joined}",
-                advice=advice,
-            )
-        unknown = [str(key) for key in raw if key not in allowed]
-        if unknown:
-            joined = ", ".join(unknown)
-            raise VarConfigError(
-                f"{label} has unknown keys: {joined}",
-                advice=advice,
-            )
-        data = base.model_dump(exclude_unset=True)
-        for key, value in raw.items():
-            data[str(key)] = value
-        return VarSpec.load(
-            data,
-            label=label,
-            from_schema=True,
-            compile_source=compile_source,
-        )
 
     @staticmethod
     def _user_spec(

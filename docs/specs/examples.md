@@ -13,7 +13,7 @@ config:
   profile: default # Can be overriden if profile is not set in filename.
   default_date_format: '%Y-%m-%d' # Shows mtime and ctime in scan files. Not templated.
   kind_overrides_mode: auto # 2.3.2. auto appends when the file exists. manual only reads. always creates and appends. disabled ignores kind files.
-  kind_overrides_date_format: '%d/%m/%Y' # Optional. Kind-file __date__ cells. Omitted uses default_date_format. Stored as YYYY-MM-DD.
+  kind_overrides_date_format: '%d/%m/%Y' # Optional. Kind-file and feed cells whose type is date. Omitted uses default_date_format. Stored as YYYY-MM-DD.
   kind_overrides_sep: ';' # Optional. Kind-file CSV separator. Omitted uses a comma. YAML and TOML ignore it.
   root_dir: "{{ __profile__.dir }}" # Default. Directory of the config file.
 
@@ -72,8 +72,7 @@ inputs:
 # The same name in both places is a config error.
 # doc_type is not listed, so its default_vars template is the whole default.
 # internal is omitted. true on a name supershelf does not manage is a config error.
-# On __date__, type and internal stay fixed. desc, unit, mandatory, and validation may be set.
-# Do not set default on __date__ here: default_vars already owns that slot.
+# A name that starts with __ is a config error.
 vars_schema:
   vendor:
     type: text
@@ -108,6 +107,7 @@ vars_schema:
       allowed: [true, false]
   issued:
     type: date
+    desc: Document date
     validation:
       ge: "2020-01-01"
       lt: "2030-01-01"
@@ -129,12 +129,6 @@ vars_schema:
     desc: Payer
   employee_name:
     type: text
-  __date__:
-    desc: Document date
-    unit: day
-    mandatory: false
-    validation:
-      ge: "2000-01-01"
 
 # Architecture 1.9. Optional. A kind with no entry keeps the profile catalog.
 # A string names a vars_schema entry. Null or "" uses the local name.
@@ -151,7 +145,7 @@ kind_schema:
     feeds:
       - vendor
       - amount
-      - __date__
+      - issued
     vars_schema:
       vendor: vendor
       owner: ""
@@ -159,7 +153,7 @@ kind_schema:
       paid:
         schema: paid
         mandatory: false
-      __date__:
+      issued:
   payslip:
     desc: A payroll slip
     vars_schema:
@@ -182,7 +176,8 @@ default_vars:
 
   # Fallback list. The first candidate that renders wins.
   # regex_time_var reads the group date, not this list.
-  __date__:
+  # Do not also set vars_schema.issued.default.
+  issued:
     - '{{regex_time_var(date, "%Y%m%d")}}'
     - '{{ meta("pdf", "creation_date") }}'
     - '{{ meta("pdf", "modification_date") }}'
@@ -259,7 +254,7 @@ match_rules:
 
     # Specified in 2.3.1. A string is one template. A list is tried in order.
     # {{account}} reads the regex group when no earlier layer set account.
-    # {{__date__}} reads the __date__ string kept by the earlier layer.
+    # {{issued}} reads the issued string kept by the earlier layer.
     vars:
       # Simple static vars
       key1: 'val1'
@@ -273,9 +268,9 @@ match_rules:
         - '{{regex_replace(account, "[0-9]{4}$", "")}}'
       account3:
         - '{{account}}-{{owner}}'
-      __date__: # Try this pattern's date first, else keep the earlier __date__ string.
+      issued: # Try this pattern's date first, else keep the earlier issued string.
         - '{{regex_time_var(date, "%Y%m%d")}}'
-        - '{{__date__}}'
+        - '{{issued}}'
 
   # Payslip files use kind_schema local names company and employee.
   - name: payroll
@@ -298,7 +293,7 @@ match_rules:
 outputs:
   - name: books
     path: "{{ __config__.root_dir }}/output/books" # Profile path template. Relative paths resolve from __config__.root_dir.
-    layout: "{{ __date__.Y }}/{{ __date__.m }}/{{ vendor }}.{{ __file__.ext }}" # Jinja. Omitted layout is {{ __file__.path }}.
+    layout: "{{ issued.Y }}/{{ issued.m }}/{{ vendor }}.{{ __file__.ext }}" # Jinja. Omitted layout is {{ __file__.path }}.
     operation: copy # copy, symlink, or hardlink. Omitted is copy.
     on_conflict: error # error, skip, or overwrite. A file this profile did not write.
     kinds:
@@ -320,18 +315,18 @@ outputs:
 
 ## Kind files
 
-2.3.2. Not part of the profile above. Same two rows in each format. `.yml` is the yaml text. The profile example sets `kind_overrides_sep` to `;`. Omitted, the separator is a comma. `__date__` is written with `kind_overrides_date_format` (`%d/%m/%Y`). Stored values are `2026-04-25` and `2026-01-15`. An empty cell is absent.
+2.3.2. Not part of the profile above. Same two rows in each format. `.yml` is the yaml text. The profile example sets `kind_overrides_sep` to `;`. Omitted, the separator is a comma. `issued` is type `date`, so the cell is written with `kind_overrides_date_format` (`%d/%m/%Y`). Stored values are `2026-04-25` and `2026-01-15`. An empty cell is absent.
 
-`invoice` lists local names, so a new CSV header is `PATH;SHA` plus those names in kind_schema order: `vendor`, `owner`, `amount`, `paid`, `__date__`. The file below already has columns. Missing schema names are appended on the right. Columns the schema does not name stay.
+`invoice` lists local names, so a new CSV header is `PATH;SHA` plus those names in kind_schema order: `vendor`, `owner`, `amount`, `paid`, `issued`. The file below already has columns. Missing schema names are appended on the right. Columns the schema does not name stay.
 
-`payslip` lists `company` and `employee` only. `__date__` is not in that entry, so a new CSV header is `PATH;SHA;company;employee`.
+`payslip` lists `company` and `employee` only, so a new CSV header is `PATH;SHA;company;employee`.
 
-`unsorted` has no `kind_schema` entry, so a new CSV uses the declared `vars_schema` names, including `__date__`.
+`unsorted` has no `kind_schema` entry, so a new CSV uses the declared `vars_schema` names, including `issued`.
 
 `profile.default.invoice.csv`
 
 ```csv
-PATH;SHA;__date__;vendor;owner
+PATH;SHA;issued;vendor;owner
 banking_1/REL_20260425.pdf;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;25/04/2026;Bank2000;
 Bank2000/card/CARD_1234_20211231.pdf;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;15/01/2026;;sample
 ```
@@ -345,14 +340,14 @@ sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 [rows.vars]
 vendor = "Bank2000"
-__date__ = "25/04/2026"
+issued = "25/04/2026"
 
 [[rows]]
 path = "Bank2000/card/CARD_1234_20211231.pdf"
 sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 [rows.vars]
-__date__ = "15/01/2026"
+issued = "15/01/2026"
 owner = "sample"
 ```
 
@@ -363,12 +358,12 @@ owner = "sample"
   sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   vars:
     vendor: Bank2000
-    __date__: "25/04/2026"
+    issued: "25/04/2026"
 
 - path: Bank2000/card/CARD_1234_20211231.pdf
   sha: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   vars:
-    __date__: "15/01/2026"
+    issued: "15/01/2026"
     owner: sample
 ```
 

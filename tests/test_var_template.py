@@ -41,16 +41,16 @@ def test_a_namespace_prints_its_text() -> None:
 
 def test_date_fields_follow_the_stored_format() -> None:
     environment = VarEnvironment()
-    scope = {"__date__": DateScope("2026-04-25")}
-    assert environment.render("{{ __date__ }}", scope) == "2026-04-25"
-    assert environment.render("{{ __date__.Y }}-{{ __date__.m }}/{{ __date__.d }}", scope) == (
+    scope = {"issued": DateScope("2026-04-25")}
+    assert environment.render("{{ issued }}", scope) == "2026-04-25"
+    assert environment.render("{{ issued.Y }}-{{ issued.m }}/{{ issued.d }}", scope) == (
         "2026-04/25"
     )
-    shown = {"__date__": DateScope("2026-04-25", "%d/%m/%Y")}
-    assert environment.render("{{ __date__ }}", shown) == "25/04/2026"
-    assert environment.render("{{ __date__.strftime('%Y-%m') }}", shown) == "2026-04"
+    shown = {"issued": DateScope("2026-04-25", "%d/%m/%Y")}
+    assert environment.render("{{ issued }}", shown) == "25/04/2026"
+    assert environment.render("{{ issued.strftime('%Y-%m') }}", shown) == "2026-04"
     with pytest.raises(VarCandidateError, match="non-empty"):
-        environment.render("{{ __date__.strftime('') }}", shown)
+        environment.render("{{ issued.strftime('') }}", shown)
 
 
 def test_source_is_compiled_once() -> None:

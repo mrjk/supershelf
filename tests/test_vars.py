@@ -87,16 +87,17 @@ def test_list_keeps_the_first_success(tmp_path: Path) -> None:
 
 def test_self_reference_reads_the_previous_string(tmp_path: Path) -> None:
     document = {
-        "default_vars": {"__date__": ["{{ missing }}", "2020-01-01"]},
+        "vars_schema": {"issued": {"type": "date"}},
+        "default_vars": {"issued": ["{{ missing }}", "2020-01-01"]},
         "match_rules": [
             {
                 "name": "notes",
                 "kind": "note",
                 "filename_regex": r"(?P<date>\d+)\.txt",
                 "vars": {
-                    "__date__": [
+                    "issued": [
                         '{{ regex_time_var(date, "%Y%m%d") }}',
-                        "{{ __date__ }}",
+                        "{{ issued }}",
                     ]
                 },
             }
@@ -104,13 +105,24 @@ def test_self_reference_reads_the_previous_string(tmp_path: Path) -> None:
     }
     plan = _plan(document, tmp_path)
     kept = _values(plan, file=_file("nope.txt"), match=_match("nope.txt", groups={"date": "nope"}))
-    assert kept["__date__"] == "2020-01-01"
+    assert kept["issued"] == "2020-01-01"
     parsed = _values(
         plan,
         file=_file("20211231.txt"),
         match=_match("20211231.txt", groups={"date": "20211231"}),
     )
-    assert parsed["__date__"] == "2021-12-31"
+    assert parsed["issued"] == "2021-12-31"
+
+
+def test_builtin_date_name_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(VarConfigError, match="not a supershelf variable"):
+        _plan(
+            {
+                "vars_schema": {"__date__": {"type": "date"}},
+                "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+            },
+            tmp_path,
+        )
 
 
 def test_internal_names_are_rejected(tmp_path: Path) -> None:
@@ -136,9 +148,12 @@ def test_reserved_group_name_is_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_filename_stem_does_not_set_the_document_date(tmp_path: Path) -> None:
+def test_filename_stem_does_not_set_a_date(tmp_path: Path) -> None:
     plan = _plan(
-        {"match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}]},
+        {
+            "vars_schema": {"issued": {"type": "date"}},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
         tmp_path,
     )
     file = _file("bank2000/phone/2025-07-18.pdf")
@@ -148,20 +163,21 @@ def test_filename_stem_does_not_set_the_document_date(tmp_path: Path) -> None:
         Path("/in"),
     )
     assert resolved.facts["__file__.stem"] == "2025-07-18"
-    assert "__date__" not in dict(resolved.items)
-    assert "__date__" not in _values(plan)
+    assert "issued" not in dict(resolved.items)
+    assert "issued" not in _values(plan)
 
 
 def test_missed_layer_keeps_the_previous_date(tmp_path: Path) -> None:
     plan = _plan(
         {
-            "default_vars": {"__date__": "2020-01-01"},
+            "vars_schema": {"issued": {"type": "date"}},
+            "default_vars": {"issued": "2020-01-01"},
             "match_rules": [
                 {
                     "name": "notes",
                     "kind": "note",
                     "filename_glob": "**",
-                    "vars": {"__date__": "{{ missing }}"},
+                    "vars": {"issued": "{{ missing }}"},
                 }
             ],
         },
@@ -169,24 +185,25 @@ def test_missed_layer_keeps_the_previous_date(tmp_path: Path) -> None:
         {"__config__.date_format": "%Y%m%d"},
     )
     resolved = plan.resolve(_file("20250718.pdf"), _match("20250718.pdf"), Path("/in"))
-    assert dict(resolved.items)["__date__"] == "2020-01-01"
-    assert resolved.sources["__date__"] == ("default",)
+    assert dict(resolved.items)["issued"] == "2020-01-01"
+    assert resolved.sources["issued"] == ("default",)
 
     unset = _plan(
         {
+            "vars_schema": {"issued": {"type": "date"}},
             "match_rules": [
                 {
                     "name": "notes",
                     "kind": "note",
                     "filename_glob": "**",
-                    "vars": {"__date__": ["{{ missing }}", "{{ __date__ }}"]},
+                    "vars": {"issued": ["{{ missing }}", "{{ issued }}"]},
                 }
             ],
         },
         tmp_path,
         {"__config__.date_format": "%Y%m%d"},
     )
-    assert "__date__" not in _values(
+    assert "issued" not in _values(
         unset,
         file=_file("20250718.pdf"),
         match=_match("20250718.pdf"),
@@ -196,13 +213,14 @@ def test_missed_layer_keeps_the_previous_date(tmp_path: Path) -> None:
 def test_missed_candidates_stay_unset_and_bad_literals_are_config_errors(tmp_path: Path) -> None:
     omitted = _plan(
         {
-            "default_vars": {"__date__": "{{ missing }}", "owner": "ada"},
+            "vars_schema": {"issued": {"type": "date"}},
+            "default_vars": {"issued": "{{ missing }}", "owner": "ada"},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
     )
     values = _values(omitted)
-    assert "__date__" not in values
+    assert "issued" not in values
     assert values["owner"] == "ada"
 
     missed = _plan(
@@ -235,7 +253,8 @@ def test_missed_candidates_stay_unset_and_bad_literals_are_config_errors(tmp_pat
     with pytest.raises(VarConfigError, match="cannot be cast"):
         _plan(
             {
-                "default_vars": {"__date__": ["not-a-date", "2020-01-01"]},
+                "vars_schema": {"issued": {"type": "date"}},
+                "default_vars": {"issued": ["not-a-date", "2020-01-01"]},
                 "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
             },
             tmp_path,
@@ -455,18 +474,20 @@ def test_bare_objects_print_their_text_and_the_date_uses_the_profile_format(
 ) -> None:
     plan = _plan(
         {
+            "vars_schema": {"issued": {"type": "date"}},
             "default_vars": {
-                "__date__": "2026-04-25",
+                "issued": "2026-04-25",
                 "file": "{{ __file__ }}",
-                "shown": "{{ __date__ }}",
-                "month": "{{ __date__.strftime('%Y-%m') }}",
+                "shown": "{{ issued }}",
+                "month": "{{ issued.strftime('%Y-%m') }}",
+                "year": "{{ issued.Y }}",
             },
             "match_rules": [
                 {
                     "name": "notes",
                     "kind": "note",
                     "filename_glob": "**",
-                    "vars": {"__date__": "{{ __date__ }}"},
+                    "vars": {"issued": "{{ issued }}"},
                 }
             ],
         },
@@ -474,10 +495,11 @@ def test_bare_objects_print_their_text_and_the_date_uses_the_profile_format(
         {"__config__": {"date_format": "%d/%m/%Y"}},
     )
     values = _values(plan, file=_file("bills/acme.pdf"), match=_match("bills/acme.pdf"))
-    assert values["__date__"] == "2026-04-25"
+    assert values["issued"] == "2026-04-25"
     assert values["file"] == "acme.pdf"
     assert values["shown"] == "25/04/2026"
     assert values["month"] == "2026-04"
+    assert values["year"] == "2026"
 
 
 def test_custom_module_and_a_name_clash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -594,12 +616,13 @@ def test_wrapped_feed_columns_are_ignored(tmp_path: Path) -> None:
     assert "__date__" not in values
 
 
-def test_date_header_and_bad_sha_stay_errors(tmp_path: Path) -> None:
+def test_uppercase_date_is_a_feed_column_and_bad_sha_stays_an_error(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,DATE\na.txt,2026-04-25\n", encoding="utf-8")
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
-    with pytest.raises(VarConfigError, match="is not the date column"):
-        _values(plan)
+    values = _values(plan)
+    assert "date" not in values
+    assert "DATE" not in values
 
     kind.write_text("PATH,sha\na.txt,abc\n", encoding="utf-8")
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
@@ -653,25 +676,30 @@ def test_schema_append_keeps_a_feed_column(tmp_path: Path) -> None:
 
 def test_kind_date_cell_is_stored_as_iso(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
-    kind.write_text("PATH,__date__\na.txt,25/04/2026\nb.txt,\n", encoding="utf-8")
-    plan = _plan(
-        _kind_document(
-            "{{ __config__.root_dir }}/note.csv",
-            kind_overrides_date_format="%d/%m/%Y",
-        ),
-        tmp_path,
+    kind.write_text(
+        "PATH,issued,note\na.txt,25/04/2026,25/04/2026\nb.txt,,\n",
+        encoding="utf-8",
     )
+    document = _kind_document(
+        "{{ __config__.root_dir }}/note.csv",
+        kind_overrides_date_format="%d/%m/%Y",
+    )
+    document["vars_schema"] = {"issued": {"type": "date"}}
+    plan = _plan(document, tmp_path)
     dated = _values(plan)
-    assert dated["__date__"] == "2026-04-25"
+    assert dated["issued"] == "2026-04-25"
+    assert dated["note"] == "25/04/2026"
     blank = _values(plan, file=_file("b.txt"), match=_match("b.txt"))
-    assert "__date__" not in blank
+    assert "issued" not in blank
 
 
 def test_kind_date_cell_is_not_taken_from_the_stem(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
-    kind.write_text("PATH,__date__\n2025-07-18.pdf,2024-05-29\n", encoding="utf-8")
+    kind.write_text("PATH,issued\n2025-07-18.pdf,2024-05-29\n", encoding="utf-8")
+    document = _kind_document("{{ __config__.root_dir }}/note.csv")
+    document["vars_schema"] = {"issued": {"type": "date"}}
     plan = _plan(
-        _kind_document("{{ __config__.root_dir }}/note.csv"),
+        document,
         tmp_path,
         {"__config__.date_format": "%Y-%m-%d"},
     )
@@ -680,21 +708,20 @@ def test_kind_date_cell_is_not_taken_from_the_stem(tmp_path: Path) -> None:
         file=_file("2025-07-18.pdf"),
         match=_match("2025-07-18.pdf"),
     )
-    assert values["__date__"] == "2024-05-29"
+    assert values["issued"] == "2024-05-29"
 
 
 def test_bad_kind_date_stops_and_writes_nothing(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
-    kind.write_text("PATH,__date__\na.txt,yesterday\n", encoding="utf-8")
+    kind.write_text("PATH,issued\na.txt,yesterday\n", encoding="utf-8")
     original = kind.read_bytes()
-    plan = _plan(
-        _kind_document(
-            "{{ __config__.root_dir }}/note.csv",
-            kind_overrides_date_format="%d/%m/%Y",
-        ),
-        tmp_path,
+    document = _kind_document(
+        "{{ __config__.root_dir }}/note.csv",
+        kind_overrides_date_format="%d/%m/%Y",
     )
-    with pytest.raises(VarResolveError, match="variable __date__ failed"):
+    document["vars_schema"] = {"issued": {"type": "date"}}
+    plan = _plan(document, tmp_path)
+    with pytest.raises(VarResolveError, match="variable issued failed"):
         _values(plan)
     plan.commit()
     assert kind.read_bytes() == original
@@ -725,7 +752,7 @@ def test_empty_kind_file_is_filled_in_auto(tmp_path: Path) -> None:
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     _values(plan)
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
+    assert kind.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
 
 
 def test_manual_reads_and_does_not_append(tmp_path: Path) -> None:
@@ -749,14 +776,14 @@ def test_always_creates_the_first_template(tmp_path: Path) -> None:
     assert values["owner"] == "DEFAULT-rule"
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
     again = _plan(
         _kind_document("{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv", kind_overrides_mode="always"),
         tmp_path,
     )
     _values(again)
     again.commit()
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
 
 
 def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
@@ -768,7 +795,7 @@ def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
             ),
             "vars_schema": {
                 "amount": {"type": "float"},
-                "__date__": {"desc": "Document date"},
+                "issued": {"type": "date", "desc": "Document date"},
                 "vendor": {"type": "text"},
             },
         },
@@ -778,7 +805,7 @@ def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
     assert created.read_text(encoding="utf-8") == (
-        f"PATH,SHA,amount,__date__,vendor\na.txt,{FILE_DIGEST},,,\n"
+        f"PATH,SHA,amount,issued,vendor\na.txt,{FILE_DIGEST},,,\n"
     )
 
 
@@ -848,7 +875,7 @@ def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA,__date__\na.txt,{FILE_DIGEST},\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
 
 
 def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> None:
@@ -869,7 +896,7 @@ def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> No
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA,vendor\na.txt,{FILE_DIGEST},\n"
+    assert created.read_text(encoding="utf-8") == f"PATH,SHA,vendor,date\na.txt,{FILE_DIGEST},,\n"
 
 
 def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
@@ -1281,17 +1308,21 @@ def test_mandatory_none_stops_and_omitted_time_does_not(tmp_path: Path) -> None:
     plan = _plan(
         {
             "vars_schema": {
+                "issued": {"type": "date", "mandatory": True},
                 "amount": {"type": "int", "mandatory": True},
                 "opens": {"type": "time"},
-                "__date__": {"mandatory": True},
             },
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
     )
-    with pytest.raises(VarResolveError, match="variable __date__ failed") as caught:
+    with pytest.raises(VarResolveError, match="variable issued failed") as caught:
         _values(plan)
-    assert caught.value.advice == "__date__ is mandatory and no layer set it."
+    assert str(caught.value) == (
+        "Profile work input 1 path a.txt variable issued failed: "
+        "issued is mandatory according the schema."
+    )
+    assert caught.value.advice is None
 
     dated = _plan(
         {
@@ -1369,6 +1400,7 @@ def test_listed_kind_skips_catalog_defaults_it_does_not_name(tmp_path: Path) -> 
     plan = _plan(
         {
             "vars_schema": {
+                "issued": {"type": "date"},
                 "provider": {"type": "text"},
                 "doc_count": {"type": "int", "default": 1},
                 "doc_items": {"type": "int", "default": 1},
@@ -1377,7 +1409,7 @@ def test_listed_kind_skips_catalog_defaults_it_does_not_name(tmp_path: Path) -> 
                 "statement": {
                     "desc": "A bank or card statement for one period",
                     "vars_schema": {
-                        "__date__": None,
+                        "issued": None,
                         "provider": None,
                     },
                 },

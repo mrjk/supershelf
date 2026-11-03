@@ -1,7 +1,8 @@
 """Variable spec, cast, and validation.
 
 A declared VarSpec and a resolved VarState are different objects.
-Jinja still sees the display string. The Python value stays on VarState.
+Jinja still sees the display string, except a set date, which is a date object.
+The Python value stays on VarState.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from supershelf.constants import (
     TYPE_INT,
     TYPE_TEXT,
     TYPE_TIME,
-    VAR_DATE,
     VAR_NAME_PATTERN,
     VAR_TYPES,
 )
@@ -49,7 +49,7 @@ _DATETIME_TEXT = re.compile(
 _BOOL_TRUE = frozenset({"true", "yes", "1"})
 _BOOL_FALSE = frozenset({"false", "no", "0"})
 _TIME_FORMATS = ("%H:%M:%S", "%H:%M")
-_RESERVED_ADVICE = "A layer may set __date__ and names that do not start with __."
+_RESERVED_ADVICE = "A layer may set names that do not start with __."
 _LENGTH_TYPES = frozenset({TYPE_TEXT, TYPE_DATE, TYPE_TIME, TYPE_DATETIME})
 _RANGE_TYPES = frozenset({TYPE_INT, TYPE_FLOAT, TYPE_DATE, TYPE_TIME, TYPE_DATETIME})
 _VALIDATION_KEYS = frozenset(
@@ -520,8 +520,8 @@ def check_var_name(name: object, label: str) -> None:
 
 
 def reserved_var_name(name: str) -> bool:
-    """A namespace root, or any other name that starts with __ except __date__."""
-    return name.startswith("__") and name != VAR_DATE
+    """A namespace root, or any other name that starts with __."""
+    return name.startswith("__")
 
 
 def check_assignment_key(key: object, label: str) -> None:

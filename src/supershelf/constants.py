@@ -90,7 +90,6 @@ SOURCE_DEFAULT = "default"
 SOURCE_RULE = "rule"
 SOURCE_KIND = "kind"
 
-VAR_DATE = "__date__"
 VAR_PROFILE = "__profile__"
 VAR_CONFIG = "__config__"
 VAR_FILE = "__file__"

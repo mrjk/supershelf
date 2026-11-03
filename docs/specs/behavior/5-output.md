@@ -113,8 +113,8 @@ The profile sqlite file is ignored when it sits inside an input, same as `db imp
   A segment that is empty, `.`, or `..` stops the command.
   A slash inside a variable becomes another directory.
   The joined path must stay inside `path`. The extension is whatever the layout writes. `{{ __file__.ext }}` is the last suffix.
-  `{{ __date__ }}` prints with `default_date_format`. `Y`, `m`, and `d` are the `%Y`, `%m`, and `%d` fields.
-  `{{ __date__.strftime('%Y-%m') }}` is a custom pattern. A template that uses `__date__` fails when `__date__` was omitted.
+  A set `type: date` value prints with `default_date_format`. `Y`, `m`, and `d` are the `%Y`, `%m`, and `%d` fields.
+  `{{ issued.strftime('%Y-%m') }}` is a custom pattern. A template that names a date fails when that date was omitted.
 - `operation` is `copy`, `symlink`, or `hardlink`. Omitted, it is `copy`. Any other word stops the command.
 - `on_conflict` is `error`, `skip`, or `overwrite`. Omitted, it is `error`. Any other word stops the command.
   It applies when the destination exists and this profile has no output event for that path.

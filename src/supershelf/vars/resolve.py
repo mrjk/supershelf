@@ -36,7 +36,6 @@ from supershelf.constants import (
     SOURCE_RULE,
     TYPE_DATE,
     VAR_CONFIG,
-    VAR_DATE,
     VAR_FILE,
     VAR_FILTERS,
     VAR_GLOBALS,
@@ -67,7 +66,7 @@ from supershelf.vars.spec import (
 
 
 class DateScope:
-    """`__date__` in a Jinja scope. `str()` uses the profile date format."""
+    """A `type: date` value in a Jinja scope. `str()` uses the profile date format."""
 
     def __init__(self, text: str, display_format: str = DATE_TEXT) -> None:
         parsed = datetime.strptime(text, DATE_TEXT)
@@ -118,8 +117,8 @@ def _fact_lines(file_ns: Mapping[str, str], match_ns: Mapping[str, str]) -> dict
     return facts
 
 
-def _render_value(name: str, display: str, date_format: str) -> str | DateScope:
-    if name == VAR_DATE:
+def _render_value(display: str, date_format: str, *, date: bool) -> str | DateScope:
+    if date:
         return DateScope(display, date_format)
     return display
 
@@ -427,6 +426,7 @@ class VarPlan:
                 scope,
                 _file_namespace(file),
                 _match_namespace(resolved.kind, resolved.rule),
+                resolved.kind,
             ),
         )
 
@@ -465,7 +465,7 @@ class VarPlan:
             cast = self._first(
                 key,
                 candidates,
-                self._render_scope(scope, file_ns, match_ns),
+                self._render_scope(scope, file_ns, match_ns, kind),
                 kind,
             )
             if cast is None:
@@ -487,7 +487,7 @@ class VarPlan:
             cast = self._first(
                 key,
                 table.candidates[key],
-                self._render_scope(scope, file_ns, match_ns),
+                self._render_scope(scope, file_ns, match_ns, kind),
                 kind,
             )
             if cast is None:
@@ -499,6 +499,7 @@ class VarPlan:
         scope: Mapping[str, str],
         file_ns: Mapping[str, str],
         match_ns: Mapping[str, str],
+        kind: str,
     ) -> dict[str, Any]:
         """Profile names, file and match objects, then display strings written so far."""
         render_scope: dict[str, Any] = dict(self._profile_scope)
@@ -506,7 +507,8 @@ class VarPlan:
         render_scope[VAR_MATCH] = ScopeObject(match_ns, FIELD_KIND)
         date_format = self._date_display_format()
         for name, value in scope.items():
-            render_scope[name] = _render_value(name, value, date_format)
+            is_date = self._catalog.type_of(kind, name) == TYPE_DATE
+            render_scope[name] = _render_value(value, date_format, date=is_date)
         return render_scope
 
     def _date_display_format(self) -> str:
@@ -590,11 +592,10 @@ class VarPlan:
                 continue
             state = states.get(name)
             if state is None or state.value is None:
-                raise self._failed(
-                    match,
-                    path,
-                    name,
-                    f"{name} is mandatory and no layer set it.",
+                reason = f"{name} is mandatory according the schema."
+                raise VarResolveError(
+                    f"Profile {match.profile} input {match.index} path {path} "
+                    f"variable {name} failed: {reason}"
                 )
 
     def _failed(self, match: FileMatch, path: str, key: str, advice: str) -> VarResolveError:

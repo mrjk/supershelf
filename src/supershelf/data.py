@@ -15,7 +15,7 @@ from supershelf.constants import (
     KIND_MODE_DISABLED,
     KIND_MODE_MANUAL,
     LOGGER_NAME,
-    VAR_DATE,
+    TYPE_DATE,
 )
 from supershelf.errors import SupershelfError, VarConfigError
 from supershelf.kind_file import KindFiles, KindLine, KindTable
@@ -272,7 +272,11 @@ def _reject_feed_conflicts(resolved: tuple[_Resolved, ...]) -> None:
         identity = item.plan.kind_files.identity_for(item.rule)
         row_key = item.sha if identity == IDENTITY_HASH and item.sha else item.relative
         for name in names:
-            value = _cell_text(name, item.rule_layer.get(name), item.plan.kind_files)
+            value = _cell_text(
+                item.rule_layer.get(name),
+                item.plan.kind_files,
+                item.plan.catalog.type_of(item.kind, name),
+            )
             key = (path.resolve(), row_key, name)
             previous = choices.get(key)
             if previous is not None and previous.value != value:
@@ -343,7 +347,11 @@ def _feed_plan(
             target, current = found
             create_sha = ""
         for name in names:
-            value = _cell_text(name, item.rule_layer.get(name), kinds)
+            value = _cell_text(
+                item.rule_layer.get(name),
+                kinds,
+                item.plan.catalog.type_of(item.kind, name),
+            )
             if value is None:
                 continue
             column = KindTable.feed_column_name(name)
@@ -510,10 +518,10 @@ def _shared_hash_without_row(resolved: tuple[_Resolved, ...]) -> set[tuple[Path,
     return blocked
 
 
-def _cell_text(name: str, display: str | None, kinds: KindFiles) -> str | None:
+def _cell_text(display: str | None, kinds: KindFiles, var_type: str) -> str | None:
     if display is None:
         return None
-    if name == VAR_DATE:
+    if var_type == TYPE_DATE:
         return kinds.dates.show(display)
     return display
 

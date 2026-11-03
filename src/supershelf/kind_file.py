@@ -37,8 +37,8 @@ from supershelf.constants import (
     FIELD_KIND,
     FIELD_PATH,
     LOGGER_NAME,
+    TYPE_DATE,
     VAR_CONFIG,
-    VAR_DATE,
     VAR_INPUT,
     VAR_MATCH,
 )
@@ -86,7 +86,7 @@ class KindOverrideMode(WordChoice):
 
 
 class KindDateFormat:
-    """strptime format for a kind-file __date__ cell. The stored value is YYYY-MM-DD."""
+    """strptime format for a kind-file date cell. The stored value is YYYY-MM-DD."""
 
     _YEAR = re.compile(r"%(?:Y|y)")
     _MONTH = re.compile(r"%(?:m|b|B)")
@@ -202,13 +202,12 @@ class KindTable:
     """One kind file. The row identifier is the path or the hash."""
 
     _SUFFIXES = (".csv", ".toml", ".yaml", ".yml")
-    _FRESH_COLUMNS = (KIND_CSV_PATH, KIND_CSV_SHA, VAR_DATE)
+    _FRESH_COLUMNS = (KIND_CSV_PATH, KIND_CSV_SHA)
     _LOWER_NAME = re.compile(r"[a-z_][a-z0-9_]*\Z")
     _FEED_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
-    _DATE_ALIASES = frozenset({"DATE", "Date", "date"})
     _SHA_BAD = frozenset({"sha", "Sha"})
     _SHA_TEXT = re.compile(r"[0-9a-f]{64}\Z")
-    _WRAPPED_FEED = frozenset({KIND_CSV_PATH, "SHA", "DATE"})
+    _WRAPPED_FEED = frozenset({KIND_CSV_PATH, "SHA"})
 
     def __init__(
         self,
@@ -446,12 +445,12 @@ class KindTable:
 
     @classmethod
     def is_feed_column(cls, name: str) -> bool:
-        """True for an uppercase feed column. PATH, SHA, and DATE stay reserved."""
+        """True for an uppercase feed column. PATH and SHA stay reserved."""
         if cls._FEED_NAME.fullmatch(name) is None:
             return False
         if not any("A" <= char <= "Z" for char in name):
             return False
-        if name == KIND_CSV_PATH or name == KIND_CSV_SHA or name in cls._SHA_BAD or name in cls._DATE_ALIASES:
+        if name == KIND_CSV_PATH or name == KIND_CSV_SHA or name in cls._SHA_BAD:
             return False
         return True
 
@@ -463,12 +462,10 @@ class KindTable:
 
     @classmethod
     def _legal_column(cls, name: str) -> bool:
-        if name == KIND_CSV_PATH or name == KIND_CSV_SHA or name in cls._SHA_BAD or name in cls._DATE_ALIASES:
+        if name == KIND_CSV_PATH or name == KIND_CSV_SHA or name in cls._SHA_BAD:
             return False
         if cls._LOWER_NAME.fullmatch(name) is None:
             return False
-        if name == VAR_DATE:
-            return True
         try:
             check_assignment_key(name, "kind file")
         except VarConfigError:
@@ -873,11 +870,6 @@ class KindTable:
                     f"{path} column {name!r} is not the hash column. Use SHA.",
                     advice=advice,
                 )
-            if name in cls._DATE_ALIASES:
-                raise VarConfigError(
-                    f"{path} column {name!r} is not the date column. Use __date__.",
-                    advice=advice,
-                )
             if cls.is_feed_column(name):
                 continue
             if cls._LOWER_NAME.fullmatch(name) is None:
@@ -885,14 +877,13 @@ class KindTable:
                     f"{path} column {name!r} must be lowercase.",
                     advice=advice,
                 )
-            if name != VAR_DATE:
-                check_assignment_key(name, str(path))
+            check_assignment_key(name, str(path))
 
     @classmethod
     def _header_advice(cls, sep: str, columns: tuple[str, ...]) -> str:
         example = cls._header_example(sep, columns)
         return (
-            "The first column must be PATH. SHA is the hash. __date__ is optional. "
+            "The first column must be PATH. SHA is the hash. "
             "Other columns are lowercase names. "
             f"kind_overrides_sep is {sep!r}. For example: {example}"
         )
@@ -901,10 +892,6 @@ class KindTable:
     def _header_example(cls, sep: str, columns: tuple[str, ...]) -> str:
         names = [KIND_CSV_PATH, KIND_CSV_SHA]
         for name in columns[1:]:
-            if name in cls._DATE_ALIASES or name == VAR_DATE:
-                if VAR_DATE not in names:
-                    names.append(VAR_DATE)
-                continue
             if name in cls._SHA_BAD or name == KIND_CSV_SHA or name == KIND_CSV_PATH:
                 continue
             lowered = name.lower()
@@ -914,8 +901,6 @@ class KindTable:
                 and lowered != "path"
             ):
                 names.append(lowered)
-        if len(names) == 1:
-            names.append(VAR_DATE)
         return sep.join(names)
 
     @classmethod
@@ -1508,7 +1493,7 @@ class KindFiles:
 
     @property
     def dates(self) -> KindDateFormat:
-        """Format used to read and write a __date__ cell."""
+        """Format used to read and write a date cell."""
         return self._dates
 
     def open_table(self, kind: str, input_dir: Path, *, create: bool) -> KindTable | None:
@@ -1634,10 +1619,11 @@ class KindFiles:
         relative: str,
     ) -> dict[str, str]:
         parsed: dict[str, str] = {}
+        catalog = self._catalog
         for key, value in raw.items():
             if KindTable.is_feed_column(key):
                 continue
-            if key != VAR_DATE:
+            if catalog is None or catalog.type_of(match.kind, key) != TYPE_DATE:
                 parsed[key] = value
                 continue
             try:
@@ -1645,7 +1631,7 @@ class KindFiles:
             except ValueError as exc:
                 raise VarResolveError(
                     f"Profile {match.profile} input {match.index} path {relative} "
-                    f"variable {VAR_DATE} failed",
+                    f"variable {key} failed",
                     advice=f"{value!r} does not match {self._dates.text}. {exc}",
                 ) from exc
         return parsed

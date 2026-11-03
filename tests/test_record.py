@@ -689,7 +689,7 @@ def test_duplicate_listing_marks_a_past_generation() -> None:
 
 def test_snapshot_keeps_date_and_drops_identity_facts(tmp_path: Path) -> None:
     plan = VarPlan.from_document(
-        {"vars_schema": {"vendor": {"type": "text"}}},
+        {"vars_schema": {"vendor": {"type": "text"}, "issued": {"type": "date"}}},
         "work",
         Matcher.from_document({}, "work"),
         tmp_path,
@@ -701,14 +701,14 @@ def test_snapshot_keeps_date_and_drops_identity_facts(tmp_path: Path) -> None:
         (
             ("__kind__", VarState(value="bill", display="bill", value_sources=["fact"])),
             ("vendor", VarState(value="Bank2000", display="Bank2000", value_sources=["default"])),
-            ("__date__", VarState(value="2026-04-25", display="2026-04-25", value_sources=["rule:bill"])),
+            ("issued", VarState(value="2026-04-25", display="2026-04-25", value_sources=["rule:bill"])),
             ("empty", VarState(value=None, display="", value_sources=[])),
         ),
     )
     text = plan.snapshot(resolved)
     assert "__kind__" not in text
     assert "Bank2000" in text
-    assert "__date__" in text
+    assert "issued" in text
     assert "empty" not in text
 
 

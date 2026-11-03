@@ -41,7 +41,8 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
     catalog = _catalog(
         {
             "vars_schema": {
-                "__date__": {
+                "issued": {
+                    "type": "date",
                     "desc": "Document date",
                     "mandatory": True,
                     "default": "2026-04-25",
@@ -50,7 +51,7 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
             }
         }
     )
-    dated = catalog.spec("__date__")
+    dated = catalog.spec("issued")
 
     assert dated.type == "date"
     assert dated.internal is False
@@ -67,8 +68,8 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
     [
         ({"vars_schema": {"__kind__": {"type": "text"}}}, "not a supershelf variable"),
         ({"vars_schema": {"__kind__": {"internal": False}}}, "not a supershelf variable"),
-        ({"vars_schema": {"__date__": {"type": "date"}}}, "cannot set type"),
-        ({"vars_schema": {"__date__": {"internal": False}}}, "cannot set internal"),
+        ({"vars_schema": {"__date__": {"type": "date"}}}, "not a supershelf variable"),
+        ({"default_vars": {"__date__": "2020-01-01"}}, "cannot set __date__"),
         ({"vars_schema": {"__custom__": {"type": "text"}}}, "not a supershelf variable"),
         ({"vars_schema": {"amount": {"type": "list"}}}, "type list"),
         ({"vars_schema": {"amount": {"type": "INT"}}}, "unknown"),
@@ -311,6 +312,7 @@ def test_kind_var_shorthand_resolves_catalog_names() -> None:
     catalog = _catalog(
         {
             "vars_schema": {
+                "issued": {"type": "date"},
                 "provider": {"type": "text", "desc": "Who issued the document"},
                 "amount": {"type": "float", "unit": "EUR"},
                 "currency": {"type": "text"},
@@ -321,7 +323,7 @@ def test_kind_var_shorthand_resolves_catalog_names() -> None:
                 "receipt": {
                     "desc": "Proof of a purchase that was already paid",
                     "vars_schema": {
-                        "__date__": None,
+                        "issued": None,
                         "provider": "provider",
                         "my_amount": "amount",
                         "my_currency": "currency",
@@ -335,7 +337,7 @@ def test_kind_var_shorthand_resolves_catalog_names() -> None:
     receipt = catalog.kind_schemas()[0]
 
     assert receipt.desc == "Proof of a purchase that was already paid"
-    assert receipt.vars["__date__"].type == "date"
+    assert receipt.vars["issued"].type == "date"
     assert receipt.vars["provider"].type == "text"
     assert receipt.vars["provider"].desc == "Who issued the document"
     assert receipt.vars["my_amount"].type == "float"
@@ -349,12 +351,15 @@ def test_kind_var_shorthand_resolves_catalog_names() -> None:
 def test_blank_kind_var_uses_the_local_name() -> None:
     catalog = _catalog(
         {
-            "vars_schema": {"amount": {"type": "int", "desc": "Money", "mandatory": True}},
+            "vars_schema": {
+                "amount": {"type": "int", "desc": "Money", "mandatory": True},
+                "issued": {"type": "date"},
+            },
             "kind_schema": {
                 "invoice": {
                     "vars_schema": {
                         "amount": "   ",
-                        "__date__": "",
+                        "issued": "",
                     }
                 },
                 "bill": {
@@ -371,7 +376,7 @@ def test_blank_kind_var_uses_the_local_name() -> None:
     assert invoice.vars["amount"].type == "int"
     assert invoice.vars["amount"].desc == "Money"
     assert invoice.vars["amount"].mandatory is True
-    assert invoice.vars["__date__"].type == "date"
+    assert invoice.vars["issued"].type == "date"
     assert bill.vars["amount"].type == "int"
     assert bill.vars["amount"].desc == "Money"
     assert bill.vars["amount"].mandatory is False
@@ -418,16 +423,17 @@ def test_kind_schema_stores_feed_file_and_feeds() -> None:
         "vars_schema": {
             "company_name": {"type": "text", "desc": "Payer"},
             "employee_name": {"type": "text"},
+            "issued": {"type": "date"},
         },
         "kind_schema": {
             "invoice": {
                 "desc": "A vendor bill",
                 "feed_file": "{{ __config__.root_dir }}/invoices.csv",
-                "feeds": ["company", "__date__"],
+                "feeds": ["company", "issued"],
                 "vars_schema": {
                     "company": "company_name",
                     "employee": {"schema": "employee_name", "mandatory": True},
-                    "__date__": None,
+                    "issued": None,
                 },
             },
             "receipt": {
@@ -444,7 +450,7 @@ def test_kind_schema_stores_feed_file_and_feeds() -> None:
     invoice, receipt = catalog.kind_schemas()
 
     assert invoice.feed_file == ("{{ __config__.root_dir }}/invoices.csv",)
-    assert invoice.feeds == ("company", "__date__")
+    assert invoice.feeds == ("company", "issued")
     assert receipt.feed_file == (
         "{{ __config__.root_dir }}/receipts.csv",
         "{{ __config__.root_dir }}/old.csv",
@@ -455,7 +461,7 @@ def test_kind_schema_stores_feed_file_and_feeds() -> None:
 
     document = DomainSchema.load(profile).document()
 
-    assert set(document["$defs"]["invoice"]["properties"]) == {"company", "employee", "__date__"}
+    assert set(document["$defs"]["invoice"]["properties"]) == {"company", "employee", "issued"}
     assert set(document["$defs"]["receipt"]["properties"]) == {"company"}
 
 
@@ -493,11 +499,14 @@ def test_domain_schema_accepts_kind_var_shorthand() -> None:
 
     document = DomainSchema.load(
         {
-            "vars_schema": {"amount": {"type": "float", "unit": "EUR"}},
+            "vars_schema": {
+                "issued": {"type": "date"},
+                "amount": {"type": "float", "unit": "EUR"},
+            },
             "kind_schema": {
                 "receipt": {
                     "vars_schema": {
-                        "__date__": None,
+                        "issued": None,
                         "my_amount": "amount",
                     }
                 }
@@ -506,7 +515,7 @@ def test_domain_schema_accepts_kind_var_shorthand() -> None:
     ).document()
     receipt = document["$defs"]["receipt"]
 
-    assert receipt["properties"]["__date__"]["type"] == "string"
+    assert receipt["properties"]["issued"]["type"] == "string"
     assert receipt["properties"]["my_amount"]["type"] == "number"
     assert receipt["properties"]["my_amount"]["x-unit"] == "EUR"
 
@@ -559,13 +568,13 @@ def test_domain_schema_without_kinds_lists_declared_names() -> None:
         {
             "vars_schema": {
                 "vendor": {"type": "text"},
-                "__date__": {"desc": "Document date"},
+                "issued": {"type": "date", "desc": "Document date"},
             }
         }
     ).document()
 
-    assert set(document["properties"]) == {"vendor", "__date__"}
-    assert document["properties"]["__date__"]["pattern"].startswith("^[0-9]{4}")
+    assert set(document["properties"]) == {"vendor", "issued"}
+    assert document["properties"]["issued"]["pattern"].startswith("^[0-9]{4}")
 
 
 def test_domain_schema_requires_a_declared_schema() -> None:

@@ -304,7 +304,7 @@ class FileOutputDriver(OutputDriver):
         except VarCandidateError as exc:
             raise OutputResolveError(
                 f"Output {prepared.name} {context.match.found.path} layout failed: {exc}",
-                advice="Check the layout template. A missing name such as __date__ fails the layout.",
+                advice="Check the layout template. A missing name fails the layout.",
             ) from exc
         except VarResolveError as exc:
             raise OutputResolveError(str(exc), advice=exc.advice) from exc

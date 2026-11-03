@@ -23,6 +23,6 @@ Source is who writes a value. Availability is where a template can read it. A na
   - `root_dir = "{{ __profile__.dir }}"`
   - `database_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.sqlite"`
   - `cache_file = "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.cache"`
-- Available here: `__profile__` and the `__config__` fields already published. Not available: `__file__`, `__match__`, `__input__`, and `__date__`.
+- Available here: `__profile__` and the `__config__` fields already published. Not available: `__file__`, `__match__`, `__input__`, and user variables.
 - This is the scope for `config.root_dir`, `config.database_file`, `config.cache_file`, `inputs.path`, and an output `path`.
 - An old flat name, such as `__root_dir__` or `__profile_dir__`, is unknown and stops the command. There is no alias.

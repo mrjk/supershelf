@@ -18,7 +18,7 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 - The fed value is the display string of the resolve with the kind-file layer skipped. Facts, `default_vars`, and rule `vars` are included. A lowercase cell is not copied into the uppercase column.
 - A lowercase cell is the user override. The next resolve still uses it. The uppercase column is not read back. The source label is not `kind:<path>` from that feed column.
 - An unset var does not blank a cell and does not add an empty cell.
-- Namespace fields stay out. `__date__` is allowed.
+- Namespace fields stay out. A name that starts with `__` is not a user variable.
 - `kind_overrides_mode` gates this step.
   `disabled` does not read or write kind files. Import still runs.
   `manual` reads, writes uppercase cells on rows that already exist, and does not append, fill `SHA`, retarget `PATH`, or drop rows.
@@ -72,7 +72,6 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 
 - Schema vars are the CSV header names for that kind. 2.3.2.
   A `kind_schema` entry uses its local names. Otherwise the declared `vars_schema` names are used.
-  `__date__` is included only when that schema lists it.
 - A kind with no schema columns has no schema vars.
   Feed then uses the user-visible names `scan vars` would print for files of that kind, so dates and rule vars still get a cell.
 - A name in `feeds` that is not one of those names stops the command.
@@ -80,16 +79,16 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 ### Write
 
 - The feed column is the var name with ASCII letters uppercased.
-  `vendor` is `VENDOR`. `__date__` is `__DATE__`.
-  When that form is `PATH`, `SHA`, or `DATE`, wrap it: `_PATH_`, `_SHA_`, or `_DATE_`.
-  Feed never writes the headers `PATH`, `SHA`, or `DATE`.
+  `vendor` is `VENDOR`. `issued` is `ISSUED`.
+  When that form is `PATH` or `SHA`, wrap it: `_PATH_` or `_SHA_`.
+  Feed never writes the headers `PATH` or `SHA`.
 - Write the rule-layer display string into that column.
   Replace the cell when the text differs. An equal cell is not a change.
   A lowercase or mixed-case cell is never written by this step.
   An edit in the uppercase column is replaced on the next feed.
   Custom text belongs in the lowercase column.
-- `__date__` is written as `__DATE__` with `kind_overrides_date_format`, not the stored `YYYY-MM-DD`.
-  Other date vars stay `YYYY-MM-DD`. The kind-file format applies to `__date__` only, as in 2.3.2.
+- A `type: date` value is written with `kind_overrides_date_format`, not the stored `YYYY-MM-DD`.
+  Other types use the display string. The kind-file format applies to every date-typed cell, as in 2.3.2.
 - A missing feed column is appended on the right. TOML and YAML append the key.
   The row is the kind-file row for this file's identifier. 2.3.2.
   Feed does not rewrite `PATH` or `SHA` on a row that already exists. Identity updates do. 2.3.2.
@@ -107,13 +106,13 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 
 ### Cases
 
-Date round-trip. Stored `__date__` is `2026-04-25`. `kind_overrides_date_format` is `%d/%m/%Y`. Feed writes `__DATE__` as `25/04/2026`. The `__date__` cell stays. A `date` var that is not `__date__` is written as `_DATE_` and stays `YYYY-MM-DD`.
+Date round-trip. Stored `issued` is `2026-04-25` and its type is `date`. `kind_overrides_date_format` is `%d/%m/%Y`. Feed writes `ISSUED` as `25/04/2026`. The `issued` cell stays. A text var stays its display string.
 
 Filled uppercase cell. `VENDOR` already holds the rule-layer display string. The text stays, and the file is not rewritten for that cell. A different `VENDOR` cell is replaced. The lowercase `vendor` cell stays.
 
 Unset. No layer set `owner`. Feed does not blank `OWNER` or `owner`, and it does not add an empty cell.
 
-Reserved name. A var named `path`, `sha`, or `date` is written to `_PATH_`, `_SHA_`, or `_DATE_`. Those columns are ignored on the next scan.
+Reserved name. A var named `path` or `sha` is written to `_PATH_` or `_SHA_`. Those columns are ignored on the next scan. A var named `date` is written to `DATE`.
 
 Left off `feeds`. `owner` is a schema var and is not listed in `feeds`. No `OWNER` column is written. Import still stores `owner` in `vars_json`.
 

@@ -2,7 +2,7 @@
 
 Architecture. Index: [README](../README.md).
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `db import` writes the profile database in section 3. The sqlite schema does not follow these names. Each user variable is one key in `vars_json`. Architecture 3.2. `inspect schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. Kind-file columns use the kind's local names. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `db import` writes the profile database in section 3. The sqlite schema does not follow these names. Each user variable is one key in `vars_json`. Architecture 3.2. `inspect schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. Kind-file columns use the kind's local names. With no schema columns, a new CSV kind file still starts as `PATH,SHA`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
 
 A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `inspect schema` builds one model per declared object and prints `model_json_schema()`. Resolving a variable does not write the database.
 
@@ -12,9 +12,9 @@ One catalog entry per name, for the whole profile.
 
 - `desc`: plain text, default empty. Not a template.
 - `type`: `text` (default for a user var), `int`, `float`, `bool`, `date`, `time`, `datetime`. Lower case. `INT` and `timedate` are config errors. The keyword `datetime` is a date and a time together.
-- `date` is `YYYY-MM-DD`, the spelling `__date__` already uses. `time` is `HH:MM` or `HH:MM:SS`. `datetime` is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`. No timezone and no fractional seconds. Seconds stay in the display only when they were written. A set `datetime` always includes a clock: midnight is `T00:00` or `T00:00:00`. A calendar day with no clock is type `date`.
+- `date` is `YYYY-MM-DD`. `time` is `HH:MM` or `HH:MM:SS`. `datetime` is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`. No timezone and no fractional seconds. Seconds stay in the display only when they were written. A set `datetime` always includes a clock: midnight is `T00:00` or `T00:00:00`. A calendar day with no clock is type `date`.
 - `unit`: string, or absent. Display and storage metadata. No conversion.
-- `internal`: managed by supershelf. `__date__` is false. A new name that starts with `__` is a config error, so omitting this key does not create an internal. An explicit `true` on a name supershelf does not manage is a config error.
+- `internal`: managed by supershelf. A new name that starts with `__` is a config error, so omitting this key does not create an internal. An explicit `true` on a name supershelf does not manage is a config error.
 - `mandatory`: default false. After every layer, `None` fails the file. An empty text string is a value, so it passes. `time` and `datetime` use the same default.
 - `default`: omitted, a typed literal, one string, or a candidate list. This is the lowest assignment.
 - `validation`: optional mapping. Unknown keys, or keys that do not apply to the type, are a config error. A bad regex is a config error. Every listed constraint must pass. VarSpec rejects unknown keys, so `mendatory` is a config error.
@@ -46,9 +46,7 @@ amount:
 
 ## 1.3 Catalog
 
-Built-in entries are prefilled. The user catalog is the top-level profile key `vars_schema`, a mapping of name to VarSpec. Names match `[A-Za-z_][A-Za-z0-9_]*`.
-
-`__date__` is the only built-in catalog entry: `internal: false`, `type: date`, `mandatory: false`. The prefix rule does not mark it internal. The user may set `desc`, `unit`, `mandatory`, `default`, and `validation` on it. `type` and `internal` stay fixed.
+There is no built-in catalog entry. The user catalog is the top-level profile key `vars_schema`, a mapping of name to VarSpec. Names match `[A-Za-z_][A-Za-z0-9_]*`. A date is a name the user declares with `type: date`.
 
 `__file__`, `__match__`, `__profile__`, `__config__`, and `__input__` are template objects. They are not catalog entries. `desc` and `unit` on the old flat names, such as `__file_name__` or `__kind__`, are a config error, because a new name that starts with `__` is a config error. Empty `__file__.ext` and `__file__.dir` are `""`. `__file__.ctime` and `__file__.mtime` stay text: their stored form has fractional seconds and a UTC offset, which `datetime` rejects. They do not satisfy type `date`.
 
@@ -56,7 +54,7 @@ A name with no entry is an implicit user spec: `type: text`, `mandatory: false`,
 
 A new name starting with `__` is a config error. `internal: true` on a name supershelf does not manage is a config error.
 
-Layers may set `__date__` and names that do not start with `__`. A layer cannot set a namespace root. The schema does not grant those writes. A profile `overrides` key is a config error, including an empty list. Per-file values belong in the kind file. `kind_overrides_mode`, `kind_overrides_date_format`, `kind_overrides_sep`, and `kind_overrides_config` stay. Those keys are the kind file, not the removed list.
+Layers may set names that do not start with `__`. A layer cannot set a namespace root. The schema does not grant those writes. A profile `overrides` key is a config error, including an empty list. Per-file values belong in the kind file. `kind_overrides_mode`, `kind_overrides_date_format`, `kind_overrides_sep`, and `kind_overrides_config` stay. Those keys are the kind file, not the removed list.
 
 Implicit text. A name with no schema entry stores the rendered string. `vendor: Bank2000` with no schema entry is text, source `default` when `default_vars` set it.
 
@@ -86,7 +84,7 @@ These share YAML list syntax and mean different things.
 
 `{{ amount + 1 }}` is not integer math. `{% if paid %}` reads the string `true` or `false`. A non-empty string is truthy in Jinja, so `{% if paid %}` is true for both. Compare with `{% if paid == "true" %}`.
 
-The Python value lives on VarState. Jinja attribute and method access (`{{ issued.year }}`) needs that object in the scope. That is a later phase. Assigned names stay display strings, except `__date__`. In the Jinja scope only, `__date__` is an object. `str()` uses `default_date_format`. `strftime(pattern)` uses a `strftime` pattern. The fields are `Y`, `m`, and `d` (`%Y`, `%m`, `%d`). The printed value and `vars_json` stay `YYYY-MM-DD`. `__profile__`, `__config__`, `__file__`, `__match__`, and `__input__` are mappings. With no field, each prints one string: profile name, `root_dir`, filename, kind, and input path. `{{ __file__.name }}` still reads a field. `__profile__.document` is the parsed profile file, still a mapping, and still needs a field. A field on `__file__` and `__match__` is a string.
+The Python value lives on VarState. Assigned names stay display strings. A set `type: date` value is an object in the Jinja scope only. `str()` uses `default_date_format`. `strftime(pattern)` uses a `strftime` pattern. The fields are `Y`, `m`, and `d` (`%Y`, `%m`, `%d`). `{{ issued.Y }}` is the four-digit year. There is no `.year` and no string slicing. `time` and `datetime` stay display strings. The printed value and `vars_json` stay `YYYY-MM-DD`. `__profile__`, `__config__`, `__file__`, `__match__`, and `__input__` are mappings. With no field, each prints one string: profile name, `root_dir`, filename, kind, and input path. `{{ __file__.name }}` still reads a field. `__profile__.document` is the parsed profile file, still a mapping, and still needs a field. A field on `__file__` and `__match__` is a string.
 
 `regex_time_var` still returns `YYYY-MM-DD`. That string satisfies type `date` and misses type `time` and type `datetime`.
 
@@ -102,19 +100,19 @@ One pipeline for every candidate and every fact. Load time uses it for non-templ
    - `int`: optional `+` or `-`, then digits. `12.0`, `0x10`, `1_000`, and `1e2` miss. Value is a Python int. Display drops the plus and leading zeros: `007` and `+7` display as `7`. There is no overflow cap. Set `le` when a consumer needs one.
    - `float`: optional sign, then digits with an optional decimal point (`12`, `12.50`, `.5`, `12.`). No exponent, no comma, no `NaN` or `Infinity`. Value is a Python float. Display is the stripped spelling, so `12.50` stays `12.50`. `-0` and `-0.0` are valid. `allowed: [0]` matches them, because Python compares them equal. Float is IEEE binary. Keep money in `text` or in integer cents until a later decimal type exists.
    - `bool`: case-insensitive `true`/`yes`/`1` or `false`/`no`/`0`. Display is `true` or `false`. Value is a Python bool.
-   - `date`: the whole string is `YYYY-MM-DD` and round-trips, same check as today's `__date__`. `2026-04-25T15:04` misses. Display and JSON are that string.
+   - `date`: the whole string is `YYYY-MM-DD` and round-trips. `2026-04-25T15:04` misses. Display and JSON are that string. A candidate that misses this spelling is parsed with `default_date_format` and stored as `YYYY-MM-DD`. If that also fails, the candidate misses. The packaged format is `%Y-%m-%d`. When that format is already `%Y-%m-%d`, the second parse does not add another spelling. A kind-file cell whose type is `date` is parsed with `kind_overrides_date_format` before this cast. 2.3.2.
    - `time`: the whole string is `HH:MM` or `HH:MM:SS`, zero-padded, and the hour, minute, and second round-trip. `15:4`, `15:04:05.1`, and `15:04Z` miss. Display and JSON keep the accepted spelling. The Python value used for `allowed` and ranges treats `15:04` and `15:04:00` as the same clock.
    - `datetime`: the whole string is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`, with `T` between the parts. The date part round-trips as a date. The time part follows the `time` rules. `2026-04-25`, `2026-04-25 15:04`, and anything with `Z` or an offset misses. Display and JSON keep the accepted spelling.
 5. Validate, in this order: `allowed`, then `pattern` and lengths, then range. Compare `allowed` and ranges to the Python value (`007` matches `allowed: [7]` when the type is int; the text `007` matches `allowed: ["007"]` only as text). `pattern` is `re.fullmatch` against the display string. Text is not Unicode-normalized. Lengths use that same display string.
-6. Commit. Append the source label. Store the Python value and the display string. The Jinja scope receives the display string.
+6. Commit. Append the source label. Store the Python value and the display string. The Jinja scope receives the display string. A set date receives the object in 1.6.
 
 A non-template literal that fails step 4 or 5 is a config error at load, including when a later candidate might have worked. A template is checked only at render, and a miss there tries the next candidate.
 
-When every candidate in a layer misses, that layer does not write the name. An earlier value and its source list stay. Later layers still run. The name stays `None` when no layer writes it. `mandatory` after the last layer stops the file when the value is still `None`. This is the same rule for `__date__` and for every other name.
+When every candidate in a layer misses, that layer does not write the name. An earlier value and its source list stay. Later layers still run. The name stays `None` when no layer writes it. `mandatory` after the last layer stops the file when the value is still `None`. This is the same rule for every name.
 
 Facts are one value, with no candidate list. A regex group that fails the pipeline stops the command. A filename group `amount` of `12.50`, declared as `float`, becomes the float `12.5` when the match stores it. `EUR12.50` and `12,50` stop the file. A later layer does not repair that fact. To keep fallbacks, capture the text under another name and assign the typed name from a candidate list. `__file__` and `__match__` are not catalog entries. Their fields are already strings.
 
-The filename does not set `__date__`. A stem that is a date stays `__file__.stem`. A profile that wants that date writes a candidate, such as `{{ regex_time_var(__file__.stem, __config__.date_format) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
+The filename does not set a date. A stem that is a date stays `__file__.stem`. A profile that wants that date writes a candidate on the variable it named, such as `{{ regex_time_var(__file__.stem, __config__.date_format) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
 
 `mandatory` runs after the last layer, and only on `None`.
 
@@ -134,7 +132,7 @@ Load error ahead of a template. `default: ["12.0", "{{ other }}"]` on an int fai
 
 Mandatory. `amount` with `mandatory: true` and no successful write stops the file. An omitted `opens` of type `time` stays unset and the file continues.
 
-`__date__`. A filename that is a date does not set it. Every candidate in a layer missing leaves the earlier value, or leaves it unset when nothing wrote it. `mandatory: true` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
+Date. A filename that is a date does not set a date var. Every candidate in a layer missing leaves the earlier value, or leaves it unset when nothing wrote it. `mandatory: true` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
 
 Leading zeros. Regex group `0012` declared as `int` stores `12`. A group `007` displays as `7`.
 
@@ -166,6 +164,8 @@ vars_schema:
     desc: Payer
   employee_name:
     type: text
+  issued:
+    type: date
 
 kind_schema:
   invoice:
@@ -173,25 +173,25 @@ kind_schema:
     feed_file: "{{ __config__.root_dir }}/invoices.csv"
     feeds:
       - company
-      - __date__
+      - issued
     vars_schema:
       company: company_name
       employee:
         schema: employee_name
         mandatory: true
-      __date__:
+      issued:
 ```
 
 The nested key is `vars_schema`. `fields` is not a key. A field is a match-rule slot. Behavior 3.
 
 `feed_file` is optional. A string is one path template. A list is templates in order. Omitted uses `kind_overrides_config`. Rendering is the kind-file path language in behavior 2.3.1. `kind_overrides_config: []` and no `feed_file` means that kind has no kind file. Feeds are skipped. Import still runs.
 
-`feeds` is an optional list of var names. Omitted means every schema var of that kind. `__date__` is included only when that schema lists it. A name the kind does not resolve is a config error. A var left off the list is still resolved and is still stored in `vars_json` on import. It has no feed column. The uppercase column name is behavior 3.2.
+`feeds` is an optional list of var names. Omitted means every schema var of that kind. A name the kind does not resolve is a config error. A var left off the list is still resolved and is still stored in `vars_json` on import. It has no feed column. The uppercase column name is behavior 3.2.
 
-The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`company: company_name`). Null or a blank string uses the local name, so `__date__:` and `__date__: ""` both use `__date__`. TOML has no null, so the blank form there is `""`. On an object, omitted, null, or blank `schema` uses the local name. An explicit `schema` remaps (`employee` above). A namespace root, a name that starts with `__` and is not `__date__`, or a name that was never declared, is a config error. The local name (`company`) is the variable for files of that kind. It follows the variable-name pattern and cannot start with `__` unless it is `__date__`. `type` and `internal` cannot be set on the kind var. They come from the referenced spec.
+The value names a declared `vars_schema` entry. A string is that name (`company: company_name`). Null or a blank string uses the local name, so `issued:` and `issued: ""` both use `issued`. TOML has no null, so the blank form there is `""`. On an object, omitted, null, or blank `schema` uses the local name. An explicit `schema` remaps (`employee` above). A namespace root, a name that starts with `__`, or a name that was never declared, is a config error. The local name (`company`) is the variable for files of that kind. It follows the variable-name pattern and cannot start with `__`. `type` and `internal` cannot be set on the kind var. They come from the referenced spec.
 
 Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the referenced spec. A present `validation` mapping replaces the referenced one. It is not merged key by key. `default` is not copied. A kind `default` applies only when that kind entry sets it, as the default layer for that local name on files of that kind. Profile `default` and `default_vars` apply to that catalog name on files whose kind is not listed. On a listed kind they apply only when that kind's `vars_schema` includes the name.
 
 When a kind lists a name the profile also has, files of that kind use the overlaid spec. The kind may set `mandatory: false`. A matched kind with no `kind_schema` entry keeps the profile catalog. Names a kind does not list keep the profile spec, including profile `mandatory`.
 
-`inspect schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names. A name that starts with `__` is left out, except `__date__` when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.
+`inspect schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names. A name that starts with `__` is left out. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,SHA`.
