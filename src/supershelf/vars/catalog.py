@@ -39,12 +39,22 @@ _DATE_KEYS = frozenset({"desc", "unit", "mandatory", "default", "validation"})
 
 
 class KindSchema:
-    """One kind: a description and the local names that belong to it."""
+    """One kind: a description, local names, and optional feed settings."""
 
-    def __init__(self, name: str, desc: str, variables: dict[str, VarSpec]) -> None:
+    def __init__(
+        self,
+        name: str,
+        desc: str,
+        variables: dict[str, VarSpec],
+        *,
+        feed_file: tuple[str, ...] | None = None,
+        feeds: tuple[str, ...] | None = None,
+    ) -> None:
         self.name = name
         self.desc = desc
         self.vars = variables
+        self.feed_file = feed_file
+        self.feeds = feeds
 
 
 _KIND_VAR_ADVICE = (
@@ -55,6 +65,15 @@ _KIND_VAR_ADVICE = (
 
 def _blank_schema_name(value: object) -> bool:
     return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def _stored_feed_file(feed_file: str | list[str] | None) -> tuple[str, ...] | None:
+    """One template, a list of templates, or none when the key was omitted."""
+    if feed_file is None:
+        return None
+    if isinstance(feed_file, str):
+        return (feed_file,)
+    return tuple(feed_file)
 
 
 def _reject_kind_var_keys(data: Mapping[str, Any], label: str) -> None:
@@ -111,6 +130,8 @@ class KindSchemaSpec(BaseModel):
             "An object may omit schema, which then uses the local name."
         ),
     )
+    feed_file: str | list[str] | None = None
+    feeds: list[str] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -123,7 +144,9 @@ class KindSchemaSpec(BaseModel):
                 f"{label} must be a mapping",
                 advice="Set desc and vars_schema.",
             )
-        unknown = [str(key) for key in data if key not in {"desc", "vars_schema"}]
+        unknown = [
+            str(key) for key in data if key not in {"desc", "vars_schema", "feed_file", "feeds"}
+        ]
         if unknown:
             joined = ", ".join(unknown)
             raise VarConfigError(
@@ -151,7 +174,35 @@ class KindSchemaSpec(BaseModel):
             key = str(name)
             var_label = f"{label}.vars_schema.{key}"
             expanded[key] = cls._expand_var(key, entry, var_label)
+        cls._feed_file(data, label)
+        cls._feeds(data, label)
         return {**data, "vars_schema": expanded}
+
+    @staticmethod
+    def _feed_file(data: Mapping[str, Any], label: str) -> None:
+        if "feed_file" not in data:
+            return
+        raw = data["feed_file"]
+        items = [raw] if isinstance(raw, str) else raw
+        invalid = not isinstance(items, list) or any(
+            not isinstance(item, str) or item.strip() == "" for item in items
+        )
+        if invalid:
+            raise VarConfigError(
+                f"{label}.feed_file must be a string or a list of strings",
+                advice="Use one path template, or a list of path templates.",
+            )
+
+    @staticmethod
+    def _feeds(data: Mapping[str, Any], label: str) -> None:
+        if "feeds" not in data:
+            return
+        raw = data["feeds"]
+        if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+            raise VarConfigError(
+                f"{label}.feeds must be a list of variable names",
+                advice="Name variables this kind resolves, or omit feeds.",
+            )
 
     @staticmethod
     def _expand_var(name: str, entry: object, label: str) -> dict[str, Any]:
@@ -255,7 +306,12 @@ class KindCatalog:
                 declared,
                 compile_source,
             )
-        return KindSchema(kind, parsed.desc, variables)
+        feed_file = _stored_feed_file(parsed.feed_file)
+        if feed_file is not None and compile_source is not None:
+            for template in feed_file:
+                compile_source(template)
+        feeds = None if parsed.feeds is None else tuple(parsed.feeds)
+        return KindSchema(kind, parsed.desc, variables, feed_file=feed_file, feeds=feeds)
 
     @classmethod
     def _var(
@@ -443,12 +499,27 @@ class VarCatalog:
         for name in names:
             if name not in specs:
                 specs[name] = cls._implicit(name, f"variable {name}")
-        return cls(
+        catalog = cls(
             specs,
             declared=tuple(declared),
             kinds=kinds,
             vars_present=raw_schema is not None,
         )
+        catalog._reject_unresolved_feeds()
+        return catalog
+
+    def _reject_unresolved_feeds(self) -> None:
+        """A feeds name must be one this kind resolves. Omitted feeds are skipped."""
+        for kind in self.kind_schemas():
+            if kind.feeds is None:
+                continue
+            resolved = set(self.names_for(kind.name))
+            for name in kind.feeds:
+                if name not in resolved:
+                    raise VarConfigError(
+                        f"kind_schema.{kind.name}.feeds {name} is not resolved",
+                        advice="Use a catalog name or a local name of this kind.",
+                    )
 
     @staticmethod
     def _builtins() -> dict[str, VarSpec]:

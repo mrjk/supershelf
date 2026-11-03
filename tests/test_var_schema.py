@@ -413,6 +413,81 @@ def test_kind_schema_spec_json_schema_lists_shorthand() -> None:
     assert "local name" in body["properties"]["schema"]["description"]
 
 
+def test_kind_schema_stores_feed_file_and_feeds() -> None:
+    profile: dict[str, object] = {
+        "vars_schema": {
+            "company_name": {"type": "text", "desc": "Payer"},
+            "employee_name": {"type": "text"},
+        },
+        "kind_schema": {
+            "invoice": {
+                "desc": "A vendor bill",
+                "feed_file": "{{ __config__.root_dir }}/invoices.csv",
+                "feeds": ["company", "__date__"],
+                "vars_schema": {
+                    "company": "company_name",
+                    "employee": {"schema": "employee_name", "mandatory": True},
+                    "__date__": None,
+                },
+            },
+            "receipt": {
+                "feed_file": [
+                    "{{ __config__.root_dir }}/receipts.csv",
+                    "{{ __config__.root_dir }}/old.csv",
+                ],
+                "feeds": ["company_name"],
+                "vars_schema": {"company": "company_name"},
+            },
+        },
+    }
+    catalog = _catalog(profile, compile_source=VarEnvironment().compile_source)
+    invoice, receipt = catalog.kind_schemas()
+
+    assert invoice.feed_file == ("{{ __config__.root_dir }}/invoices.csv",)
+    assert invoice.feeds == ("company", "__date__")
+    assert receipt.feed_file == (
+        "{{ __config__.root_dir }}/receipts.csv",
+        "{{ __config__.root_dir }}/old.csv",
+    )
+    assert receipt.feeds == ("company_name",)
+
+    from supershelf.domain_schema import DomainSchema
+
+    document = DomainSchema.load(profile).document()
+
+    assert set(document["$defs"]["invoice"]["properties"]) == {"company", "employee", "__date__"}
+    assert set(document["$defs"]["receipt"]["properties"]) == {"company"}
+
+
+def test_kind_schema_omits_feed_keys() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {"amount": {"type": "int"}},
+            "kind_schema": {"invoice": {"vars_schema": {"amount": "amount"}}},
+        }
+    )
+    invoice = catalog.kind_schemas()[0]
+
+    assert invoice.feed_file is None
+    assert invoice.feeds is None
+    assert invoice.vars["amount"].type == "int"
+
+
+def test_kind_schema_rejects_an_unresolved_feed_name() -> None:
+    with pytest.raises(VarConfigError, match="kind_schema.invoice.feeds nope is not resolved"):
+        _catalog(
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {
+                    "invoice": {
+                        "feeds": ["nope"],
+                        "vars_schema": {"amount": "amount"},
+                    }
+                },
+            }
+        )
+
+
 def test_domain_schema_accepts_kind_var_shorthand() -> None:
     from supershelf.domain_schema import DomainSchema
 
