@@ -546,9 +546,12 @@ def test_feed_column_is_ignored_and_custom_cell_wins(tmp_path: Path) -> None:
         },
         tmp_path,
     )
-    values = _values(plan)
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+    values = dict(resolved.items)
     assert values["vendor"] == "Mine"
     assert "VENDOR" not in values
+    assert resolved.rule_layer["vendor"] == "RuleCo"
+    assert "Mine" not in resolved.rule_layer.values()
 
 
 def test_empty_custom_cell_ignores_the_feed_column(tmp_path: Path) -> None:

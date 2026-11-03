@@ -133,11 +133,13 @@ class FileVars:
         rule: str,
         states: tuple[tuple[str, VarState], ...],
         facts: Mapping[str, str] | None = None,
+        rule_layer: Mapping[str, str] | None = None,
     ) -> None:
         self.kind = kind
         self.rule = rule
         self.states = states
         self.facts = dict(facts or {})
+        self.rule_layer = dict(rule_layer or {})
 
     @property
     def items(self) -> tuple[tuple[str, str], ...]:
@@ -363,6 +365,7 @@ class VarPlan:
             match_ns,
             match.kind,
         )
+        rule_layer = dict(scope)
         self._apply_cells(
             self._kinds.cells_for(match.kind, input_dir, file.path, match, file.sha256 or ""),
             scope,
@@ -377,7 +380,13 @@ class VarPlan:
             for key in order
             if key in states and states[key].value is not None
         )
-        return FileVars(match.kind, match.rule, chosen, _fact_lines(file_ns, match_ns))
+        return FileVars(
+            match.kind,
+            match.rule,
+            chosen,
+            _fact_lines(file_ns, match_ns),
+            rule_layer,
+        )
 
     @property
     def metadata(self) -> MetadataRegistry:
