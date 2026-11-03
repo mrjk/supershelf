@@ -2,9 +2,9 @@
 
 Architecture. Index: [README](../README.md).
 
-Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `record run` writes the profile database in section 3. Scan commands, `schema`, and `profiles` do not. `supershelf schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. `scan vars` uses those names as CSV columns. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
+Status: the variable types below are implemented. Each binding stores a Python value and a display string. Jinja still reads the display string. `scan import` writes the profile database in section 3. The sqlite schema does not follow these names. Each user variable is one key in `vars_json`. Architecture 3.2. `inspect schema` prints JSON Schema for declared `vars_schema` and `kind_schema` entries. Kind-file columns use the kind's local names. With no schema columns, a new CSV kind file still starts as `PATH,__date__`. Packaged defaults, in section 2, are loaded from `src/supershelf/default.toml`.
 
-A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `supershelf schema` builds one model per declared object and prints `model_json_schema()`. Resolving a variable does not write the database.
+A declared type and a resolved value are different objects. Pydantic is the schema mechanism. `VarSpec.model_dump(mode="json")` keeps `default` and `validation`. `inspect schema` builds one model per declared object and prints `model_json_schema()`. Resolving a variable does not write the database.
 
 ## 1.1 VarSpec
 
@@ -157,7 +157,7 @@ Sources. `default_vars` sets `vendor`, the rule replaces it, and the kind file r
 
 ## 1.9 kind_schema
 
-`kind_schema` is an optional top-level mapping. A profile with no `kind_schema` resolves as before. A bad entry stops `scan vars` and `schema`.
+`kind_schema` is an optional top-level mapping. A profile with no `kind_schema` resolves as before. A bad entry stops `scan vars`, `scan feeds`, `scan import`, and `inspect schema`.
 
 ```yaml
 vars_schema:
@@ -170,6 +170,10 @@ vars_schema:
 kind_schema:
   invoice:
     desc: A vendor bill
+    feed_file: "{{ __config__.root_dir }}/invoices.csv"
+    feeds:
+      - company
+      - __date__
     vars_schema:
       company: company_name
       employee:
@@ -178,10 +182,16 @@ kind_schema:
       __date__:
 ```
 
+The nested key is `vars_schema`. `fields` is not a key. A field is a match-rule slot. Behavior 3.
+
+`feed_file` is optional. A string is one path template. A list is templates in order. Omitted uses `kind_overrides_config`. Rendering is the kind-file path language in behavior 2.3.1. `kind_overrides_config: []` and no `feed_file` means that kind has no kind file. Feeds are skipped. Import still runs.
+
+`feeds` is an optional list of var names. Omitted means every schema var of that kind. `__date__` is included only when that schema lists it. A name the kind does not resolve is a config error. A var left off the list is still resolved and is still stored in `vars_json` on import. It has no feed column. The uppercase column name is behavior 3.2.
+
 The value names a declared `vars_schema` entry, or `__date__`. A string is that name (`company: company_name`). Null or a blank string uses the local name, so `__date__:` and `__date__: ""` both use `__date__`. TOML has no null, so the blank form there is `""`. On an object, omitted, null, or blank `schema` uses the local name. An explicit `schema` remaps (`employee` above). A namespace root, a name that starts with `__` and is not `__date__`, or a name that was never declared, is a config error. The local name (`company`) is the variable for files of that kind. It follows the variable-name pattern and cannot start with `__` unless it is `__date__`. `type` and `internal` cannot be set on the kind var. They come from the referenced spec.
 
 Omitted `desc`, `unit`, `mandatory`, and `validation` are copied from the referenced spec. A present `validation` mapping replaces the referenced one. It is not merged key by key. `default` is not copied. A kind `default` applies only when that kind entry sets it, as the default layer for that local name on files of that kind. Profile `default` and `default_vars` apply to that catalog name on files whose kind is not listed. On a listed kind they apply only when that kind's `vars_schema` includes the name.
 
 When a kind lists a name the profile also has, files of that kind use the overlaid spec. The kind may set `mandatory: false`. A matched kind with no `kind_schema` entry keeps the profile catalog. Names a kind does not list keep the profile spec, including profile `mandatory`.
 
-`supershelf schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names. A name that starts with `__` is left out, except `__date__` when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.
+`inspect schema` prints one JSON document. Several profiles are one object keyed by profile name. With `kind_schema`, each kind is an object under `$defs`. Property names are the kind's local names. `additionalProperties` is false. Without `kind_schema`, the object is the declared `vars_schema` names. A name that starts with `__` is left out, except `__date__` when the profile sets `vars_schema.__date__`. Neither key stops the command. The schema describes resolved values. Kind-file cells and rule `vars` are still strings before the cast. A CSV for a listed kind uses that kind's local names as columns. A kind that is not listed uses the declared `vars_schema` names. Missing names are appended on the right. Columns the schema does not name stay. With no schema columns, a new CSV still starts as `PATH,__date__`.

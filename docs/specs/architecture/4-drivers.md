@@ -16,11 +16,11 @@ Metadata drivers fill variables. They are not output drivers. `metadata_driver` 
 - `plan(prepared, context)` returns one action, or skips. It does not write the filesystem and it does not append an event.
 - `apply(action, dry_run)` performs the action. `dry_run` true creates nothing and appends nothing.
 
-The host owns `name`, `driver`, `kinds`, `when`, the record gate, the row shape, and plan-then-apply. The context carries the profile, the input, the source file, the document id, and the display-string scope. A driver may store extra fields on the action for its own `apply`.
+The host owns `name`, `driver`, `kinds`, `when`, the document gate, the row shape, and plan-then-apply. The context carries the profile, the input, the source file, the document id, and the display-string scope. A driver may store extra fields on the action for its own `apply`.
 
 The row columns are `profile`, `input`, `path`, `output`, `driver`, `status`, `operation`, `when`, `dest`. `operation` and `dest` are the driver's words. `when` is the boolean string from behavior 5.2. Status is `write`, `replace`, `unchanged`, `skip`, or `conflict`.
 
-`OutputConfigError` is a bad output item, a bad module, or a bad literal `when`. Exit 2. `OutputResolveError` is a file the plan cannot accept: the record gate, a layout, a claim, or a destination. The tip names a fix the user can make.
+`OutputConfigError` is a bad output item, a bad module, or a bad literal `when`. Exit 2. `OutputResolveError` is a file the plan cannot accept: the document gate, a layout, a claim, or a destination. The tip names a fix the user can make.
 
 ## 4.2 File driver
 

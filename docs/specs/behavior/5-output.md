@@ -2,17 +2,17 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf output` writes a destination for matched files and records that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
+`supershelf output` writes a destination for matched files and documents that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
 
-One profile has one sqlite file. Profiles do not share events. `cache_file` is the metadata cache in behavior 2.3.3. `output` resolves like `record status`, so a miss does not write it. `extension_remap` is not read.
+One profile has one sqlite file. Profiles do not share events. `cache_file` is the metadata cache in behavior 2.3.3. `output` resolves like `inspect scan import`, so a miss does not write it. `extension_remap` is not read.
 
 The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve as in 2.3.1, including kind-file reads and `meta()`. `output` does not call the kind-file commit.
 
-The comparison is the record status plan from behavior 4. Output does not implement a second linker. `record_identity` stays a step list. The packaged default `path` means `[path, hash]`. A bare `hash` means `[hash, path]`. A match rule can override the list.
+The comparison is the document plan from behavior 4. Output does not implement a second linker. `record_identity` stays a step list. The packaged default `path` means `[path, hash]`. A bare `hash` means `[hash, path]`. A match rule can override the list.
 
-The plan phase resolves like `record status`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`, and the gate in 5.2 stops the command. The tip says to run `record status`, then `record run`.
+The plan phase resolves like `inspect scan import`. A metadata cache miss does not create the sqlite file. `--dry-run` does not create it and does not migrate schema `1`. A real run opens the existing file for write only when an event would be appended. That open migrates schema `1` to schema `2`, as architecture 3.5. A missing file is not created. With no documents, a file that passes `kinds` and `when` is `new`. Preview warns, prints the row, and exits 1. `run` warns and writes nothing. The tip says to run `scan`, or `scan import`.
 
-`scan`, `data`, `record`, `schema`, and `profiles` do not read `outputs`.
+`scan`, `inspect`, `db`, and `profiles` do not read `outputs`.
 
 ## 5.1 Commands
 
@@ -25,17 +25,20 @@ Rows follow profile selection, then output list order, then walk order.
 ### output preview
 
 - supershelf output preview [PATH]
-- Prints every selected row, including `unchanged` and `skip`.
+- Prints every selected row, including `unchanged` and `skip`. A file whose document status is not `unchanged` or `refresh` is still planned from the live match.
 - Writes nothing. It does not create the sqlite file, a parent, a destination, or a directory.
 - The database is opened read-only.
-- Exit 0 when the plan is valid. A `conflict` row is valid here. The command still exits 0.
+- Each stale file warns once on stderr, before the table. The text is the 5.2 message for that status.
+- Exit 0 when every selected file passes the document gate. A `conflict` row is valid here. The command still exits 0.
+- Exit 1 when any selected file is stale. The table is still printed.
 
 ### output run
 
 - supershelf output run [PATH]
-- Prints the same rows, except `unchanged`.
-- `--dry-run` prints those rows and writes nothing. The database stays read-only. Schema `1` is not migrated.
-- A real run that would stop does stop under `--dry-run`, and still writes nothing.
+- Prints the same rows, except `unchanged`, when every selected file passes the document gate.
+- A stale file does not print the destination table. Every stale file in the selection warns, then the command exits 1. Nothing is written.
+- `--dry-run` prints those rows and writes nothing when the plan passes the gate. The database stays read-only. Schema `1` is not migrated.
+- A real run that would stop does stop under `--dry-run`, and still writes nothing. A stale plan warns and prints no destination table.
 - A plan with only `unchanged` and `skip` writes nothing and does not open the database for write.
 - Every selected profile is planned before any profile writes. A later profile does not commit when an earlier profile's plan would stop.
 - A real write creates the destination parent, performs the file operation, then calls `append_output`. The method commits itself.
@@ -61,7 +64,7 @@ Each item has `name`, `driver`, `kinds`, and `when`. The driver owns every other
 
 - `name` is required. It is a non-empty string and unique in the profile. A duplicate stops the command.
 - `driver` defaults to `file`. An unknown name stops the command and names the driver.
-- `kinds` omitted or null means every matched kind. The kind is the final kind after overrides.
+- `kinds` omitted or null means every matched kind. The kind is the match-rule kind. A kind file does not change it.
   `[]` selects no file. That item adds no row. It is not an error.
   A listed value that is not a string stops the command.
   A name that matches no rule does not stop at load. A file of another kind is left out. It is not a `skip` row.
@@ -75,23 +78,27 @@ Each item has `name`, `driver`, `kinds`, and `when`. The driver owns every other
   `false` is status `skip`. The layout is not rendered. No event is written.
   An undefined name stops the command, same as a variable template.
 
-A live file the record plan marks `duplicate` has no document. It is left out. It does not stop the other files. The owning document is the one that can be written. A `PATH` that matches only that extra file stops the command, because no kept output source was selected.
+A live file the document plan marks `duplicate` has no document. It is left out. It does not stop the other files. The owning document is the one that can be written. A `PATH` that matches only that extra file stops the command, because no kept output source was selected.
 
-A file that passes `kinds` and `when` must already be a present document whose record status is `unchanged` or `refresh`. `new`, `vars`, `generation`, `move`, `missing`, `present`, and `unmatched` stop the command before any destination is written and before any output event. The message says `record status is` that word, and names the profile, the input, and the path. The tip says why that word blocks output, then `Run record status, then record run.`
+A file that passes `kinds` and `when` is planned from the live match. `output run` writes only when that file is a present document whose document status is `unchanged` or `refresh`. `new`, `vars`, `generation`, `move`, `missing`, `present`, and `unmatched` are stale. Preview warns once per file, prints the table, and exits 1. `run` and `--dry-run` warn for every stale file in the selection, print no destination table, write nothing, and exit 1.
 
-- `new`: This file is not recorded.
-- `vars`: Kind, rule, or variables differ from the stored document.
-- `generation`: The file bytes changed.
-- `move`: The file moved.
-- `missing`: The recorded file is missing from the walk.
-- `present`: The file is back and is not stored as present.
-- `unmatched`: No rule matches this file.
+The message starts `Profile {name} input {index} {path} status is {status}.` Then the facts. Then the fix. Values are quoted with double quotes.
 
-A passing status with no document id uses the same message. That tip is only `Run record status, then record run.` `refresh` is allowed because the hash and the variables are the same.
+- `new`: `This file is not in the library.` Fix: `Run scan import.`
+- `vars`: one clause per difference, in this order. `kind was "statement", now "bill".` `rule was "invoice", now "bill".` A variable uses its display string. `vendor was "Bank2000", now "Bank2001".` A new key: `amount is "12.00" and was not stored.` A removed key: `amount was "12.00" and is no longer set.` The same display, with a different type or source: `vendor is still "Bank2000" but its stored type or source changed.` `file_dir`, `file_name`, `file_stem`, and `file_ext` use the same was/now form. Fix: `Run scan import, if those live values are the ones you want. If a live value is wrong, fix the match rule, the kind file, or the profile, then scan import again.`
+- `generation`: `The file bytes changed. hash was "{old}", now "{new}".` Then any kind, rule, variable, or file-field clauses from the same comparison. Fix: `Run scan import.`
+- `move`: `The file moved. path was "{stored}", now "{live}".` Then any of those clauses. Fix: `Run scan import.`
+- `missing`: `The recorded file is missing from the walk.` Fix: `Run scan import.`
+- `present`: `The file is back and is not stored as present.` Fix: `Run scan import.`
+- `unmatched`: `No rule matches this file.` Fix: `Change the match rule so this path matches, then run scan import.`
+
+The compared facts are `match_kind`, `rule`, `vars_json`, `file_dir`, `file_name`, `file_stem`, and `file_ext`. Variable text is the display field. A `present` row has no was/now clauses.
+
+A passing status with no document id stops preview and run before a table. The message says `status is` that word. The tip is only `Run scan import.` `refresh` is allowed because the hash and the variables are the same.
 
 A file that fails `kinds`, or whose `when` is `false`, does not face that gate. A `duplicate` that would have passed `kinds` and `when` is still left out.
 
-The profile sqlite file is ignored when it sits inside an input, same as record.
+The profile sqlite file is ignored when it sits inside an input, same as scan import.
 
 `config.output_modules` is an optional list of importable module paths. Omitted, null, and `[]` add no drivers. The built-in `file` driver is registered first. Each module is imported in list order and exports `DRIVERS`, a list of driver classes. A name that repeats `file`, or an earlier module, stops the command. An import failure stops the command. This list is not `var_modules` and not `metadata_driver`.
 
@@ -128,7 +135,7 @@ The latest event for a document and output name is the prior apply. The latest e
   `overwrite`: status `replace`. `previous` is `existed` true and `ours` false. Revert cannot restore those bytes. The database stores the hash, not the file.
 - The prior apply matches, but the file on disk does not. The same three words. `overwrite` stores `existed` true and `ours` true, with the prior operation and source hash.
 - A new layout points the document at a new path. The old file stays. Prune is a later `output prune`. The new path follows the rules above.
-- The latest event for the destination belongs to another document, or to another output name of this document. The command stops. `on_conflict` does not apply. The message names the destination and both owners.
+- The latest event for the destination belongs to another document, or to another output name of this document. The command stops. `on_conflict` does not apply. The message names the destination and both sources: profile, path, and output name. It does not use a document id.
 - Two planned actions in this run resolve to the same destination. The command stops before any write. The message names the destination and both sources. This includes two profiles selected together.
 - The source path and the destination path are the same file. The command stops.
 - The destination exists and is a directory. The command stops.
@@ -143,9 +150,11 @@ Parents are created on a real write. A parent that exists and is a file stops th
 
 Second run. The copy is still the same bytes. Status `unchanged`. `run` prints no row for it. No event is appended.
 
-New bytes. `record run` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
+New bytes. `scan import` stored the generation. The next output run replaces the copy. `previous` has `ours` true and the old source hash.
 
-Not recorded. The file is `new`. The command stops. The tip says to run `record status`, then `record run`. Nothing is written.
+Not in the library. The file is `new`. Preview prints the row, warns `This file is not in the library.`, and exits 1. `run` warns and writes nothing. No sqlite file is created.
+
+Vars. The stored vendor is `Bank2000` and the live value is `Bank2001`. The warning says `vendor was "Bank2000", now "Bank2001".` Preview prints the destination that uses `Bank2001` and exits 1. `run` writes nothing and prints no destination table.
 
 Duplicate. `record_identity` is `hash`. The extra path has no document. Output leaves it out. The owning document is written when its own row is `unchanged`.
 
@@ -155,11 +164,11 @@ Skip. The same foreign file, with `on_conflict: skip`. Status `skip`. The file s
 
 Overwrite. The same foreign file, with `on_conflict: overwrite`. The file is replaced. `previous` has `existed` true and `ours` false.
 
-Other document. The latest event for that path belongs to another document. The command stops. `overwrite` does not take the path.
+Other document. The latest event for that path belongs to another document. The command stops. The message names the destination and both source paths. `overwrite` does not take the path.
 
 Layout move. `layout` changes. The new path is `write`. The old file stays on disk. The old event stays.
 
-When. `when` renders `false`. Status `skip`. The column is `false`. The layout is not rendered. A file whose record status is `new` does not stop the command when `when` is `false`.
+When. `when` renders `false`. Status `skip`. The column is `false`. The layout is not rendered. A file whose document status is `new` does not stop the command when `when` is `false`.
 
 Bool words. `when: '{{ __match__.kind == "invoice" }}'` becomes `true` or `false`. `when: maybe` stops at load. `when: '{{ vendor }}'` stops when vendor renders `Bank2000`.
 

@@ -8,7 +8,7 @@ Read this file, then open the one section file for that id. Do not open the othe
 
 The cite id is the filename prefix. `behavior 2.3.2` is [behavior/2.3.2-kind-files.md](behavior/2.3.2-kind-files.md). `architecture 1.7` is inside [architecture/1-types.md](architecture/1-types.md). `architecture 3.5` is inside [architecture/3-database.md](architecture/3-database.md).
 
-`scan vars` resolves variables in 2.3.1, may read or append a kind file in 2.3.2, and may read file metadata in 2.3.3.
+`scan vars` resolves variables in 2.3.1, reads a kind file in 2.3.2, and may read file metadata in 2.3.3. `scan feeds` writes the kind file.
 
 ## Where to write
 
@@ -37,12 +37,13 @@ Product steps live in `behavior/` only. `2` is profile load only. Scan, match, a
   - `2.3.1` resolve: [behavior/2.3.1-resolve.md](behavior/2.3.1-resolve.md)
   - `2.3.2` kind files: [behavior/2.3.2-kind-files.md](behavior/2.3.2-kind-files.md)
   - `2.3.3` file metadata: [behavior/2.3.3-file-metadata.md](behavior/2.3.3-file-metadata.md)
-- `3` Data (`3.1` shared rules, `3.2` feed, `3.3` prune, `3.4` show): [behavior/3-data.md](behavior/3-data.md)
-- `4` Record (`4.1` commands, `4.2` link, `4.3` writes): [behavior/4-record.md](behavior/4-record.md)
+- `3` Feeds (`3.1` shared rules, `3.2` scan feeds, `3.3` row drop): [behavior/3-data.md](behavior/3-data.md)
+- `4` Import (`4.1` scan import, `4.2` link, `4.3` writes): [behavior/4-record.md](behavior/4-record.md)
 - `5` Output (`5.1` commands, `5.2` selection, `5.3` file driver): [behavior/5-output.md](behavior/5-output.md)
-- `6` Inspect (`6.1` command): [behavior/6-inspect.md](behavior/6-inspect.md)
+- `6` Inspect (`6.1` config, `6.2` schema, `6.3` scan): [behavior/6-inspect.md](behavior/6-inspect.md)
+- `7` Database (`7.1` db show): [behavior/7-db.md](behavior/7-db.md)
 
-The next command stage is `7`. Do not use `7` for the engine.
+The next command stage is `8`. Do not use `8` for the engine.
 
 At most three dotted numbers. A section that is already `X.Y.Z` keeps word headings under it. Do not renumber a section to make room. Add the next free id.
 

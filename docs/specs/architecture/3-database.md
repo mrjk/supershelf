@@ -8,7 +8,7 @@ A read accepts schema `1` and schema `2`. Schema `1` has no `content_meta`. A re
 
 ## 3.1 Tables
 
-`meta` stores `schema_version` and, after a successful `record run`, `identity`. The value is the profile default list, comma-separated, no spaces: `path,hash` or `hash,path`. A legacy `path` compares equal to `path,hash`. A legacy `hash` compares equal to `hash,path`. Behavior 4.2.
+`meta` stores `schema_version` and, after a successful `scan import`, `identity`. The value is the profile default list, comma-separated, no spaces: `path,hash` or `hash,path`. A legacy `path` compares equal to `path,hash`. A legacy `hash` compares equal to `hash,path`. Behavior 4.2.
 
 `contents` is one row per sha256. The primary key is `hash`. Many documents reference one row.
 
@@ -44,7 +44,9 @@ Indexes: `events.hash`, `events.destination`.
 
 ## 3.2 Variable snapshot
 
-`vars_json` is one JSON object. Keys are sorted. `__file__` and `__match__` are not included. Those facts already have columns: `match_kind`, `rule`, `mtime`, `ctime`, `file_dir`, `file_name`, `file_stem`, `file_ext`, `path`, and `hash` on `contents`. The column names stay. There is no schema migration. `__date__` is included when it is set. `__profile__` and `__config__` are not included. An unset name is left out.
+The sqlite schema does not follow the user's config. `vars_schema`, `kind_schema`, `feeds`, and kind-file columns do not add, remove, or rename tables or columns. Every user variable is one key in the single `vars_json` cell on the document and on each event. A new name, a removed name, or a changed kind entry is a different JSON object on the next import. It is not a migration. Schema version changes only when supershelf changes its own tables. 3.5.
+
+`vars_json` is one JSON object. Keys are sorted. `__file__` and `__match__` are not included. Those facts already have columns: `match_kind`, `rule`, `mtime`, `ctime`, `file_dir`, `file_name`, `file_stem`, `file_ext`, `path`, and `hash` on `contents`. Those column names are supershelf's. They stay. `__date__` is included when it is set. `__profile__` and `__config__` are not included. An unset name is left out.
 
 Each binding is `type`, `value`, `display`, and `value_sources`. `value` is the JSON form of the Python value. A float can be `12.5` while `display` is `12.50`. A difference in the name set, the type, the value, the display, or the sources is a variable change.
 
@@ -69,7 +71,7 @@ A move keeps the generation number. A generation increments it. A move or a gene
 
 Location changes are written by first marking the moving documents `missing`, so a swap of two paths can commit under the partial unique index, then writing the final presence and path.
 
-`duplicates` on the status row counts other in-scope present documents with that hash, plus extra live files reported as `duplicate` for that hash. Documents left out of scope still count. A never-inserted copy is not in `record duplicates`.
+`duplicates` on the status row counts other in-scope present documents with that hash, plus extra live files reported as `duplicate` for that hash. Documents left out of scope still count. A never-inserted copy has no document row. `db show` does not list it. 7.
 
 ## 3.4 Output event
 
@@ -85,11 +87,11 @@ When this profile wrote the previous destination, `ours` is true and the object 
 
 A missing file opened for reading is an empty previous state. The file is not created. A real read of an existing file uses SQLite read-only mode.
 
-`record run` opens for write when a row would change, or when the stored identity rule differs and the file already exists. `record status` does not. `--dry-run` does not create the file and does not migrate schema `1`. A `meta()` miss does not open the file. The identity key is updated in the record transaction. A failure rolls that transaction back. The schema created for a new file stays.
+`scan import` opens for write when a row would change, or when the stored identity rule differs and the file already exists. The other scan steps do not. `--dry-run` does not create the file and does not migrate schema `1`. A `meta()` miss does not open the file. The identity key is updated in the import transaction. A failure rolls that transaction back. The schema created for a new file stays. Kind-file writes are not in this transaction. 3.
 
 `RecordConfigError` is a bad `record_identity` word or list, on the flag, the environment variable, the profile, or a match rule. Exit 2. `DatabaseError` is a bad file, a wrong schema version, a parent that is not a directory, or a lock. Exit 1. The tip names a fix the user can make.
 
-Two copies, path. Both documents reference the same `contents.hash`. `record duplicates` groups that hash.
+Two copies, path. Both documents reference the same `contents.hash`. `db show` lists both.
 
 Two copies, hash. One document references `contents.hash`. The extra path is a `duplicate` status row and has no document row.
 

@@ -2,7 +2,7 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf inspect config` prints the parsed profile after profile init. It builds one ShelfProfile per selected ShelfConfig. It does not scan, open the database, or open the cache.
+`supershelf inspect` reads. It does not write the sqlite file, a kind file, or the cache. `inspect config` does not scan. `inspect schema` does not scan. `inspect scan` walks and resolves, and prints the full plan.
 
 ## 6.1 Command
 
@@ -26,3 +26,23 @@ These `config` values are the ones profile init already resolved. An omitted key
 Every other value stays the parsed text. `inputs.path`, kind-file templates, var templates, and output templates are not rendered here.
 
 A path template that section 2 cannot render stops the command with that same error.
+
+## 6.2 Schema
+
+- supershelf inspect schema
+- Prints the JSON Schema from architecture 1.9.
+- Does not scan, open the database, or open the cache.
+- `--dry-run` writes nothing. The command has nothing to change.
+- There is no `supershelf schema` command.
+
+## 6.3 Scan
+
+- supershelf inspect scan STEP [PATH]
+- STEP is `files`, `kinds`, `vars`, `feeds`, or `import`.
+- Prints the full plan for that step, including unchanged rows. `scan` prints only rows this run would write. 2.1.
+- Writes nothing. It does not create or edit a kind file, the sqlite file, or the cache file.
+- `inspect scan kinds` with a PATH is the pattern trace in 2.2.1. Omit PATH to print one match or miss line per kept file.
+- `inspect scan feeds` lists every fed cell and every row a real `scan feeds` would drop. It does not drop them.
+- `inspect scan import` prints every in-scope status, including `unchanged`. 4.1.
+- `PATH` is the relative path from 2.1. The same path in two inputs is two rows.
+- `--dry-run` changes nothing.
