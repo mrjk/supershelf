@@ -44,7 +44,6 @@ This step does not read or write documents, events, or `vars_json`. It does not 
   A file created in this run already has its feed columns when feeds is a non-empty list, in the order from 2.3.2.
   Feed fills those cells and does not append them.
   On a file that already had columns, a missing feed column is appended on the right.
-  TOML and YAML append a new key and keep the existing key order.
 - The stored feed cell is the display string. A float stays `12.50`. A bool stays `true` or `false`.
 - Two inputs that share one kind file and the same row identifier:
   if the fed values differ, stop and name both inputs. Do not pick one. Write nothing, including the sqlite file when this step is part of `scan`.
@@ -130,7 +129,6 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 - A file created in this run already has its feed columns when feeds is a non-empty list, in the create order from 2.3.2.
   Feed fills those cells and does not append them.
   On a file that already had columns, a missing feed column is appended on the right.
-  TOML and YAML append the key.
   The row is the kind-file row for this file's identifier. 2.3.2.
   Feed does not rewrite `PATH` or `SHA` on a row that already exists. Identity updates do. 2.3.2.
   A matched file with no row is added when a cell is written, in `auto` and `always`. The new row sets `PATH` and `SHA`. Other lowercase cells are empty.

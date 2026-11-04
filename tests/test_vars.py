@@ -345,12 +345,7 @@ def test_omitted_kind_overrides_config_logs_the_default_paths(
     messages = [record.message for record in caplog.records if record.levelno == logging.DEBUG]
     assert messages == [
         f"Kind file {(tmp_path / name).resolve()} is missing for kind note"
-        for name in (
-            "profile.work.note.csv",
-            "profile.work.note.toml",
-            "profile.work.note.yaml",
-            "profile.work.note.yml",
-        )
+        for name in ("profile.work.note.csv",)
     ]
 
 
@@ -406,12 +401,12 @@ def test_kind_file_search_logs_each_candidate_once(
     kinds.mkdir()
     kind_file = kinds / "note.csv"
     kind_file.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
-    missing = kinds / "note.toml"
+    missing = kinds / "missing.csv"
     plan = _plan(
         {
             "config": {
                 "kind_overrides_config": [
-                    "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.toml",
+                    "{{ __config__.root_dir }}/kinds/missing.csv",
                     "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
                 ]
             },
@@ -659,19 +654,6 @@ def test_mixed_case_column_stays_an_error(tmp_path: Path) -> None:
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     with pytest.raises(VarConfigError, match="must be lowercase"):
         _values(plan)
-
-
-def test_toml_feed_column_is_stored_and_ignored(tmp_path: Path) -> None:
-    kind = tmp_path / "note.toml"
-    kind.write_text(
-        '[[rows]]\npath = "a.txt"\n\n[rows.vars]\nvendor = "Mine"\n__DATE__ = "01/02/2026"\n',
-        encoding="utf-8",
-    )
-    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.toml"), tmp_path)
-    values = _values(plan)
-    assert values["vendor"] == "Mine"
-    assert "__DATE__" not in values
-    assert "__date__" not in values
 
 
 def test_schema_append_keeps_a_feed_column(tmp_path: Path) -> None:
@@ -1113,21 +1095,6 @@ def test_empty_kind_mode_env_is_an_error(tmp_path: Path) -> None:
             tmp_path,
             environ={"SUPERSHELF_KIND_OVERRIDES_MODE": ""},
         )
-
-
-def test_yaml_and_toml_rows_are_literal(tmp_path: Path) -> None:
-    (tmp_path / "note.yaml").write_text(
-        "- path: a.txt\n  vars:\n    owner: ada\n",
-        encoding="utf-8",
-    )
-    yaml_plan = _plan(_kind_document("{{ __config__.root_dir }}/note.yaml"), tmp_path)
-    assert _values(yaml_plan)["owner"] == "ada"
-    (tmp_path / "note.toml").write_text(
-        '[[rows]]\npath = "b.txt"\n\n[rows.vars]\nowner = "bea"\n',
-        encoding="utf-8",
-    )
-    toml_plan = _plan(_kind_document("{{ __config__.root_dir }}/note.toml"), tmp_path)
-    assert _values(toml_plan, file=_file("b.txt"), match=_match("b.txt"))["owner"] == "bea"
 
 
 def test_dry_run_logs_and_does_not_write(

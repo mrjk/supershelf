@@ -53,9 +53,6 @@ def test_shipped_defaults_match_the_architecture() -> None:
     assert PACKAGED.kind_overrides_sep == ","
     assert PACKAGED.kind_overrides_config == [
         "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv",
-        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml",
-        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml",
-        "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml",
     ]
     assert PACKAGED.input_depth == 0
     assert PACKAGED.input_follow_symlinks is True

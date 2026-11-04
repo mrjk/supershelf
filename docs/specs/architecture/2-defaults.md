@@ -26,9 +26,6 @@ kind_overrides_mode = "auto"
 kind_overrides_sep = ","
 kind_overrides_config = [
   "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv",
-  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml",
-  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml",
-  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml",
 ]
 input_depth = 0
 input_follow_symlinks = true
@@ -54,7 +51,7 @@ Only `None` falls back.
 
 `""` for a date format, a path, or a separator is set, and it is invalid. The command stops. It does not fall back.
 
-`kind_overrides_config = []` means no kind files. It does not fall back to the four packaged paths. `var_modules = []` means no modules. It is a real empty list. An input item's `include` or `exclude` set to `None` means no filter. An empty list is a real filter. A match rule's `kind` set to `None` uses that rule's `name`, and a `None` name uses `kind`. That rule already holds. There is no static kind string in `default.toml`.
+`kind_overrides_config = []` means no kind files. It does not fall back to the packaged path. `var_modules = []` means no modules. It is a real empty list. An input item's `include` or `exclude` set to `None` means no filter. An empty list is a real filter. A match rule's `kind` set to `None` uses that rule's `name`, and a `None` name uses `kind`. That rule already holds. There is no static kind string in `default.toml`.
 
 Omitted kind date format. The user sets `default_date_format` to `%d/%m/%Y` and omits `kind_overrides_date_format`. Kind files parse with `%d/%m/%Y`.
 
@@ -64,7 +61,7 @@ Null date format. `kind_overrides_date_format: null` follows `default_date_forma
 
 Empty date format. `kind_overrides_date_format: ""` stops the command. It does not follow `default_date_format`.
 
-Kind paths. A missing or null `kind_overrides_config` uses the four packaged templates. `[]` means no kind files.
+Kind paths. A missing or null `kind_overrides_config` uses the packaged CSV path. `[]` means no kind files.
 
 Inputs. A missing or null `inputs` stops a scan with the "no inputs" error. `inputs: []` stops with "inputs is empty".
 

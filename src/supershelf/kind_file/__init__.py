@@ -1,4 +1,4 @@
-"""Kind files: mode, date format, and the csv, toml, and yaml rows."""
+"""Kind files: mode, date format, and the csv rows."""
 
 from supershelf.kind_file.line import KindLine
 from supershelf.kind_file.table import (

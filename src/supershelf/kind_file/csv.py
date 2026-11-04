@@ -19,8 +19,6 @@ from supershelf.vars.spec import check_assignment_key
 class KindCsv(KindFormat):
     """Header, rows, column extend, and the SHA insert. The separator is the caller's."""
 
-    suffixes = (".csv",)
-
     def parse(
         self,
         path: Path,

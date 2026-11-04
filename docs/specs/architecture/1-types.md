@@ -74,7 +74,7 @@ Two defaults. `vars_schema.vendor.default: Bank2000` together with `default_vars
 
 These share YAML list syntax and mean different things.
 
-- Candidate list. An assignment value, or a spec `default`, whose YAML type is a list. Each item is tried in order. The first success is the value. The stored value is one scalar. This is the list `default_vars` and rule `vars` accept. Kind-file cells stay one string each: a YAML list in a kind file is a config error. An empty candidate list is a config error. A nested list is a config error.
+- Candidate list. An assignment value, or a spec `default`, whose YAML type is a list. Each item is tried in order. The first success is the value. The stored value is one scalar. This is the list `default_vars` and rule `vars` accept. A kind-file cell stays one string. An empty candidate list is a config error. A nested list is a config error.
 - Possible values. `validation.allowed`. Membership of the cast value. This does not choose among candidates. `account` can be a candidate list and also `allowed: [1000, 2000]`.
 - A list-typed value. `type: list` is a config error. A stored list would need an item type, a kind-file encoding, and a print rule, and it would collide with candidate-list syntax. The type stays reserved.
 
@@ -116,7 +116,7 @@ The filename does not set a date. A stem that is a date stays `__file__.stem`. A
 
 `mandatory` runs after the last layer, and only on `None`.
 
-`null` does not mean unset. Omit the key to leave the var unset. Quote scalars in `default_vars`, rule `vars`, and kind files. An unquoted YAML date, number, bool, or null is a config error there. Typed literals belong on `vars_schema.<name>.default`. Quote date, time, and datetime defaults too, including on the schema, so TOML and YAML stay on the same string grammar. YAML 1.1 may already have turned `yes`, `no`, `on`, and `off` into bools before supershelf sees them. Quote those words when the type is text.
+`null` does not mean unset. Omit the key to leave the var unset. Quote scalars in `default_vars` and rule `vars`. An unquoted YAML date, number, bool, or null is a config error there. A kind-file cell is one string. Typed literals belong on `vars_schema.<name>.default`. Quote date, time, and datetime defaults too, including on the schema, so TOML and YAML stay on the same string grammar. YAML 1.1 may already have turned `yes`, `no`, `on`, and `off` into bools before supershelf sees them. Quote those words when the type is text.
 
 While a key is rendering, `{{ that_key }}` reads the previous layer's display string. A layer that misses all of its candidates does not write the name, so a later layer can still set it.
 

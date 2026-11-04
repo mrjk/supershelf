@@ -11,9 +11,6 @@ kind_overrides_mode = "auto"
 kind_overrides_sep = ","
 kind_overrides_config = [
   "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv",
-  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml",
-  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml",
-  "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml",
 ]
 input_depth = 0
 input_follow_symlinks = true

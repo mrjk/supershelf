@@ -40,21 +40,11 @@ from supershelf.constants import (
 from supershelf.defaults import PACKAGED
 from supershelf.errors import VarConfigError, VarResolveError
 from supershelf.kind_file.csv import CSV
-from supershelf.kind_file.format import KindFormat
 from supershelf.kind_file.line import KindLine
 from supershelf.kind_file.names import KindNames
-from supershelf.kind_file.toml import TOML
-from supershelf.kind_file.yaml import YAML
 from supershelf.scan.match import FileMatch
 from supershelf.template.render import ScopeObject, scope_field
 from supershelf.vars.catalog import VarCatalog
-
-
-_FORMATS: dict[str, KindFormat] = {
-    suffix: fmt
-    for fmt in (CSV, TOML, YAML)
-    for suffix in fmt.suffixes
-}
 
 
 KindMode = Literal[
@@ -199,13 +189,12 @@ class KindCsvSep:
 class KindTable:
     """One kind file. The row identifier is the path or the hash."""
 
-    _SUFFIXES = (".csv", ".toml", ".yaml", ".yml")
+    _SUFFIXES = (".csv",)
     _FRESH_COLUMNS = (KIND_CSV_PATH, KIND_CSV_SHA)
 
     def __init__(
         self,
         path: Path,
-        suffix: str,
         columns: tuple[str, ...] | None,
         rows: dict[str, dict[str, str]],
         sep: str,
@@ -216,7 +205,6 @@ class KindTable:
         bom: bool = False,
     ) -> None:
         self.path = path
-        self.suffix = suffix
         self.columns = columns
         self.rows = rows
         self.sep = sep
@@ -240,13 +228,13 @@ class KindTable:
     @classmethod
     def missing(cls, path: Path, sep: str) -> KindTable:
         """A file that always mode will create from the first template."""
-        suffix = cls._suffix(path)
-        return cls(path, suffix, None, {}, sep, missing=True)
+        cls._suffix(path)
+        return cls(path, None, {}, sep, missing=True)
 
     @classmethod
     def read(cls, path: Path, logger: logging.Logger, sep: str) -> KindTable:
         """Parse an existing file. An empty file is an empty table."""
-        suffix = cls._suffix(path)
+        cls._suffix(path)
         payload = path.read_bytes()
         bom = payload.startswith(b"\xef\xbb\xbf")
         try:
@@ -257,11 +245,10 @@ class KindTable:
                 advice="Save the kind file as UTF-8.",
             ) from exc
         if text.strip() == "":
-            return cls(path, suffix, None, {}, sep, blank=True, bom=bom)
-        parsed = _FORMATS[suffix].parse(path, text, logger, sep)
+            return cls(path, None, {}, sep, blank=True, bom=bom)
+        parsed = CSV.parse(path, text, logger, sep)
         table = cls(
             path,
-            suffix,
             parsed.columns,
             parsed.rows,
             sep,
@@ -287,9 +274,7 @@ class KindTable:
         self._plan_notes(logger)
 
     def add_schema_columns(self, names: tuple[str, ...]) -> None:
-        """Remember schema columns this CSV does not already have."""
-        if self.suffix != ".csv":
-            return
+        """Remember schema columns this file does not already have."""
         present = set(self.columns or ())
         present.update(self._extra_columns)
         for name in names:
@@ -299,9 +284,7 @@ class KindTable:
             present.add(name)
 
     def set_fresh_feeds(self, names: tuple[str, ...]) -> None:
-        """Feed columns for a CSV this run creates. An existing file ignores them."""
-        if self.suffix != ".csv":
-            return
+        """Feed columns for a file this run creates. An existing file ignores them."""
         kept: list[str] = []
         for name in names:
             column = self.feed_column_name(name)
@@ -311,8 +294,8 @@ class KindTable:
         self._fresh_feeds = tuple(kept)
 
     def sync_schema_columns(self, dry_run: bool, logger: logging.Logger) -> None:
-        """Append missing schema columns on the right of an existing CSV."""
-        if self.suffix != ".csv" or not self._extra_columns:
+        """Append missing schema columns on the right of an existing file."""
+        if not self._extra_columns:
             return
         if self.missing or self.blank or self.columns is None:
             return
@@ -353,16 +336,13 @@ class KindTable:
         self._append()
 
     def _create_columns(self) -> tuple[str, ...]:
-        if self.suffix != ".csv":
-            return self._FRESH_COLUMNS
         return (KIND_CSV_SHA, KIND_CSV_PATH, *self._fresh_feeds, *self._extra_columns)
 
     def _write_new(self) -> None:
         columns = self._create_columns()
         text = self._rendered(columns, header=True)
         self._replace_bytes(text.encode("utf-8"))
-        if self.suffix == ".csv":
-            self.columns = columns
+        self.columns = columns
         self.missing = False
         self.blank = False
 
@@ -391,9 +371,7 @@ class KindTable:
         return KindNames.is_feed_column(name)
 
     def accepts_name(self, name: str) -> bool:
-        """CSV rejects a column that is not a legal header name or a feed column."""
-        if self.suffix != ".csv":
-            return True
+        """Reject a column that is not a legal header name or a feed column."""
         return self.is_feed_column(name) or self._legal_column(name)
 
     @classmethod
@@ -401,7 +379,7 @@ class KindTable:
         return KindNames.legal_column(name)
 
     def set_cell(self, relative: str, name: str, value: str, sha: str = "") -> bool:
-        """Set one cell on the first row. An illegal CSV column is refused."""
+        """Set one cell on the first row. An illegal column is refused."""
         if value.strip() == "":
             return False
         if not self.accepts_name(name):
@@ -412,7 +390,7 @@ class KindTable:
             self.rows[relative] = row
             self.row_sha[relative] = sha
             self.raw_rows.append(KindLine(relative, sha, row))
-            if self.suffix == ".csv" and sha and (self.columns is None or KIND_CSV_SHA not in self.columns):
+            if sha and (self.columns is None or KIND_CSV_SHA not in self.columns):
                 base = list(self.columns or (KIND_CSV_PATH,))
                 if KIND_CSV_PATH in base:
                     base.insert(base.index(KIND_CSV_PATH) + 1, KIND_CSV_SHA)
@@ -420,11 +398,10 @@ class KindTable:
                     base.insert(0, KIND_CSV_SHA)
                 self.columns = tuple(base)
         row[name] = value
-        if self.suffix == ".csv":
-            if self.columns is None:
-                self.columns = (KIND_CSV_PATH, KIND_CSV_SHA)
-            if name not in self.columns:
-                self.columns = (*self.columns, name)
+        if self.columns is None:
+            self.columns = (KIND_CSV_PATH, KIND_CSV_SHA)
+        if name not in self.columns:
+            self.columns = (*self.columns, name)
         return True
 
     def drop_paths(self, paths: set[str]) -> None:
@@ -513,7 +490,7 @@ class KindTable:
         self.blank = False
 
     def _full_text(self) -> str:
-        return _FORMATS[self.suffix].full_text(self.sep, self.columns, self.output_rows())
+        return CSV.full_text(self.sep, self.columns, self.output_rows())
 
     def _append(self) -> None:
         block = self._rendered(
@@ -538,7 +515,7 @@ class KindTable:
         parent.mkdir(parents=True, exist_ok=True)
 
     def _rendered(self, columns: tuple[str, ...], *, header: bool) -> str:
-        return _FORMATS[self.suffix].pending_text(self.sep, columns, self._pending, header)
+        return CSV.pending_text(self.sep, columns, self._pending, header)
 
     @classmethod
     def _suffix(cls, path: Path) -> str:
@@ -546,7 +523,7 @@ class KindTable:
         if suffix not in cls._SUFFIXES:
             raise VarConfigError(
                 f"Kind file {path} has an unsupported suffix",
-                advice="Use .csv, .toml, .yaml, or .yml.",
+                advice="Use .csv.",
             )
         return suffix
 
@@ -586,11 +563,8 @@ class KindTable:
             current = self.row_sha.get(path, "")
             if current and current != digest:
                 return True
-        if self.suffix != ".csv" and self._sha_sets:
-            return True
         if (
-            self.suffix == ".csv"
-            and self.columns is not None
+            self.columns is not None
             and KIND_CSV_SHA in self.columns
             and self._sha_sets
         ):
@@ -598,18 +572,14 @@ class KindTable:
         return False
 
     def _needs_sha_insert(self) -> bool:
-        if self.suffix != ".csv" or self.missing or self.blank or self.columns is None:
+        if self.missing or self.blank or self.columns is None:
             return False
         if KIND_CSV_SHA in self.columns:
             return False
         return bool(self._pending or self._sha_sets)
 
     def _commit_rewrite(self, dry_run: bool, logger: logging.Logger) -> None:
-        adding_sha = (
-            self.suffix == ".csv"
-            and self.columns is not None
-            and KIND_CSV_SHA not in self.columns
-        )
+        adding_sha = self.columns is not None and KIND_CSV_SHA not in self.columns
         if adding_sha and dry_run:
             logger.info("Would add column SHA to kind file %s", self.path)
         if self._extra_columns and dry_run:
@@ -623,11 +593,10 @@ class KindTable:
         if dry_run:
             return
         self._apply_edits()
-        if self.suffix == ".csv":
-            self._ensure_sha_column()
-            if self._extra_columns:
-                self.columns = tuple(self.columns or ()) + tuple(self._extra_columns)
-                self._extra_columns.clear()
+        self._ensure_sha_column()
+        if self._extra_columns:
+            self.columns = tuple(self.columns or ()) + tuple(self._extra_columns)
+            self._extra_columns.clear()
         self.save()
         self._pending.clear()
         if adding_sha:
@@ -1042,7 +1011,7 @@ class KindFiles:
             if not path.is_file():
                 raise VarConfigError(
                     f"Kind file {path} is not a file",
-                    advice="Point the kind file at a csv, toml, or yaml file.",
+                    advice="Point the kind file at a csv file.",
                 )
             return self._with_headers(self._load_existing(path, kind), kind)
         if create and rendered:

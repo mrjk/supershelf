@@ -14,7 +14,7 @@ config:
   default_date_format: '%Y-%m-%d' # Shows mtime and ctime in scan files. Not templated.
   kind_overrides_mode: auto # 2.3.2. auto appends when the file exists. manual only reads. always creates and appends. disabled ignores kind files.
   kind_overrides_date_format: '%d/%m/%Y' # Optional. Kind-file and feed cells whose type is date. Omitted uses default_date_format. Stored as YYYY-MM-DD.
-  kind_overrides_sep: ';' # Optional. Kind-file CSV separator. Omitted uses a comma. YAML and TOML ignore it.
+  kind_overrides_sep: ';' # Optional. Kind-file CSV separator. Omitted uses a comma.
   root_dir: "{{ __profile__.dir }}" # Default. Directory of the config file.
 
   # Default paths
@@ -25,24 +25,15 @@ config:
   #   - my_package.supershelf_vars
   # output_modules: # Optional importable modules. DRIVERS. See architecture 4. Not metadata_driver.
   #   - my_package.supershelf_outputs
-  kind_overrides_config: # Omitted uses this list. First existing file wins. Per-file rows. Cached by input and kind, and by path.
+  kind_overrides_config: # Omitted uses this path. First existing file wins. Per-file rows. Cached by input and kind, and by path.
     - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.csv"
-    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.toml"
-    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yaml"
-    - "{{ __config__.root_dir }}/profile.{{ __profile__.name }}.{{ __match__.kind }}.yml"
 
   # Settings that can differ per input
   # root_dir: /srv/data_processing/
   # database_file: "{{ __config__.root_dir }}/state.sqlite"
   # kind_overrides_config: # Same resolution. __input__.path keeps each input in its own kind file.
   #   - "{{ __input__.path }}/data/{{ __match__.kind }}.csv"
-  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.toml"
-  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.yaml"
-  #   - "{{ __input__.path }}/data/{{ __match__.kind }}.yml"
   #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.csv"
-  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.toml"
-  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.yaml"
-  #   - "{{ __config__.root_dir }}/data/{{ __match__.kind }}.yml"
 
 
 # Source of files
@@ -315,7 +306,7 @@ outputs:
 
 ## Kind files
 
-2.3.2. Not part of the profile above. Same two rows in each format. `.yml` is the yaml text. The profile example sets `kind_overrides_sep` to `;`. Omitted, the separator is a comma. `issued` is type `date`, so the cell is written with `kind_overrides_date_format` (`%d/%m/%Y`). Stored values are `2026-04-25` and `2026-01-15`. An empty cell is absent.
+2.3.2. Not part of the profile above. The profile example sets `kind_overrides_sep` to `;`. Omitted, the separator is a comma. `issued` is type `date`, so the cell is written with `kind_overrides_date_format` (`%d/%m/%Y`). Stored values are `2026-04-25` and `2026-01-15`. An empty cell is absent.
 
 `invoice` lists local names and feeds `vendor`, `amount`, and `issued`, so a new CSV header is `SHA;PATH;VENDOR;AMOUNT;ISSUED;vendor;owner;amount;paid;issued`. The file below already has columns. Missing schema names are appended on the right. Columns the schema does not name stay. The app does not create those columns.
 
@@ -331,45 +322,9 @@ banking_1/REL_20260425.pdf;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Bank2000/card/CARD_1234_20211231.pdf;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;15/01/2026;;sample
 ```
 
-`profile.default.invoice.toml`
-
-```toml
-[[rows]]
-path = "banking_1/REL_20260425.pdf"
-sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
-[rows.vars]
-vendor = "Bank2000"
-issued = "25/04/2026"
-
-[[rows]]
-path = "Bank2000/card/CARD_1234_20211231.pdf"
-sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
-[rows.vars]
-issued = "15/01/2026"
-owner = "sample"
-```
-
-`profile.default.invoice.yaml`
-
-```yaml
-- path: banking_1/REL_20260425.pdf
-  sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  vars:
-    vendor: Bank2000
-    issued: "25/04/2026"
-
-- path: Bank2000/card/CARD_1234_20211231.pdf
-  sha: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-  vars:
-    issued: "15/01/2026"
-    owner: sample
-```
-
 `profile.default.payslip.csv`
 
-Local names from `kind_schema`. `company` is `company_name`. `employee` is `employee_name`. TOML and YAML use the same row shape as the invoice files, with these keys under `vars`.
+Local names from `kind_schema`. `company` is `company_name`. `employee` is `employee_name`.
 
 ```csv
 SHA;PATH;company;employee

@@ -668,51 +668,6 @@ vars.vendor = "{{ __file__.hash }}"
     assert (tmp_path / "invoice.csv").exists() is False
 
 
-def test_yaml_rewrite_keeps_the_later_row(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    isolate_env(monkeypatch, tmp_path)
-    _profile(
-        tmp_path,
-        """\
-[config]
-kind_overrides_config = ["{{ __config__.root_dir }}/invoice.yaml"]
-
-[vars_schema.vendor]
-type = "text"
-
-[kind_schema.invoice]
-feeds = ["vendor"]
-
-[kind_schema.invoice.vars_schema]
-vendor = "vendor"
-
-[default_vars]
-vendor = "Bank2000"
-
-[[inputs]]
-path = "inbox"
-
-[[match_rules]]
-name = "bill"
-kind = "invoice"
-glob = "**"
-""",
-    )
-    kind = tmp_path / "invoice.yaml"
-    kind.write_text(
-        "- path: a.pdf\n- path: a.pdf\n  vars:\n    vendor: Later\n",
-        encoding="utf-8",
-    )
-
-    _dispatch(["scan", "feeds"])
-
-    body = kind.read_text(encoding="utf-8")
-    assert body.count("Later") == 1
-    assert "Bank2000" in body
-
-
 def test_duplicate_raw_row_is_kept(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
