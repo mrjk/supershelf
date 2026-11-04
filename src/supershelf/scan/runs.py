@@ -32,8 +32,6 @@ _SCAN_PREFIX = ("profile", "input", "sha", "path", "status")
 def order_scan_row(row: dict[str, object], *, profiles: int) -> dict[str, object]:
     """Scan stdout order. profile is included only when more than one is selected."""
     source = dict(row)
-    if "sha" not in source and "sha256" in source:
-        source["sha"] = source.pop("sha256")
     if profiles <= 1:
         source.pop("profile", None)
     ordered: dict[str, object] = {}

@@ -7,7 +7,12 @@ import json
 from clak import Argument, Command, ListViewMixin, Parser
 
 from supershelf.cli.common import kept_path
-from supershelf.cli.scan import variable_rows
+from supershelf.cli.scan import (
+    _FILES_COLUMNS,
+    _VARS_COLUMNS,
+    show_profile_first,
+    variable_rows,
+)
 from supershelf.configs import ShelfConfigs
 from supershelf.data import run_feed
 from supershelf.domain_schema import DomainSchema
@@ -62,10 +67,16 @@ class InspectSchemaCommand(Parser):
 class InspectScanFilesCommand(ListViewMixin, Parser):
     """Every kept file, including unchanged identity rows."""
 
+    class Meta:
+        view_columns = _FILES_COLUMNS
+        view_column_names = ("profile", *_FILES_COLUMNS)
+
     path = kept_path()
 
-    def cli_run(self, config=None, profile=None, path=None, **_):
-        return ShelfRuns.load(config, profile).file_rows(path, changes_only=False)
+    def cli_run(self, config=None, profile=None, path=None, columns=None, ctx=None, **_):
+        runs = ShelfRuns.load(config, profile)
+        show_profile_first(ctx, columns, len(runs.shelves))
+        return runs.file_rows(path, changes_only=False)
 
 
 class InspectScanKindsCommand(Parser):
@@ -175,6 +186,10 @@ class InspectScanKindsCommand(Parser):
 class InspectScanVarsCommand(ListViewMixin, Parser):
     """Every matched file, including unchanged variables."""
 
+    class Meta:
+        view_columns = _VARS_COLUMNS
+        view_column_names = ("profile", *_VARS_COLUMNS, "input", "sha", "rule")
+
     path = kept_path()
     show_all = Argument(
         "--all",
@@ -188,11 +203,13 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
         profile=None,
         path=None,
         show_all=False,
+        columns=None,
         ctx=None,
         **_,
     ):
         fmt = ctx.view_settings.get("format") if ctx is not None else None
         runs = ShelfRuns.load(config, profile)
+        show_profile_first(ctx, columns, len(runs.shelves))
         walk = runs.changed_resolves(path, dry_run=True, changes_only=False)
         return variable_rows(
             walk,

@@ -185,8 +185,7 @@ def test_scan_files_table(
     ).strftime("%d/%m/%Y")
 
     assert "profile" in output
-    assert "sha" in output
-    assert "sha256" not in output
+    assert "sha256" in output
     assert "a.txt" in output
     assert "b.txt" in output
     assert "work" in output
@@ -197,6 +196,18 @@ def test_scan_files_table(
     assert str(other.resolve()) not in output
     assert (tmp_path / "profile.work.sqlite").exists() is False
     assert (tmp_path / "profile.home.sqlite").exists() is False
+
+    app.dispatch(["scan", "files", "--format", "json"])
+    rows = json.loads(capsys.readouterr().out)
+    assert list(rows[0]) == [
+        "profile",
+        "input",
+        "path",
+        "status",
+        "mtime",
+        "ctime",
+        "sha256",
+    ]
 
 
 def test_scan_files_always_includes_the_hash(
@@ -217,9 +228,15 @@ def test_scan_files_always_includes_the_hash(
     app.dispatch(["scan", "files", "--format", "json"])
     rows = json.loads(capsys.readouterr().out)
 
-    assert list(rows[0])[:4] == ["input", "sha", "path", "status"]
+    assert list(rows[0]) == [
+        "input",
+        "path",
+        "status",
+        "mtime",
+        "ctime",
+        "sha256",
+    ]
     assert "profile" not in rows[0]
-    assert "sha256" not in rows[0]
     assert rows[0]["path"] == "a.txt"
     assert rows[0]["status"] == "new"
     assert "mtime" in rows[0]
@@ -355,7 +372,7 @@ def test_scan_diffs_hide_rows_import_would_not_write(
     quiet = capsys.readouterr()
     assert "a.txt" not in quiet.out
     assert "b.txt" in quiet.out
-    assert "unmatched" in quiet.out
+    assert "No match_rule for b.txt" in quiet.err
 
     target.write_bytes(b"hello!")
     app.dispatch(["scan", "files"])
@@ -408,7 +425,6 @@ def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     assert "notes" in captured.out
     assert "a.txt" in captured.out
     assert "b.txt" in captured.out
-    assert "unmatched" in captured.out
     assert "sha256" not in captured.out
     assert "No match_rule for b.txt in profile work input 1" in captured.err
     assert (tmp_path / "profile.work.sqlite").exists() is False
@@ -444,18 +460,16 @@ def test_scan_match_prints_captured_groups(
 
     app.dispatch(["scan", "match", "--format", "json"])
     rows = {row["path"]: row for row in json.loads(capsys.readouterr().out)}
-    assert list(rows["2000_acme.pdf"]) == [
-        "input",
-        "path",
-        "status",
-        "kind",
-        "rule",
-        "groups",
-    ]
+    assert list(rows["2000_acme.pdf"]) == ["path", "kind", "rule", "groups"]
     assert rows["2000_acme.pdf"]["groups"] == "year: 2000\nvendor: acme"
     assert rows["a.txt"]["groups"] == ""
     assert rows["b.txt"]["groups"] == ""
-    assert rows["b.txt"]["status"] == "unmatched"
+    assert "status" not in rows["b.txt"]
+
+    app.dispatch(["scan", "match", "--format", "json", "--columns", "path,status"])
+    shown = {row["path"]: row for row in json.loads(capsys.readouterr().out)}
+    assert list(shown["b.txt"]) == ["path", "status"]
+    assert shown["b.txt"]["status"] == "unmatched"
 
 
 def test_scan_kinds_prefix_warns_only_for_selected_files(
@@ -577,7 +591,7 @@ def test_scan_vars_named_file_lists_each_input(
     )
 
     app = App(parse=False)
-    app.dispatch(["scan", "vars", "--format", "json", "a.txt"])
+    app.dispatch(["scan", "vars", "--format", "json", "--columns", "input,path", "a.txt"])
     captured = capsys.readouterr()
     rows = json.loads(captured.out)
 

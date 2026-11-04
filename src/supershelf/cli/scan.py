@@ -14,6 +14,23 @@ from supershelf.vars import FileVars
 
 _STRUCTURED_FORMATS = frozenset({"json", "yaml"})
 
+_FILES_COLUMNS = ("input", "path", "status", "mtime", "ctime", "sha256")
+_MATCH_COLUMNS = ("path", "kind", "rule", "groups")
+_VARS_COLUMNS = ("path", "kind", "vars", "sources")
+
+
+def show_profile_first(ctx, columns, profiles: int) -> None:
+    """Default columns lead with profile when more than one profile is selected."""
+    if profiles <= 1 or columns is not None or ctx is None:
+        return
+    settings = ctx.plugins.get("view_settings")
+    if not isinstance(settings, dict):
+        return
+    chosen = settings.get("columns")
+    if not chosen or "profile" in chosen:
+        return
+    settings["columns"] = ["profile", *chosen]
+
 
 def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
     """Printed variables in table order: alphabetical by name."""
@@ -69,23 +86,39 @@ def present_sources(resolved: FileVars, *, show_all: bool = False) -> str:
 class ScanFilesCommand(ListViewMixin, Parser):
     """List file-identity changes against the document database."""
 
+    class Meta:
+        view_columns = _FILES_COLUMNS
+        view_column_names = ("profile", *_FILES_COLUMNS)
+
     path = kept_path()
 
-    def cli_run(self, config=None, profile=None, path=None, **_):
-        return ShelfRuns.load(config, profile).file_rows(path)
+    def cli_run(self, config=None, profile=None, path=None, columns=None, ctx=None, **_):
+        runs = ShelfRuns.load(config, profile)
+        show_profile_first(ctx, columns, len(runs.shelves))
+        return runs.file_rows(path)
 
 
 class ScanMatchCommand(ListViewMixin, Parser):
     """List kind and rule changes, captured groups, and files no rule claims."""
 
+    class Meta:
+        view_columns = _MATCH_COLUMNS
+        view_column_names = ("profile", *_MATCH_COLUMNS, "input", "status")
+
     path = kept_path()
 
-    def cli_run(self, config=None, profile=None, path=None, **_):
-        return ShelfRuns.load(config, profile).kind_rows(path)
+    def cli_run(self, config=None, profile=None, path=None, columns=None, ctx=None, **_):
+        runs = ShelfRuns.load(config, profile)
+        show_profile_first(ctx, columns, len(runs.shelves))
+        return runs.kind_rows(path)
 
 
 class ScanVarsCommand(ListViewMixin, Parser):
     """List variables for each matched file."""
+
+    class Meta:
+        view_columns = _VARS_COLUMNS
+        view_column_names = ("profile", *_VARS_COLUMNS, "input", "sha", "rule")
 
     path = kept_path()
     kind_overrides_mode = Argument(
@@ -106,6 +139,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
         dry_run=False,
         kind_overrides_mode=None,
         show_all=False,
+        columns=None,
         ctx=None,
         **_,
     ):
@@ -113,6 +147,7 @@ class ScanVarsCommand(ListViewMixin, Parser):
         if kind_overrides_mode is not None:
             KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
         runs = ShelfRuns.load(config, profile)
+        show_profile_first(ctx, columns, len(runs.shelves))
         walk = runs.changed_resolves(
             path,
             mode=kind_overrides_mode,
