@@ -33,6 +33,9 @@ class _StringCommand:
     def __init__(self, name: str, func: Any) -> None:
         self._name = name
         self._func = func
+        marker = getattr(func, "jinja_pass_arg", None)
+        if marker is not None:
+            self.jinja_pass_arg = marker
 
     def __call__(self, *args: object, **kwargs: object) -> str:
         try:

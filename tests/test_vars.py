@@ -96,7 +96,7 @@ def test_self_reference_reads_the_previous_string(tmp_path: Path) -> None:
                 "filename_regex": r"(?P<date>\d+)\.txt",
                 "vars": {
                     "issued": [
-                        '{{ regex_time_var(date, "%Y%m%d") }}',
+                        '{{ __extract__.date | parse_date("%Y%m%d") }}',
                         "{{ issued }}",
                     ]
                 },
@@ -112,6 +112,24 @@ def test_self_reference_reads_the_previous_string(tmp_path: Path) -> None:
         match=_match("20211231.txt", groups={"date": "20211231"}),
     )
     assert parsed["issued"] == "2021-12-31"
+
+
+def test_parse_date_display_is_stored_as_iso_for_a_date(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"issued": {"type": "date"}},
+            "default_vars": {
+                "shown": '{{ "20211231" | parse_date("%Y%m%d") }}',
+                "issued": '{{ "20211231" | parse_date("%Y%m%d") }}',
+            },
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+        {"__config__": {"date_format": "%d/%m/%Y"}},
+    )
+    values = _values(plan)
+    assert values["shown"] == "31/12/2021"
+    assert values["issued"] == "2021-12-31"
 
 
 def test_builtin_date_name_is_rejected(tmp_path: Path) -> None:
@@ -871,6 +889,7 @@ def test_always_create_orders_feeds_by_the_schema_dict(tmp_path: Path) -> None:
         f"SHA,PATH,VENDOR,ISSUED,vendor,owner,issued\n{FILE_DIGEST},a.txt,,,,,\n"
     )
 
+
 def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
     plan = _plan(
         {
@@ -889,7 +908,9 @@ def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"SHA,PATH,amount,vendor\n{FILE_DIGEST},a.txt,,\n"
+    assert created.read_text(encoding="utf-8") == (
+        f"SHA,PATH,amount,vendor\n{FILE_DIGEST},a.txt,,\n"
+    )
 
 
 def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
@@ -928,7 +949,9 @@ def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> No
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"SHA,PATH,vendor,date\n{FILE_DIGEST},a.txt,,\n"
+    assert created.read_text(encoding="utf-8") == (
+        f"SHA,PATH,vendor,date\n{FILE_DIGEST},a.txt,,\n"
+    )
 
 
 def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
@@ -1160,6 +1183,7 @@ def test_sha_path_header_is_read(tmp_path: Path) -> None:
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     assert _values(plan)["vendor"] == "Mine"
 
+
 def test_existing_path_sha_header_is_not_reordered(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text(
@@ -1181,6 +1205,7 @@ def test_existing_path_sha_header_is_not_reordered(tmp_path: Path) -> None:
     assert kind.read_text(encoding="utf-8") == (
         f"PATH,SHA,vendor,amount\na.txt,{FILE_DIGEST},Mine,\n"
     )
+
 
 def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
@@ -1273,7 +1298,7 @@ def test_sources_keep_every_layer(tmp_path: Path) -> None:
     assert present_vars(resolved, "json", show_all=True)["__match__.kind"]["value"] == "note"
 
 
-def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> None:
+def test_regex_capture_stays_on_extract_until_assigned(tmp_path: Path) -> None:
     plan = _plan(
         {
             "vars_schema": {"amount": {"type": "float"}},
@@ -1282,6 +1307,7 @@ def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> No
                     "name": "notes",
                     "kind": "note",
                     "filename_regex": r"(?P<amount>[^.]+)\.txt",
+                    "vars": {"amount": ["{{ __extract__.amount }}", "1"]},
                 }
             ],
         },
@@ -1293,33 +1319,90 @@ def test_regex_group_cast_is_not_repaired_by_a_later_layer(tmp_path: Path) -> No
         Path("/in"),
     )
 
+    assert "amount" in dict(resolved.items)
     assert dict(resolved.items)["amount"] == "12.50"
     assert resolved.dump_vars()["amount"]["value"] == 12.5
-    assert resolved.sources["amount"] == ("fact",)
+    assert resolved.sources["amount"] == ("rule:notes",)
+    assert "__extract__.amount" not in dict(resolved.items)
+    assert "__extract__.amount" not in present_vars(resolved, None)
+    shown = present_vars(resolved, None, show_all=True)
+    assert "__extract__.amount: 12.50" in str(shown)
+    assert resolved.source_labels("__extract__.amount") == ("fact",)
+    dumped = present_vars(resolved, "json", show_all=True)
+    assert dumped["__extract__.amount"]["value"] == "12.50"
+    assert "__extract__.amount" not in present_vars(resolved, "json")
 
-    broken = _plan(
+    fallback = plan.resolve(
+        _file("EUR12.50.txt"),
+        _match("EUR12.50.txt", groups={"amount": "EUR12.50"}),
+        Path("/in"),
+    )
+    assert dict(fallback.items)["amount"] == "1"
+
+    bare = _plan(
         {
-            "vars_schema": {"amount": {"type": "float"}},
+            "vars_schema": {"amount": {"type": "float", "mandatory": True}},
             "match_rules": [
                 {
                     "name": "notes",
                     "kind": "note",
                     "filename_regex": r"(?P<amount>[^.]+)\.txt",
-                    "vars": {"amount": "1"},
                 }
             ],
         },
         tmp_path,
     )
     with pytest.raises(VarResolveError, match="variable amount failed"):
-        broken.resolve(
-            _file("EUR12.50.txt"),
-            _match("EUR12.50.txt", groups={"amount": "EUR12.50"}),
+        bare.resolve(
+            _file("12.50.txt"),
+            _match("12.50.txt", groups={"amount": "12.50"}),
             Path("/in"),
         )
 
 
-def test_int_group_drops_leading_zeros(tmp_path: Path) -> None:
+def test_missing_extract_field_tries_the_next_candidate(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_regex": r"(?P<amount>[^.]+)\.txt",
+                    "vars": {"amount": ["{{ __extract__.amount }}", "{{ __extract__ }}", "fallback"]},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    values = _values(plan, match=_match(groups={}))
+    assert values["amount"] == "fallback"
+
+
+def test_group_named_kind_stays_on_extract(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_regex": r"(?P<kind>\w+)\.txt",
+                    "vars": {"label": "{{ __extract__.kind }}"},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(
+        _file("bill.txt"),
+        _match("bill.txt", groups={"kind": "bill"}),
+        Path("/in"),
+    )
+    assert dict(resolved.items)["label"] == "bill"
+    assert resolved.facts["__match__.kind"] == "note"
+    assert resolved.facts["__extract__.kind"] == "bill"
+
+
+def test_int_assignment_drops_leading_zeros_and_keeps_the_capture(tmp_path: Path) -> None:
     plan = _plan(
         {
             "vars_schema": {"amount": {"type": "int"}},
@@ -1328,6 +1411,7 @@ def test_int_group_drops_leading_zeros(tmp_path: Path) -> None:
                     "name": "notes",
                     "kind": "note",
                     "filename_regex": r"(?P<amount>\d+)\.txt",
+                    "vars": {"amount": "{{ __extract__.amount }}"},
                 }
             ],
         },
@@ -1341,6 +1425,7 @@ def test_int_group_drops_leading_zeros(tmp_path: Path) -> None:
 
     assert dict(resolved.items)["amount"] == "12"
     assert resolved.dump_vars()["amount"]["value"] == 12
+    assert resolved.facts["__extract__.amount"] == "0012"
 
 
 def test_bool_display_stays_text_in_templates(tmp_path: Path) -> None:

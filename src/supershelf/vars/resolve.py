@@ -36,6 +36,7 @@ from supershelf.constants import (
     SOURCE_RULE,
     TYPE_DATE,
     VAR_CONFIG,
+    VAR_EXTRACT,
     VAR_FILE,
     VAR_FILTERS,
     VAR_GLOBALS,
@@ -115,6 +116,38 @@ def _fact_lines(file_ns: Mapping[str, str], match_ns: Mapping[str, str]) -> dict
     facts = {f"{VAR_FILE}.{field}": file_ns[field] for field in FILE_FIELDS}
     facts.update({f"{VAR_MATCH}.{field}": match_ns[field] for field in MATCH_FIELDS})
     return facts
+
+
+def _extract_lines(groups: Mapping[str, str]) -> dict[str, str]:
+    return {f"{VAR_EXTRACT}.{name}": value for name, value in groups.items()}
+
+
+def _groups_from_facts(facts: Mapping[str, str]) -> dict[str, str]:
+    prefix = f"{VAR_EXTRACT}."
+    return {
+        name[len(prefix) :]: value
+        for name, value in facts.items()
+        if name.startswith(prefix)
+    }
+
+
+class _ExtractObject:
+    """Named captures. Rendering the object with no field fails the candidate."""
+
+    def __init__(self, groups: Mapping[str, str]) -> None:
+        self._groups = dict(groups)
+
+    def __getitem__(self, name: str) -> str:
+        return self._groups[name]
+
+    def __getattr__(self, name: str) -> str:
+        try:
+            return self._groups[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __str__(self) -> str:
+        raise VarCandidateError(f"{VAR_EXTRACT} needs a field")
 
 
 def _render_value(display: str, date_format: str, *, date: bool) -> str | DateScope:
@@ -306,7 +339,6 @@ class VarPlan:
         names: list[str] = list(defaults.keys)
         for table in rules.values():
             names.extend(table.keys)
-        names.extend(matcher.named_groups())
         catalog = VarCatalog.load(
             document,
             compile_source=environment.compile_source,
@@ -348,12 +380,11 @@ class VarPlan:
     def _resolve_bound(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
         file_ns = _file_namespace(file)
         match_ns = _match_namespace(match.kind, match.rule)
+        groups = dict(match.groups)
         scope: dict[str, str] = {}
         states: dict[str, VarState] = {}
         order: list[str] = []
-        for name, value in match.groups.items():
-            self._save_raw(name, value, SOURCE_FACT, scope, states, order, match, file.path)
-        self._apply_defaults(scope, states, order, file_ns, match_ns, match.kind)
+        self._apply_defaults(scope, states, order, file_ns, match_ns, groups, match.kind)
         self._apply(
             self._rules.get(match.rule, VarTable.empty()),
             layer_source(SOURCE_RULE, match.rule),
@@ -362,6 +393,7 @@ class VarPlan:
             order,
             file_ns,
             match_ns,
+            groups,
             match.kind,
         )
         rule_layer = dict(scope)
@@ -379,11 +411,13 @@ class VarPlan:
             for key in order
             if key in states and states[key].value is not None
         )
+        facts = _fact_lines(file_ns, match_ns)
+        facts.update(_extract_lines(groups))
         return FileVars(
             match.kind,
             match.rule,
             chosen,
-            _fact_lines(file_ns, match_ns),
+            facts,
             rule_layer,
         )
 
@@ -426,6 +460,7 @@ class VarPlan:
                 scope,
                 _file_namespace(file),
                 _match_namespace(resolved.kind, resolved.rule),
+                _groups_from_facts(resolved.facts),
                 resolved.kind,
             ),
         )
@@ -456,6 +491,7 @@ class VarPlan:
         order: list[str],
         file_ns: Mapping[str, str],
         match_ns: Mapping[str, str],
+        groups: Mapping[str, str],
         kind: str,
     ) -> None:
         for key in self._catalog.names_for(kind):
@@ -465,7 +501,7 @@ class VarPlan:
             cast = self._first(
                 key,
                 candidates,
-                self._render_scope(scope, file_ns, match_ns, kind),
+                self._render_scope(scope, file_ns, match_ns, groups, kind),
                 kind,
             )
             if cast is None:
@@ -481,13 +517,14 @@ class VarPlan:
         order: list[str],
         file_ns: Mapping[str, str],
         match_ns: Mapping[str, str],
+        groups: Mapping[str, str],
         kind: str,
     ) -> None:
         for key in table.keys:
             cast = self._first(
                 key,
                 table.candidates[key],
-                self._render_scope(scope, file_ns, match_ns, kind),
+                self._render_scope(scope, file_ns, match_ns, groups, kind),
                 kind,
             )
             if cast is None:
@@ -499,12 +536,14 @@ class VarPlan:
         scope: Mapping[str, str],
         file_ns: Mapping[str, str],
         match_ns: Mapping[str, str],
+        groups: Mapping[str, str],
         kind: str,
     ) -> dict[str, Any]:
         """Profile names, file and match objects, then display strings written so far."""
         render_scope: dict[str, Any] = dict(self._profile_scope)
         render_scope[VAR_FILE] = ScopeObject(file_ns, FIELD_NAME)
         render_scope[VAR_MATCH] = ScopeObject(match_ns, FIELD_KIND)
+        render_scope[VAR_EXTRACT] = _ExtractObject(groups)
         date_format = self._date_display_format()
         for name, value in scope.items():
             is_date = self._catalog.type_of(kind, name) == TYPE_DATE

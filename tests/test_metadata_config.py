@@ -132,7 +132,7 @@ def test_regex_group_wins_without_calling_the_driver(tmp_path: Path) -> None:
     plan = _plan(
         {
             "default_vars": {
-                "author": ["{{ author }}", '{{ meta("pdf", "author") }}'],
+                "author": ["{{ __extract__.author }}", '{{ meta("pdf", "author") }}'],
             },
             "match_rules": [
                 {
