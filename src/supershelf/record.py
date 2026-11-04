@@ -1,4 +1,4 @@
-"""Decide what a record run would write, and apply that plan to the sqlite file."""
+"""Decide what db import would write, and apply that plan to the sqlite file."""
 
 from __future__ import annotations
 
@@ -240,7 +240,7 @@ class LiveFile:
         if not found.sha256:
             raise SupershelfError(
                 f"Profile {result.profile} has no hash for {found.path}",
-                advice="Run record without --quick. Record always reads the file bytes.",
+                advice="Run db import. Import always reads the file bytes.",
             )
         return cls(
             input_index=result.index,
@@ -1008,7 +1008,7 @@ class _ProfileRun:
 
 
 class RecordSession:
-    """status and run for the selected profiles."""
+    """Import for the selected profiles."""
 
     def __init__(self, runs: list[_ProfileRun]) -> None:
         self.runs = runs
@@ -1043,14 +1043,6 @@ class RecordSession:
             found.extend(run.linked)
         return found
 
-    def status(self, path: str | None) -> list[dict[str, object]]:
-        """Every in-scope row. Writes nothing."""
-        rows: list[dict[str, object]] = []
-        for run in self.runs:
-            planned = run.plan(path, dry_run=True)
-            rows.extend(run.display(planned, changes_only=False))
-        return rows
-
     def run(self, path: str | None, *, dry_run: bool) -> list[dict[str, object]]:
         """Rows that would change. `--dry-run` skips the write."""
         rows: list[dict[str, object]] = []
@@ -1060,83 +1052,3 @@ class RecordSession:
             run.write(planned, dry_run=dry_run)
         return rows
 
-
-class RecordReader:
-    """history and duplicates. Neither command scans or writes."""
-
-    def __init__(self, shelves: list[ShelfProfile]) -> None:
-        self.shelves = shelves
-
-    @classmethod
-    def load(cls, config: str | None, profile: str | None) -> RecordReader:
-        """Load profiles so each database path can be opened read-only."""
-        return cls(ShelfRuns.load(config, profile).shelves)
-
-    def history(self, path: str | None) -> list[dict[str, object]]:
-        """Events in id order. A move is still found from its old path."""
-        rows: list[dict[str, object]] = []
-        for shelf in self.shelves:
-            with ShelfDatabase.open_read(shelf.database_file) as database:
-                documents = database.documents()
-                events = database.events()
-            chosen = self._history_ids(documents, events, path)
-            for event in events:
-                if event.document_id not in chosen:
-                    continue
-                rows.append(
-                    {
-                        "profile": shelf.name,
-                        "document": event.document_id,
-                        "seq": event.seq,
-                        "event": event.event,
-                        "identity": event.identity,
-                        "input": event.input_index,
-                        "path": event.path,
-                        "hash": event.hash,
-                        "generation": event.generation,
-                        "kind": event.match_kind,
-                        "rule": event.rule,
-                        "at": event.recorded_at,
-                    }
-                )
-        return rows
-
-    def duplicates(self, path: str | None) -> list[dict[str, object]]:
-        """Recorded documents that share a hash."""
-        rows: list[dict[str, object]] = []
-        for shelf in self.shelves:
-            with ShelfDatabase.open_read(shelf.database_file) as database:
-                documents = database.documents()
-                hits = DuplicateListing.collect(documents, database.events())
-            selector = KeptPath.from_paths(path, [document.path for document in documents])
-            for hit in hits:
-                if not selector.matches(hit.path):
-                    continue
-                rows.append(
-                    {
-                        "profile": shelf.name,
-                        "hash": hit.hash,
-                        "document": hit.document_id,
-                        "current": "yes" if hit.current else "no",
-                        "path": hit.path,
-                        "generation": hit.generation,
-                    }
-                )
-        return rows
-
-    @staticmethod
-    def _history_ids(
-        documents: list[DocumentRow],
-        events: list[EventRow],
-        path: str | None,
-    ) -> set[int]:
-        by_document: dict[int, list[str]] = {document.id: [document.path] for document in documents}
-        for event in events:
-            by_document.setdefault(event.document_id, []).append(event.path)
-        known = [relative for paths in by_document.values() for relative in paths]
-        selector = KeptPath.from_paths(path, known)
-        return {
-            document_id
-            for document_id, paths in by_document.items()
-            if any(selector.matches(relative) for relative in paths)
-        }

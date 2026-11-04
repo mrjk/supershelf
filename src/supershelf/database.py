@@ -586,7 +586,7 @@ class ShelfDatabase:
         if self._connection is None or not self.writable:
             raise DatabaseError(
                 f"Database is not open for writing: {self.path}",
-                advice="Run record run without --dry-run.",
+                advice="Run db import without --dry-run.",
             )
 
     def _begin(self) -> sqlite3.Connection:
@@ -594,7 +594,7 @@ class ShelfDatabase:
         if connection is None:
             raise DatabaseError(
                 f"Database is not open for writing: {self.path}",
-                advice="Run record run without --dry-run.",
+                advice="Run db import without --dry-run.",
             )
         try:
             connection.execute("BEGIN IMMEDIATE")

@@ -1,4 +1,4 @@
-"""record status, run, history, and duplicates."""
+"""db import."""
 
 import sqlite3
 from pathlib import Path
@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 
 from supershelf.cli import App
-from supershelf.database import ShelfDatabase
-from supershelf.record import RecordReader
+from supershelf.database import EventRow, ShelfDatabase
 from tests.helpers import isolate_env as _isolate
 
 _PROFILE = """\
@@ -25,12 +24,9 @@ name = "bill"
 glob = "**"
 """
 
-def _history(path: str | None = None) -> list[dict[str, object]]:
-    return RecordReader.load(None, None).history(path)
-
-
-def _duplicates(path: str | None = None) -> list[dict[str, object]]:
-    return RecordReader.load(None, None).duplicates(path)
+def _events(database: Path) -> list[EventRow]:
+    with ShelfDatabase.open_read(database) as stored:
+        return stored.events()
 
 
 def _profile(tmp_path: Path) -> Path:
@@ -111,8 +107,7 @@ def test_run_records_and_scan_commands_stay_free_of_sqlite(
     preview = capsys.readouterr().out
     assert "generation" in preview
     assert database.is_file()
-    history = _history()
-    assert [row["event"] for row in history] == ["new"]
+    assert [event.event for event in _events(database)] == ["new"]
 
 
 def test_filter_missing_then_a_later_run_moves(
@@ -139,27 +134,10 @@ def test_filter_missing_then_a_later_run_moves(
     moved = capsys.readouterr().out
     assert "move" in moved
     assert "b.pdf" in moved
-    history = _history("a.pdf")
-    events = {row["event"] for row in history}
-    paths = {row["path"] for row in history}
-    assert "move" in events
-    assert "a.pdf" in paths
-    assert "b.pdf" in paths
-
-
-def test_duplicates_lists_two_current_documents(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _isolate(monkeypatch, tmp_path)
-    inbox = _profile(tmp_path)
-    (inbox / "copy.pdf").write_bytes((inbox / "a.pdf").read_bytes())
-    app = App(parse=False)
-    app.dispatch(["db", "import"])
-    capsys.readouterr()
-    duplicates = _duplicates()
-    assert sum(row["current"] == "yes" for row in duplicates) >= 2
+    events = _events(tmp_path / "profile.work.sqlite")
+    assert "move" in {event.event for event in events}
+    assert "a.pdf" in {event.path for event in events}
+    assert "b.pdf" in {event.path for event in events}
 
 
 def test_unmatched_file_stays_in_history(
@@ -179,8 +157,7 @@ def test_unmatched_file_stays_in_history(
     app.dispatch(["db", "import"])
     output = capsys.readouterr().out
     assert "unmatched" in output
-    history = _history()
-    events = {row["event"] for row in history}
+    events = {event.event for event in _events(tmp_path / "profile.work.sqlite")}
     assert "unmatched" in events
     assert "new" in events
     assert (inbox / "a.pdf").is_file()
@@ -216,9 +193,9 @@ def test_identity_switch_warns_and_keeps_old_events(
     warned = capsys.readouterr().err
     assert "was path" in warned
     assert "uses hash" in warned
-    history = _history()
-    assert [row["identity"] for row in history] == ["path", "hash"]
-    assert [row["event"] for row in history] == ["new", "generation"]
+    events = _events(tmp_path / "profile.work.sqlite")
+    assert [event.identity for event in events] == ["path", "hash"]
+    assert [event.event for event in events] == ["new", "generation"]
     with ShelfDatabase.open_read(tmp_path / "profile.work.sqlite") as database:
         assert database.identity() == "hash,path"
 
@@ -242,15 +219,12 @@ def test_two_hash_copies_are_not_inserted(
     assert "new" in first
     assert "duplicate" in first
     assert "b.pdf" in first
-    history = _history()
-    assert [row["path"] for row in history] == ["a.pdf"]
-    assert "b.pdf" not in {row["path"] for row in _duplicates()}
+    assert [event.path for event in _events(tmp_path / "profile.work.sqlite")] == ["a.pdf"]
     app.dispatch(["db", "import"])
     second = capsys.readouterr().out
     assert "duplicate" in second
     assert "new" not in second
-    again = _history()
-    assert [row["event"] for row in again] == ["new"]
+    assert [event.event for event in _events(tmp_path / "profile.work.sqlite")] == ["new"]
 
 
 def test_bad_rule_identity_exits_before_the_walk(
@@ -342,7 +316,7 @@ def test_path_list_matches_legacy_meta_without_a_warning(
         assert stored.identity() == "path"
 
 
-def test_history_without_a_database_prints_no_rows(
+def test_show_without_a_database_prints_no_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

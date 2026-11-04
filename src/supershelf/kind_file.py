@@ -515,17 +515,6 @@ class KindTable:
                 self.columns = (*self.columns, name)
         return True
 
-    def drop_column(self, name: str) -> None:
-        """Remove one column or key from every row, including a later duplicate."""
-        if self.columns is not None:
-            self.columns = tuple(item for item in self.columns if item != name)
-        for cells in self.rows.values():
-            cells.pop(name, None)
-        self.raw_rows = [
-            KindLine(line.path, line.sha, {key: item for key, item in line.cells.items() if key != name})
-            for line in self.raw_rows
-        ]
-
     def drop_paths(self, paths: set[str]) -> None:
         """Drop every row for these relative paths, including later duplicates."""
         indexes = {index for index, line in enumerate(self.raw_rows) if line.path in paths}
@@ -560,40 +549,6 @@ class KindTable:
                 continue
             self.rows[line.path] = line.cells
             self.row_sha[line.path] = line.sha
-
-    def clear_rows(self) -> None:
-        """Remove every data row. A CSV header stays on the table."""
-        self.rows.clear()
-        self.raw_rows.clear()
-        self.row_sha.clear()
-
-    def column_filled(self, name: str) -> bool:
-        """True when any raw row, including a later duplicate, has this cell."""
-        for cells in self.rows.values():
-            if cells.get(name, "").strip():
-                return True
-        for line in self.raw_rows:
-            if line.cells.get(name, "").strip():
-                return True
-        return False
-
-    def data_columns(self) -> tuple[str, ...]:
-        """CSV header names after PATH, or TOML and YAML keys in file order."""
-        if self.suffix == ".csv":
-            return tuple(
-                name
-                for name in (self.columns or ())
-                if name != KIND_CSV_PATH and name != KIND_CSV_SHA
-            )
-        names: list[str] = []
-        seen: set[str] = set()
-        for line in self.output_rows():
-            for name in line.cells:
-                if name in seen:
-                    continue
-                seen.add(name)
-                names.append(name)
-        return tuple(names)
 
     def output_rows(self) -> list[KindLine]:
         """File order. The first row of a path is the edited one. Later rows stay."""
