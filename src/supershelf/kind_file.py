@@ -1472,6 +1472,13 @@ class KindFiles:
         scope[VAR_INPUT] = ScopeObject({FIELD_PATH: str(input_dir)}, FIELD_PATH)
         return self._render_path(templates[0], scope)
 
+    def found_path(self, kind: str, input_dir: Path) -> Path | None:
+        """The winning file when it is on disk. None when it is not."""
+        table = self.open_table(kind, input_dir, create=False)
+        if table is None or not table.path.is_file():
+            return None
+        return table.path.resolve()
+
     def templates_for(self, kind: str) -> tuple[str, ...]:
         """Path templates for one kind. A set feed_file replaces the config list."""
         catalog = self._catalog

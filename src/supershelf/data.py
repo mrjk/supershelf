@@ -73,6 +73,15 @@ class _FeedDrop:
     profile: str
 
 
+@dataclass
+class _KindNotice:
+    """Found kind files and inputs that have none, in first-seen order."""
+
+    paths: list[Path]
+    missing: list[Path]
+    seen: set[Path]
+
+
 @dataclass(frozen=True)
 class _Choice:
     profile: str
@@ -126,7 +135,7 @@ def run_feed(
     ]
     selector = KeptPath.from_paths(path, kept)
     resolved = _resolve(prepared, selector.narrow(groups))
-    _warn_missing_files(resolved)
+    _notice_kind_files(resolved)
     if _feeds_disabled(prepared):
         return []
     _reject_feed_conflicts(resolved)
@@ -245,17 +254,42 @@ def _feeds_disabled(prepared: list[tuple[ShelfProfile, Matcher, VarPlan]]) -> bo
     return all(plan.kind_files.mode == KIND_MODE_DISABLED for _shelf, _matcher, plan in prepared)
 
 
-def _warn_missing_files(resolved: tuple[_Resolved, ...]) -> None:
-    seen: set[tuple[str, str]] = set()
+def _notice_kind_files(resolved: tuple[_Resolved, ...]) -> None:
+    grouped: dict[tuple[str, str], _KindNotice] = {}
+    order: list[tuple[str, str]] = []
     for item in resolved:
         kinds = item.plan.kind_files
-        if kinds.mode == KIND_MODE_DISABLED or kinds.templates_for(item.kind):
+        if kinds.mode == KIND_MODE_DISABLED:
             continue
         key = (item.profile, item.kind)
-        if key in seen:
+        slot = grouped.get(key)
+        if slot is None:
+            slot = _KindNotice([], [], set())
+            grouped[key] = slot
+            order.append(key)
+        if item.input_path in slot.seen:
             continue
-        seen.add(key)
-        logger.warning("Profile %s kind %s has no kind file", item.profile, item.kind)
+        slot.seen.add(item.input_path)
+        found = kinds.found_path(item.kind, item.input_path)
+        if found is None:
+            slot.missing.append(item.input_path)
+            continue
+        if found not in slot.paths:
+            slot.paths.append(found)
+    for profile, kind in order:
+        slot = grouped[(profile, kind)]
+        for path in slot.paths:
+            logger.notice("Profile %s kind %s kind file %s", profile, kind, path)
+        if slot.paths:
+            for input_dir in slot.missing:
+                logger.notice(
+                    "Profile %s kind %s has no config for input %s",
+                    profile,
+                    kind,
+                    input_dir,
+                )
+            continue
+        logger.notice("Profile %s kind %s has no config", profile, kind)
 
 
 def _reject_feed_conflicts(resolved: tuple[_Resolved, ...]) -> None:

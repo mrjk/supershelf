@@ -25,7 +25,20 @@ This step does not read or write documents, events, or `vars_json`. It does not 
   `auto` and `always` also append, fill `SHA`, and retarget `PATH`, as in 2.3.2, and they drop rows as in 3.3.
   `always` creates a missing file from the first template. `auto` does not.
   `manual` and `disabled` do not create a missing file.
-- An empty `kind_overrides_config` and no `feed_file` means there is no file. `scan feeds` prints that and writes nothing. Import still runs.
+- For each profile and kind that matched a file on this run, log the kind file. 3.2.
+  `disabled` does not. A kind with no matched file is silent.
+  The line is a notice. 1. It is shown with no `-v`.
+  `--dry-run` logs the same lines and writes nothing.
+  An on-disk file logs `Profile {profile} kind {kind} kind file {path}`.
+  The path is resolved. Two inputs that share one file log it once.
+  Two inputs that resolve different files each log one line.
+  No on-disk file logs `Profile {profile} kind {kind} has no config`.
+  That is an empty `kind_overrides_config` with no `feed_file`, or templates whose files are all missing.
+  The same sentence either way. Nothing is written for that kind. Import still runs.
+  When some inputs have a file and some do not, log each found path, and
+  `Profile {profile} kind {kind} has no config for input {input}` once per input directory that missed.
+  `always` does not count a file as found until it is on disk. The notice is logged, then the create still runs.
+  `manual` and `auto` do not create a missing file.
 - The kind file is chosen as in 2.3.2. The first existing template wins.
 - A new CSV column is appended on the right. Feed does not reorder columns.
   TOML and YAML append a new key and keep the existing key order.
@@ -43,9 +56,17 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 
 ### Cases
 
-Empty kind paths. `kind_overrides_config: []` and no `feed_file`. `scan feeds` prints that there is no file. `db import` still writes documents.
+Empty kind paths. `kind_overrides_config: []` and no `feed_file`. A matched kind logs `Profile work kind invoice has no config`. `db import` still writes documents.
 
-Disabled mode. `kind_overrides_mode` is `disabled`. No kind file is read or written.
+Missing kind file. Templates name a file that is not on disk. The same notice. `auto` does not create the file.
+
+Found kind file. The file is on disk. One notice names the resolved path. Many matched files that share it log it once.
+
+Two kind files. Two inputs resolve different files for one kind. Each path is logged once.
+
+Mixed inputs. One input has a kind file and another does not. The found path is logged. The missing input logs `has no config for input` and that input directory.
+
+Disabled mode. `kind_overrides_mode` is `disabled`. No kind file is read or written. The kind-file notice is not logged.
 
 Shared path. Two inputs resolve the same kind file and the same relative path, and the fed `vendor` values differ. The command stops and names both inputs.
 
@@ -55,7 +76,7 @@ Custom cell. `vendor` holds `Mine`. Feed writes the rule-layer string into `VEND
 
 Documents left alone. Feed writes `VENDOR` and leaves `vendor` empty. No document row and no event is written.
 
-Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`.
+Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`. The kind-file notice is still logged.
 
 ## 3.2 scan feeds
 
@@ -65,7 +86,21 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 - Writes fed values into the uppercase columns, after the identity updates and the row drop.
 - `PATH` is the relative path from 2.1.1. Omit it to feed every matched file.
 - `--kind-overrides-mode` is the flag from 2.3.2. It belongs to `scan feeds` and to bare `scan`.
-- `--dry-run` writes nothing.
+- `--dry-run` writes nothing. It still logs the kind file. 3.1.
+- For each profile and kind that matched a file, log the kind file.
+  `supershelf scan` and `inspect scan feeds` log the same lines.
+  `disabled` does not. A kind with no matched file is silent.
+  The line is a notice. 1. It is shown with no `-v`.
+  An on-disk file logs `Profile {profile} kind {kind} kind file {path}`.
+  The path is resolved. Two inputs that share one file log it once.
+  Two inputs that resolve different files each log one line.
+  No on-disk file logs `Profile {profile} kind {kind} has no config`.
+  That is an empty `kind_overrides_config` with no `feed_file`, or templates whose files are all missing.
+  The same sentence either way. Nothing is written for that kind. Import still runs.
+  When some inputs have a file and some do not, log each found path, and
+  `Profile {profile} kind {kind} has no config for input {input}` once per input directory that missed.
+  `always` does not count a file as found until it is on disk. The notice is logged, then the create still runs.
+  `manual` and `auto` do not create a missing file.
 - There is no name filter and no `--var` flag. The names are `feeds` on the kind, or every schema var when `feeds` is omitted. Architecture 1.9.
 
 ### Selectors

@@ -21,6 +21,10 @@ def _dispatch(argv: list[str]) -> None:
     App(parse=False).dispatch(argv)
 
 
+def _notice_lines(err: str) -> list[str]:
+    return [line for line in err.splitlines() if "NOTICE" in line]
+
+
 def _prune(
     *,
     empty_fields: bool = False,
@@ -418,13 +422,199 @@ glob = "**"
     )
 
     _dispatch(["scan", "feeds"])
-    assert "has no kind file" in capsys.readouterr().err
+    notices = _notice_lines(capsys.readouterr().err)
+    assert any("Profile work kind invoice has no config" in line for line in notices)
+    assert not any("has no kind file" in line for line in notices)
     assert list(tmp_path.glob("*.csv")) == []
 
     with pytest.raises(VarConfigError):
         _prune()
     with pytest.raises(VarConfigError):
         run_show(None, None, None, dry_run=False)
+
+
+def test_found_kind_file_is_logged_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED, {"a.pdf": b"one", "b.pdf": b"two"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text("PATH,vendor\na.pdf,\nb.pdf,\n", encoding="utf-8")
+
+    _dispatch(["scan", "feeds"])
+
+    message = f"Profile work kind invoice kind file {kind.resolve()}"
+    hits = [line for line in _notice_lines(capsys.readouterr().err) if message in line]
+    assert len(hits) == 1
+
+
+def test_missing_kind_file_logs_no_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    notices = _notice_lines(capsys.readouterr().err)
+    assert any("Profile work kind invoice has no config" in line for line in notices)
+    assert not any("kind file" in line for line in notices)
+    assert (tmp_path / "invoice.csv").exists() is False
+
+
+def test_two_inputs_log_each_kind_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    one = tmp_path / "one"
+    two = tmp_path / "two"
+    one.mkdir()
+    two.mkdir()
+    (one / "a.pdf").write_bytes(b"left")
+    (two / "a.pdf").write_bytes(b"right")
+    (one / "invoice.csv").write_text("PATH\na.pdf\n", encoding="utf-8")
+    (two / "invoice.csv").write_text("PATH\na.pdf\n", encoding="utf-8")
+    write_text(
+        tmp_path / "profile.work.toml",
+        """\
+[config]
+kind_overrides_config = ["{{ __input__.path }}/invoice.csv"]
+
+[[inputs]]
+path = "one"
+
+[[inputs]]
+path = "two"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+filename_glob = "*.pdf"
+""",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    notices = _notice_lines(capsys.readouterr().err)
+    hits = [line for line in notices if "kind file" in line]
+    assert len(hits) == 2
+    assert str((one / "invoice.csv").resolve()) in hits[0]
+    assert str((two / "invoice.csv").resolve()) in hits[1]
+
+
+def test_mixed_inputs_log_the_file_and_the_miss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    one = tmp_path / "one"
+    two = tmp_path / "two"
+    one.mkdir()
+    two.mkdir()
+    (one / "a.pdf").write_bytes(b"left")
+    (two / "a.pdf").write_bytes(b"right")
+    (one / "invoice.csv").write_text("PATH\na.pdf\n", encoding="utf-8")
+    write_text(
+        tmp_path / "profile.work.toml",
+        """\
+[config]
+kind_overrides_config = ["{{ __input__.path }}/invoice.csv"]
+
+[[inputs]]
+path = "one"
+
+[[inputs]]
+path = "two"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+filename_glob = "*.pdf"
+""",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    notices = _notice_lines(capsys.readouterr().err)
+    found = f"Profile work kind invoice kind file {(one / 'invoice.csv').resolve()}"
+    missed = f"Profile work kind invoice has no config for input {two.resolve()}"
+    assert any(found in line for line in notices)
+    assert any(missed in line for line in notices)
+    assert not any("has no config" in line and "for input" not in line for line in notices)
+
+
+def test_disabled_mode_logs_neither_kind_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_mode = "disabled"
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+    kind = tmp_path / "invoice.csv"
+    kind.write_text("PATH\na.pdf\n", encoding="utf-8")
+
+    _dispatch(["scan", "feeds"])
+
+    err = capsys.readouterr().err
+    assert "kind file" not in err
+    assert "has no config" not in err
+
+    write_text(
+        tmp_path / "profile.work.toml",
+        """\
+[config]
+kind_overrides_mode = "disabled"
+kind_overrides_config = []
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+    _dispatch(["scan", "feeds"])
+    err = capsys.readouterr().err
+    assert "kind file" not in err
+    assert "has no config" not in err
 
 
 def test_shared_path_stops_when_values_differ(
