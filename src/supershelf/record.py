@@ -8,6 +8,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, NoReturn, Protocol
 
 from supershelf.common import WordChoice
@@ -851,56 +852,50 @@ class _ProfileRun:
     def plan(self, path: str | None, *, dry_run: bool = False) -> list[PlannedRow]:
         """Resolve this profile and compare it with the database. Kind files are not committed."""
         self.linked = []
-        scans = self.shelf.scan(quick=False)
-        walked = {str(result.config.path) for result in scans}
-        kept_paths: list[str] = []
-        ignored: set[tuple[str, str]] = set()
-        kept: set[tuple[str, str]] = set()
+        runs = ShelfRuns([self.shelf])
+        selection = runs.open_selection(path, quick=False, require_kept=False)
+        runs.apply_files(selection, log=False, steps=self.steps)
+        runs.apply_match(selection)
+        runs.apply_vars(selection, dry_run=dry_run)
         database_path = self.shelf.database_file.resolve()
         cache_path = self.shelf.cache_file.resolve()
-        for result in scans:
-            input_path = str(result.config.path)
-            for found in result.results:
-                kept_paths.append(found.path)
-                location = (input_path, found.path)
-                absolute = found.absolute.resolve()
-                if absolute == database_path:
-                    self._logger.warning("Skipping database file %s", database_path)
-                    ignored.add(location)
-                    continue
-                if absolute == cache_path:
-                    self._logger.warning("Skipping cache file %s", cache_path)
-                    ignored.add(location)
-                    continue
-                kept.add(location)
-        selector = KeptPath.from_paths(path, kept_paths)
-
-        def accept(found: InputFile) -> bool:
-            if not selector.matches(found.path):
-                return False
-            absolute = found.absolute.resolve()
-            return absolute != database_path and absolute != cache_path
-
-        walk = ShelfRuns([self.shelf]).resolved(
-            None,
-            groups=[scans],
-            accept=accept,
-            dry_run=dry_run,
-        )
+        ignored = set(selection.ignored.get(self.shelf.name, ()))
+        warned: set[Path] = set()
+        for item in selection.inventory:
+            absolute = item.found.absolute.resolve()
+            if absolute == database_path and absolute not in warned:
+                self._logger.warning("Skipping database file %s", database_path)
+                warned.add(absolute)
+            elif absolute == cache_path and absolute not in warned:
+                self._logger.warning("Skipping cache file %s", cache_path)
+                warned.add(absolute)
+        walked = {str(result.config.path) for result in selection.groups[0]}
+        kept = {
+            item.location()
+            for item in selection.inventory
+            if item.location() not in ignored and selection.selector.matches(item.found.path)
+        }
+        selector = selection.selector
         live: list[LiveFile] = []
         seen: list[tuple[str, InputFile, FileVars, VarPlan]] = []
-        for _shelf, result, found, matched, resolved, variables in walk:
+        for item in selection.inventory:
+            if item.resolved is None or item.match is None or item.var_plan is None:
+                continue
+            if item.location() in ignored or not selector.matches(item.found.path):
+                continue
+            variables = item.var_plan
+            resolved = item.resolved
             live.append(
                 LiveFile.from_match(
-                    result,
-                    found,
+                    item.result,
+                    item.found,
                     kind=resolved.kind,
-                    rule=matched.rule,
+                    rule=item.match.rule,
                     snapshot=variables.snapshot(resolved),
-                    steps=self.rules.get(matched.rule, self.steps),
+                    steps=self.rules.get(item.match.rule, self.steps),
                 )
             )
-            seen.append((str(result.config.path), found, resolved, variables))
+            seen.append((str(item.result.config.path), item.found, resolved, variables))
         with ShelfDatabase.open_read(self.shelf.database_file) as database:
             stored = database.identity()
             if stored is not None and not RecordIdentity.same(stored, self.steps):

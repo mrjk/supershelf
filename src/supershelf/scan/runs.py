@@ -4,26 +4,26 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
 
 from supershelf.configs import ShelfConfigs
 from supershelf.constants import (
-    EVENT_GENERATION,
-    EVENT_MISSING,
-    EVENT_MOVE,
     EVENT_NEW,
     EVENT_OUTPUT,
     EVENT_UNMATCHED,
     LOGGER_NAME,
-    STATUS_DUPLICATE,
-    STATUS_REFRESH,
     STATUS_UNCHANGED,
 )
 from supershelf.database import ShelfDatabase
-from supershelf.errors import SupershelfError
 from supershelf.profile import ShelfProfile
-from supershelf.scan.match import Matcher
-from supershelf.scan.walk import InputFile, InputScanResult, KeptPath
+from supershelf.scan.match import FileMatch, Matcher
+from supershelf.scan.selection import (
+    FILE_CHANGE_STATUSES,
+    KIND_CHANGE_STATUSES,
+    FileSelection,
+    SelectedFile,
+    selection_from_groups,
+)
+from supershelf.scan.walk import InputScanResult, KeptPath
 from supershelf.vars import VarPlan
 
 _SCAN_PREFIX = ("profile", "input", "sha", "path", "status")
@@ -43,52 +43,8 @@ def order_scan_row(row: dict[str, object], *, profiles: int) -> dict[str, object
     return ordered
 
 
-_FILE_STATUSES = frozenset(
-    {
-        EVENT_NEW,
-        EVENT_GENERATION,
-        EVENT_MOVE,
-        EVENT_MISSING,
-        STATUS_REFRESH,
-        STATUS_DUPLICATE,
-    }
-)
 _KIND_STATUS = "kind"
 _RULE_STATUS = "rule"
-
-
-class ResolvedWalk:
-    """Matched files with resolved variables. Does not commit kind files."""
-
-    def __init__(
-        self,
-        prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
-        groups: list[list[InputScanResult]],
-        accept: Callable[[InputFile], bool] | None = None,
-    ) -> None:
-        self._prepared = prepared
-        self._groups = groups
-        self._accept = accept
-
-    @property
-    def plans(self) -> list[VarPlan]:
-        """One plan per profile, including a profile with no matched files."""
-        return [plan for _shelf, _matcher, plan in self._prepared]
-
-    def __iter__(self):
-        for (_shelf, matcher, plan), scans in zip(
-            self._prepared,
-            self._groups,
-            strict=True,
-        ):
-            for result in scans:
-                files = {found.path: found for found in result.results}
-                for matched in matcher.collect(result):
-                    found = files[matched.path]
-                    if self._accept is not None and not self._accept(found):
-                        continue
-                    resolved = plan.resolve(found, matched, result.config.path)
-                    yield _shelf, result, found, matched, resolved, plan
 
 
 class ShelfRuns:
@@ -105,6 +61,48 @@ class ShelfRuns:
     def scans(self, *, quick: bool, path: str | None):
         groups = [shelf.scan(quick=quick) for shelf in self.shelves]
         return KeptPath.narrow_groups(groups, path)
+
+    def open_selection(
+        self,
+        path: str | None,
+        *,
+        quick: bool,
+        require_kept: bool,
+        allow_document: bool = False,
+    ) -> FileSelection:
+        """Walk once. ``PATH`` filters the inventory."""
+        groups = [shelf.scan(quick=quick) for shelf in self.shelves]
+        return selection_from_groups(
+            self.shelves,
+            groups,
+            path,
+            hashed=not quick,
+            require_kept=require_kept,
+            allow_document=allow_document,
+            in_scope=self._path_is_in_scope,
+        )
+
+    def use_selection(
+        self,
+        path: str | None,
+        selection: FileSelection | None,
+        *,
+        quick: bool,
+        require_kept: bool,
+        allow_document: bool = False,
+    ) -> FileSelection:
+        """Use ``selection`` when given. Otherwise walk. ``PATH`` intersects either source."""
+        if selection is None:
+            return self.open_selection(
+                path,
+                quick=quick,
+                require_kept=require_kept,
+                allow_document=allow_document,
+            )
+        chosen = selection.intersect(path, require_kept=require_kept)
+        if not quick:
+            chosen.ensure_hashed()
+        return chosen
 
     def matched(self) -> list[tuple[ShelfProfile, Matcher]]:
         return [
@@ -139,74 +137,54 @@ class ShelfRuns:
             )
         return prepared
 
-    def resolved(
+    def apply_files(
         self,
-        path: str | None,
+        selection: FileSelection,
         *,
-        mode: str | None = None,
-        dry_run: bool = False,
-        groups: list[list[InputScanResult]] | None = None,
-        accept: Callable[[InputFile], bool] | None = None,
-    ) -> ResolvedWalk:
-        """Match and resolve. A passed `groups` skips a second walk."""
-        prepared = self.plans(mode=mode, dry_run=dry_run)
-        if groups is None:
-            groups = self.scans(quick=False, path=path)
-        return ResolvedWalk(prepared, groups, accept)
-
-    def file_rows(self, path: str | None, *, changes_only: bool = True) -> list[dict[str, object]]:
-        """Identity changes. Does not resolve variables or create the database."""
+        log: bool,
+        steps: tuple[str, ...] | None = None,
+    ) -> FileSelection:
+        """Annotate identity. The next list is the identity-change files, not the whole walk."""
+        if selection.files_ready:
+            if log:
+                self._log_file_warnings(selection)
+            return selection
         from supershelf.record import LiveFile, RecordIdentity, RecordPlan
 
-        logger = logging.getLogger(LOGGER_NAME)
-        groups = [shelf.scan(quick=False) for shelf in self.shelves]
-        kept_paths = [
-            found.path
-            for scans in groups
-            for result in scans
-            for found in result.results
-        ]
-        selector = KeptPath.from_paths(path, kept_paths)
-        if path is not None and not self._path_is_in_scope(selector, groups):
-            raise SupershelfError(f"No kept file {path!r}")
-        rows: list[dict[str, object]] = []
-        for shelf, scans in zip(self.shelves, groups, strict=True):
-            steps = RecordIdentity.resolve(
-                shelf.config_section(shelf.document),
-                None,
-                os.environ,
-            )
+        for shelf, scans in zip(selection.shelves, selection.groups, strict=True):
+            resolved_steps = steps
+            if resolved_steps is None:
+                resolved_steps = RecordIdentity.resolve(
+                    shelf.config_section(shelf.document),
+                    None,
+                    os.environ,
+                )
             matcher = Matcher.from_document(shelf.document, shelf.name)
             walked = {str(result.config.path) for result in scans}
+            ignored = set(selection.ignored.get(shelf.name, ()))
             kept: set[tuple[str, str]] = set()
-            ignored: set[tuple[str, str]] = set()
-            database_path = shelf.database_file.resolve()
-            cache_path = shelf.cache_file.resolve()
             live: list[LiveFile] = []
-            seen_files: dict[tuple[str, str], tuple[InputScanResult, InputFile]] = {}
-            for result in scans:
-                input_path = str(result.config.path)
-                for found in result.results:
-                    location = (input_path, found.path)
-                    absolute = found.absolute.resolve()
-                    if absolute == database_path or absolute == cache_path:
-                        ignored.add(location)
-                        continue
-                    kept.add(location)
-                    seen_files[location] = (result, found)
-                    hit = matcher.claim(found)
-                    if hit is None or not found.sha256:
-                        continue
-                    live.append(
-                        LiveFile.from_match(
-                            result,
-                            found,
-                            kind=hit.kind,
-                            rule=hit.rule,
-                            snapshot="{}",
-                            steps=steps,
-                        )
+            seen: list[SelectedFile] = []
+            for item in selection.inventory:
+                if item.profile != shelf.name:
+                    continue
+                if item.location() in ignored:
+                    continue
+                kept.add(item.location())
+                seen.append(item)
+                hit = matcher.claim(item.found)
+                if hit is None or not item.found.sha256:
+                    continue
+                live.append(
+                    LiveFile.from_match(
+                        item.result,
+                        item.found,
+                        kind=hit.kind,
+                        rule=hit.rule,
+                        snapshot="{}",
+                        steps=resolved_steps,
                     )
+                )
             with ShelfDatabase.open_read(shelf.database_file) as database:
                 documents = database.documents()
                 stored_at = {
@@ -247,33 +225,155 @@ class ShelfRuns:
                 stamped,
                 kept,
                 walked,
-                selector,
+                selection.selector,
                 {},
                 prior,
                 ignored,
                 profile=shelf.name,
             )
             planned = plan.rows()
-            for message in plan.warnings:
-                logger.warning("%s", message)
+            selection.planned[shelf.name] = planned
+            selection.seen[shelf.name] = seen
+            selection.warnings[shelf.name] = list(plan.warnings)
+            by_location = {
+                (row.file.input_path, row.file.path): row.status for row in planned
+            }
+            for item in seen:
+                item.identity_status = by_location.get(item.location())
+        selection.files = [
+            item
+            for item in selection.inventory
+            if item.identity_status in FILE_CHANGE_STATUSES
+        ]
+        selection.files_ready = True
+        if log:
+            self._log_file_warnings(selection)
+        return selection
+
+    def apply_match(self, selection: FileSelection) -> FileSelection:
+        """Annotate kind and rule on the inventory. Unmatched files are warned once."""
+        if selection.match_ready:
+            return selection
+        incoming = {id(item) for item in selection.files}
+        chosen: list[SelectedFile] = []
+        seen: set[int] = set()
+        for shelf, scans in zip(selection.shelves, selection.groups, strict=True):
+            matcher = Matcher.from_document(shelf.document, shelf.name)
+            claimed: dict[tuple[int, str], FileMatch] = {}
+            for result in scans:
+                for hit in matcher.collect(result):
+                    claimed[(result.index, hit.path)] = hit
+            with ShelfDatabase.open_read(shelf.database_file) as database:
+                stored_at = {
+                    (document.input_path, document.path): document
+                    for document in database.documents()
+                }
+            for item in selection.inventory:
+                if item.profile != shelf.name:
+                    continue
+                hit = claimed.get((item.index, item.found.path))
+                document = stored_at.get(item.location())
+                if hit is None:
+                    item.kind_status = EVENT_UNMATCHED
+                    continue
+                item.match = hit
+                if document is None:
+                    item.kind_status = EVENT_NEW
+                elif document.match_kind != hit.kind:
+                    item.kind_status = _KIND_STATUS
+                elif document.rule != hit.rule:
+                    item.kind_status = _RULE_STATUS
+                else:
+                    item.kind_status = STATUS_UNCHANGED
+                take = id(item) in incoming or item.kind_status in KIND_CHANGE_STATUSES
+                if not take or id(item) in seen:
+                    continue
+                seen.add(id(item))
+                chosen.append(item)
+        selection.files = chosen
+        selection.match_ready = True
+        return selection
+
+    def apply_vars(
+        self,
+        selection: FileSelection,
+        *,
+        mode: str | None = None,
+        dry_run: bool = False,
+    ) -> FileSelection:
+        """Resolve every matched file. The working list stays the provided subset."""
+        if not selection.match_ready:
+            self.apply_match(selection)
+        if selection.vars_ready:
+            return selection
+        prepared = self.plans(mode=mode, dry_run=dry_run)
+        by_name = {shelf.name: plan for shelf, _matcher, plan in prepared}
+        stored: dict[str, dict[tuple[str, str], str]] = {}
+        for shelf in selection.shelves:
+            with ShelfDatabase.open_read(shelf.database_file) as database:
+                stored[shelf.name] = {
+                    (document.input_path, document.path): document.vars_json
+                    for document in database.documents()
+                }
+        for item in selection.inventory:
+            if item.match is None:
+                continue
+            plan = by_name[item.profile]
+            resolved = plan.resolve(item.found, item.match, item.result.config.path)
+            item.resolved = resolved
+            item.var_plan = plan
+            previous = stored.get(item.profile, {}).get(item.location())
+            item.vars_changed = previous is None or previous != plan.snapshot(resolved)
+        selection.prepared = prepared
+        selection.vars_ready = True
+        return selection
+
+    def file_rows(
+        self,
+        path: str | None,
+        *,
+        changes_only: bool = True,
+        selection: FileSelection | None = None,
+    ) -> list[dict[str, object]]:
+        """Identity changes. Does not resolve variables or create the database."""
+        chosen = self.use_selection(
+            path,
+            selection,
+            quick=False,
+            require_kept=False,
+            allow_document=selection is None,
+        )
+        self.apply_files(chosen, log=True)
+        return self._file_table(chosen, changes_only=changes_only)
+
+    def _file_table(
+        self,
+        selection: FileSelection,
+        *,
+        changes_only: bool,
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for shelf in selection.shelves:
+            planned = selection.planned.get(shelf.name, [])
             shown: list[dict[str, object]] = []
             for row in planned:
-                if not selector.matches(row.file.path):
+                if not selection.selector.matches(row.file.path):
                     continue
-                if changes_only and row.status not in _FILE_STATUSES:
+                if changes_only and row.status not in FILE_CHANGE_STATUSES:
                     continue
                 shown.append(self._file_row(shelf, row.file, row.status))
             if not changes_only:
                 emitted = {(row["input"], row["path"]) for row in shown}
-                for result, found in seen_files.values():
-                    if not selector.matches(found.path):
+                for item in selection.seen.get(shelf.name, []):
+                    if not selection.selector.matches(item.found.path):
                         continue
-                    if (result.index, found.path) in emitted:
+                    if (item.index, item.found.path) in emitted:
                         continue
+                    found = item.found
                     shown.append(
                         {
                             "profile": shelf.name,
-                            "input": result.index,
+                            "input": item.index,
                             "path": found.path,
                             "status": EVENT_UNMATCHED,
                             "mtime": shelf.show_time(found.mtime or "") if found.mtime else "",
@@ -282,8 +382,17 @@ class ShelfRuns:
                         }
                     )
             rows.extend(shown)
-        profiles = len(self.shelves)
+        profiles = len(selection.shelves)
         return [order_scan_row(row, profiles=profiles) for row in rows]
+
+    def _log_file_warnings(self, selection: FileSelection) -> None:
+        if selection.file_warnings_logged:
+            return
+        logger = logging.getLogger(LOGGER_NAME)
+        for shelf in selection.shelves:
+            for message in selection.warnings.get(shelf.name, []):
+                logger.warning("%s", message)
+        selection.file_warnings_logged = True
 
     @staticmethod
     def _file_row(shelf: ShelfProfile, file, status: str) -> dict[str, object]:
@@ -299,58 +408,64 @@ class ShelfRuns:
             "sha256": file.hash,
         }
 
-    def kind_rows(self, path: str | None, *, changes_only: bool = True) -> list[dict[str, object]]:
+    def kind_rows(
+        self,
+        path: str | None,
+        *,
+        changes_only: bool = True,
+        selection: FileSelection | None = None,
+    ) -> list[dict[str, object]]:
         """Kind and rule changes, captured groups, and unmatched files. Does not hash."""
-        groups = self.scans(quick=True, path=path)
+        chosen = self.use_selection(
+            path,
+            selection,
+            quick=True,
+            require_kept=selection is None,
+        )
+        self.apply_match(chosen)
+        return self._kind_table(chosen, changes_only=changes_only)
+
+    def _kind_table(
+        self,
+        selection: FileSelection,
+        *,
+        changes_only: bool,
+    ) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
-        for shelf, scans in zip(self.shelves, groups, strict=True):
-            matcher = Matcher.from_document(shelf.document, shelf.name)
-            with ShelfDatabase.open_read(shelf.database_file) as database:
-                stored_at = {
-                    (document.input_path, document.path): document
-                    for document in database.documents()
-                }
-            for result in scans:
-                claimed = {item.path: item for item in matcher.collect(result)}
-                input_path = str(result.config.path)
-                for found in result.results:
-                    hit = claimed.get(found.path)
-                    document = stored_at.get((input_path, found.path))
-                    if hit is None:
-                        rows.append(
-                            self._kind_row(
-                                result.profile,
-                                result.index,
-                                found.path,
-                                "",
-                                "",
-                                EVENT_UNMATCHED,
-                                {},
-                            )
-                        )
-                        continue
-                    if document is None:
-                        status = EVENT_NEW
-                    elif document.match_kind != hit.kind:
-                        status = _KIND_STATUS
-                    elif document.rule != hit.rule:
-                        status = _RULE_STATUS
-                    else:
-                        status = STATUS_UNCHANGED
-                    if changes_only and status == STATUS_UNCHANGED:
-                        continue
-                    rows.append(
-                        self._kind_row(
-                            result.profile,
-                            result.index,
-                            found.path,
-                            hit.kind,
-                            hit.rule,
-                            status,
-                            hit.groups,
-                        )
+        for item in selection.inventory:
+            status = item.kind_status
+            if status is None:
+                continue
+            if status == EVENT_UNMATCHED:
+                rows.append(
+                    self._kind_row(
+                        item.profile,
+                        item.index,
+                        item.found.path,
+                        "",
+                        "",
+                        EVENT_UNMATCHED,
+                        {},
                     )
-        profiles = len(self.shelves)
+                )
+                continue
+            if changes_only and status == STATUS_UNCHANGED:
+                continue
+            matched = item.match
+            if matched is None:
+                continue
+            rows.append(
+                self._kind_row(
+                    item.profile,
+                    item.index,
+                    item.found.path,
+                    matched.kind,
+                    matched.rule,
+                    status,
+                    matched.groups,
+                )
+            )
+        profiles = len(selection.shelves)
         return [order_scan_row(row, profiles=profiles) for row in rows]
 
     def changed_resolves(
@@ -360,25 +475,44 @@ class ShelfRuns:
         mode: str | None = None,
         dry_run: bool = False,
         changes_only: bool = True,
+        provided_only: bool = True,
+        selection: FileSelection | None = None,
     ):
-        """Matched files whose vars differ, plus new matched files."""
-        walk = self.resolved(path, mode=mode, dry_run=dry_run)
-        stored: dict[str, dict[tuple[str, str], str]] = {}
-        for shelf in self.shelves:
-            with ShelfDatabase.open_read(shelf.database_file) as database:
-                stored[shelf.name] = {
-                    (document.input_path, document.path): document.vars_json
-                    for document in database.documents()
-                }
-        chosen = []
-        for shelf, result, found, matched, resolved, plan in walk:
-            key = (str(result.config.path), found.path)
-            previous = stored.get(shelf.name, {}).get(key)
-            snapshot = plan.snapshot(resolved)
-            if changes_only and previous is not None and previous == snapshot:
+        """Vars for files the earlier steps provide. Inspect passes ``provided_only=False``."""
+        chosen = self.use_selection(
+            path,
+            selection,
+            quick=False,
+            require_kept=selection is None,
+        )
+        if provided_only:
+            self.apply_files(chosen, log=False)
+        self.apply_match(chosen)
+        self.apply_vars(chosen, mode=mode, dry_run=dry_run)
+        return list(self._var_walk(chosen, changes_only=changes_only, provided_only=provided_only))
+
+    def _var_walk(
+        self,
+        selection: FileSelection,
+        *,
+        changes_only: bool,
+        provided_only: bool,
+    ):
+        shelves = {shelf.name: shelf for shelf in selection.shelves}
+        source = selection.files if provided_only else selection.inventory
+        for item in source:
+            if item.match is None or item.resolved is None or item.var_plan is None:
                 continue
-            chosen.append((shelf, result, found, matched, resolved, plan))
-        return chosen
+            if changes_only and not item.vars_changed:
+                continue
+            yield (
+                shelves[item.profile],
+                item.result,
+                item.found,
+                item.match,
+                item.resolved,
+                item.var_plan,
+            )
 
     def _path_is_in_scope(self, selector: KeptPath, groups: list[list[InputScanResult]]) -> bool:
         for scans in groups:

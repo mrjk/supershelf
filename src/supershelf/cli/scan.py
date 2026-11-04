@@ -217,10 +217,19 @@ class ScanCommand(CompositeViewMixin, Parser):
         fmt = view_format(ctx)
         runs = ShelfRuns.load(config, profile)
         dry = bool(dry_run)
-        # Resolve in the vars step before the feed write. A resolve error stops here.
         profiles = len(runs.shelves)
+        # One list for every step. Resolve before the feed write.
+        selection = runs.open_selection(path, quick=False, require_kept=True)
+        runs.apply_files(selection, log=False)
+        runs.apply_match(selection)
+        runs.apply_vars(selection, mode=mode, dry_run=dry)
         var_rows = variable_rows(
-            runs.changed_resolves(path, mode=mode, dry_run=dry),
+            runs.changed_resolves(
+                path,
+                mode=mode,
+                dry_run=dry,
+                selection=selection,
+            ),
             fmt,
             profiles=profiles,
         )
@@ -231,13 +240,14 @@ class ScanCommand(CompositeViewMixin, Parser):
             mode=mode,
             dry_run=dry,
             verbosity=int(verbosity or 0),
+            selection=selection,
         )
         return CompositeView(
             [
                 (
                     "files",
                     ListView(
-                        list(runs.file_rows(path)),
+                        list(runs.file_rows(path, selection=selection)),
                         columns=shown_columns(FILES_COLUMNS, profiles),
                     ),
                     {"title": "files"},
@@ -245,7 +255,7 @@ class ScanCommand(CompositeViewMixin, Parser):
                 (
                     "kinds",
                     ListView(
-                        list(runs.kind_rows(path)),
+                        list(runs.kind_rows(path, selection=selection)),
                         columns=shown_columns(_MATCH_COLUMNS, profiles),
                     ),
                     {"title": "kinds"},

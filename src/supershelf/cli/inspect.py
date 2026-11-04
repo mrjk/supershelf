@@ -211,7 +211,12 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
         fmt = view_format(ctx)
         runs = ShelfRuns.load(config, profile)
         show_profile_first(ctx, columns, len(runs.shelves))
-        walk = runs.changed_resolves(path, dry_run=True, changes_only=False)
+        walk = runs.changed_resolves(
+            path,
+            dry_run=True,
+            changes_only=False,
+            provided_only=False,
+        )
         return variable_rows(
             walk,
             fmt,

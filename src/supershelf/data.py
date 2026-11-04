@@ -20,8 +20,9 @@ from supershelf.errors import VarConfigError
 from supershelf.kind_file import KindFiles, KindLine, KindTable
 from supershelf.profile import ShelfProfile
 from supershelf.scan.match import Matcher
-from supershelf.scan.runs import ResolvedWalk, ShelfRuns, order_scan_row
-from supershelf.scan.walk import InputScanResult, KeptPath
+from supershelf.scan.runs import ShelfRuns, order_scan_row
+from supershelf.scan.selection import FileSelection
+from supershelf.scan.walk import KeptPath
 from supershelf.vars import VarPlan
 
 
@@ -88,23 +89,28 @@ def run_feed(
     dry_run: bool = False,
     verbosity: int = 0,
     changes_only: bool = True,
+    selection: FileSelection | None = None,
 ) -> list[dict[str, object]]:
     """Write rule-layer display strings into uppercase columns.
 
     Resolve every selected profile first. A resolve error writes nothing.
     auto and always commit path and hash, then drop, then write feed cells.
+    A passed ``selection`` is not walked again.
     """
-    runs = ShelfRuns.load(config, profile)
-    prepared = runs.plans(mode=mode, dry_run=dry_run)
-    groups = [shelf.scan(quick=False) for shelf in runs.shelves]
-    kept = [
-        found.path
-        for scans in groups
-        for scan in scans
-        for found in scan.results
-    ]
-    selector = KeptPath.from_paths(path, kept)
-    resolved = _resolve(prepared, selector.narrow(groups))
+    if selection is None:
+        runs = ShelfRuns.load(config, profile)
+        selection = runs.use_selection(path, None, quick=False, require_kept=True)
+        runs.apply_match(selection)
+        runs.apply_vars(selection, mode=mode, dry_run=dry_run)
+    else:
+        runs = ShelfRuns(selection.shelves)
+        selection = runs.use_selection(path, selection, quick=False, require_kept=False)
+        if not selection.vars_ready:
+            runs.apply_match(selection)
+            runs.apply_vars(selection, mode=mode, dry_run=dry_run)
+    prepared = selection.prepared
+    resolved = _resolved_from(selection)
+    selector = selection.selector
     _notice_kind_files(resolved)
     if _feeds_disabled(prepared):
         return []
@@ -122,25 +128,24 @@ def run_feed(
     return rows
 
 
-def _resolve(
-    prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
-    groups: list[list[InputScanResult]],
-) -> tuple[_Resolved, ...]:
+def _resolved_from(selection: FileSelection) -> tuple[_Resolved, ...]:
+    """Matched files already resolved on ``selection``, in walk order."""
     found: list[_Resolved] = []
-    walk = ResolvedWalk(prepared, groups)
-    for _shelf, result, walked, matched, resolved, plan in walk:
+    for item in selection.inventory:
+        if item.match is None or item.resolved is None or item.var_plan is None:
+            continue
         found.append(
             _Resolved(
-                profile=matched.profile,
-                index=matched.index,
-                input_path=result.config.path,
-                relative=matched.path,
-                kind=resolved.kind,
-                rule=matched.rule,
-                sha=walked.sha256 or "",
-                values=dict(resolved.items),
-                rule_layer=dict(resolved.rule_layer),
-                plan=plan,
+                profile=item.profile,
+                index=item.index,
+                input_path=item.result.config.path,
+                relative=item.found.path,
+                kind=item.resolved.kind,
+                rule=item.match.rule,
+                sha=item.found.sha256 or "",
+                values=dict(item.resolved.items),
+                rule_layer=dict(item.resolved.rule_layer),
+                plan=item.var_plan,
             )
         )
     return tuple(found)

@@ -398,6 +398,40 @@ def test_scan_diffs_hide_rows_import_would_not_write(
     assert "vendor: Other" in capsys.readouterr().out
 
 
+def test_scan_vars_skips_a_file_only_its_variables_changed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+
+    (tmp_path / "profile.work.toml").write_text(
+        "[default_vars]\nvendor = 'Other'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+        encoding="utf-8",
+    )
+    app.dispatch(["scan", "vars"])
+    assert "a.txt" not in capsys.readouterr().out
+
+    app.dispatch(["db", "import"])
+    assert "vars" in capsys.readouterr().out
+
+
 def test_scan_kinds_lists_matches_and_warns_for_the_rest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
