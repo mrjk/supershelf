@@ -6,12 +6,10 @@ import json
 
 from clak import Argument, Command, ListViewMixin, Parser
 
-from supershelf.cli.common import kept_path
+from supershelf.cli.common import STRUCTURED_FORMATS, kept_path, view_format
 from supershelf.database import ShelfDatabase
 from supershelf.record import RecordSession
 from supershelf.scan.runs import ShelfRuns
-
-_STRUCTURED_FORMATS = frozenset({"json", "yaml"})
 
 
 def present_stored_vars(raw: str, fmt: str | None) -> object:
@@ -22,7 +20,7 @@ def present_stored_vars(raw: str, fmt: str | None) -> object:
         name: body[name].get("display", "") if isinstance(body[name], dict) else ""
         for name in names
     }
-    if fmt in _STRUCTURED_FORMATS:
+    if fmt in STRUCTURED_FORMATS:
         return shown
     return "\n".join(f"{name}: {shown[name]}" for name in names)
 
@@ -31,7 +29,7 @@ class DbShowCommand(ListViewMixin, Parser):
     """Print document rows. Does not scan or create the database."""
 
     def cli_run(self, config=None, profile=None, ctx=None, **_):
-        fmt = ctx.view_settings.get("format") if ctx is not None else None
+        fmt = view_format(ctx)
         rows = []
         for shelf in ShelfRuns.load(config, profile).shelves:
             with ShelfDatabase.open_read(shelf.database_file) as database:

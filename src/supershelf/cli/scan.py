@@ -6,37 +6,36 @@ from clak import Argument, Command, ListViewMixin, Parser
 from clak.comp.views import CompositeViewMixin
 from clak.views import CompositeView, ListView
 
-from supershelf.cli.common import kept_path
+from supershelf.cli.common import (
+    FILES_COLUMNS,
+    STRUCTURED_FORMATS,
+    VARS_COLUMNS,
+    kept_path,
+    show_profile_first,
+    shown_columns,
+    view_format,
+)
 from supershelf.data import run_feed
 from supershelf.kind_file import KindOverrideMode
 from supershelf.scan.runs import ShelfRuns, order_scan_row
 from supershelf.vars import FileVars
 
-_STRUCTURED_FORMATS = frozenset({"json", "yaml"})
-
-_FILES_COLUMNS = ("input", "path", "status", "mtime", "ctime", "sha256")
 _MATCH_COLUMNS = ("path", "kind", "rule", "groups")
-_VARS_COLUMNS = ("path", "kind", "vars", "sources")
 
 
-def _shown_columns(columns: tuple[str, ...], profiles: int) -> tuple[str, ...]:
-    """Lead the default columns with profile when more than one profile is selected."""
-    if profiles <= 1:
-        return columns
-    return ("profile", *columns)
+def kind_overrides_flag() -> Argument:
+    """Kind file mode shared by vars, feeds, and bare scan."""
+    return Argument(
+        "--kind-overrides-mode",
+        help="Kind file mode: auto, manual, always, or disabled.",
+    )
 
 
-def show_profile_first(ctx, columns, profiles: int) -> None:
-    """Default columns lead with profile when more than one profile is selected."""
-    if profiles <= 1 or columns is not None or ctx is None:
-        return
-    settings = ctx.plugins.get("view_settings")
-    if not isinstance(settings, dict):
-        return
-    chosen = settings.get("columns")
-    if not chosen or "profile" in chosen:
-        return
-    settings["columns"] = ["profile", *chosen]
+def checked_kind_mode(value: str | None) -> str | None:
+    """Reject a bad --kind-overrides-mode. None stays None."""
+    if value is not None:
+        KindOverrideMode.check(value, "--kind-overrides-mode")
+    return value
 
 
 def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
@@ -49,7 +48,7 @@ def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[s
 
 def present_vars(resolved: FileVars, fmt: str | None, *, show_all: bool = False) -> object:
     """Table text, or the typed mapping for json and yaml."""
-    if fmt in _STRUCTURED_FORMATS:
+    if fmt in STRUCTURED_FORMATS:
         return resolved.dump_vars(show_all=show_all)
     return "\n".join(
         f"{name}: {value}" for name, value in _table_pairs(resolved, show_all=show_all)
@@ -94,8 +93,8 @@ class ScanFilesCommand(ListViewMixin, Parser):
     """List file-identity changes against the document database."""
 
     class Meta:
-        view_columns = _FILES_COLUMNS
-        view_column_names = ("profile", *_FILES_COLUMNS)
+        view_columns = FILES_COLUMNS
+        view_column_names = ("profile", *FILES_COLUMNS)
 
     path = kept_path()
 
@@ -124,14 +123,11 @@ class ScanVarsCommand(ListViewMixin, Parser):
     """List variables for each matched file."""
 
     class Meta:
-        view_columns = _VARS_COLUMNS
-        view_column_names = ("profile", *_VARS_COLUMNS, "input", "sha", "rule")
+        view_columns = VARS_COLUMNS
+        view_column_names = ("profile", *VARS_COLUMNS, "input", "sha", "rule")
 
     path = kept_path()
-    kind_overrides_mode = Argument(
-        "--kind-overrides-mode",
-        help="Kind file mode: auto, manual, always, or disabled.",
-    )
+    kind_overrides_mode = kind_overrides_flag()
     show_all = Argument(
         "--all",
         action="store_true",
@@ -150,14 +146,13 @@ class ScanVarsCommand(ListViewMixin, Parser):
         ctx=None,
         **_,
     ):
-        fmt = ctx.view_settings.get("format") if ctx is not None else None
-        if kind_overrides_mode is not None:
-            KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
+        fmt = view_format(ctx)
+        mode = checked_kind_mode(kind_overrides_mode)
         runs = ShelfRuns.load(config, profile)
         show_profile_first(ctx, columns, len(runs.shelves))
         walk = runs.changed_resolves(
             path,
-            mode=kind_overrides_mode,
+            mode=mode,
             dry_run=bool(dry_run),
         )
         return variable_rows(
@@ -172,10 +167,7 @@ class ScanFeedsCommand(ListViewMixin, Parser):
     """Write rule-layer values into the uppercase kind-file columns."""
 
     path = kept_path()
-    kind_overrides_mode = Argument(
-        "--kind-overrides-mode",
-        help="Kind file mode: auto, manual, always, or disabled.",
-    )
+    kind_overrides_mode = kind_overrides_flag()
 
     def cli_run(
         self,
@@ -187,13 +179,11 @@ class ScanFeedsCommand(ListViewMixin, Parser):
         verbosity=0,
         **_,
     ):
-        if kind_overrides_mode is not None:
-            KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
         return run_feed(
             config,
             profile,
             path,
-            mode=kind_overrides_mode,
+            mode=checked_kind_mode(kind_overrides_mode),
             dry_run=bool(dry_run),
             verbosity=int(verbosity or 0),
         )
@@ -202,10 +192,7 @@ class ScanFeedsCommand(ListViewMixin, Parser):
 class ScanCommand(CompositeViewMixin, Parser):
     """Scan profile inputs. With no step, run files, kinds, vars, then feeds."""
 
-    kind_overrides_mode = Argument(
-        "--kind-overrides-mode",
-        help="Kind file mode: auto, manual, always, or disabled.",
-    )
+    kind_overrides_mode = kind_overrides_flag()
 
     files = Command(ScanFilesCommand, help="List file-identity changes")
     match = Command(
@@ -226,15 +213,14 @@ class ScanCommand(CompositeViewMixin, Parser):
         ctx=None,
         **_,
     ):
-        if kind_overrides_mode is not None:
-            KindOverrideMode.check(kind_overrides_mode, "--kind-overrides-mode")
-        fmt = ctx.view_settings.get("format") if ctx is not None else None
+        mode = checked_kind_mode(kind_overrides_mode)
+        fmt = view_format(ctx)
         runs = ShelfRuns.load(config, profile)
         dry = bool(dry_run)
         # Resolve in the vars step before the feed write. A resolve error stops here.
         profiles = len(runs.shelves)
         var_rows = variable_rows(
-            runs.changed_resolves(path, mode=kind_overrides_mode, dry_run=dry),
+            runs.changed_resolves(path, mode=mode, dry_run=dry),
             fmt,
             profiles=profiles,
         )
@@ -242,7 +228,7 @@ class ScanCommand(CompositeViewMixin, Parser):
             config,
             profile,
             path,
-            mode=kind_overrides_mode,
+            mode=mode,
             dry_run=dry,
             verbosity=int(verbosity or 0),
         )
@@ -252,7 +238,7 @@ class ScanCommand(CompositeViewMixin, Parser):
                     "files",
                     ListView(
                         list(runs.file_rows(path)),
-                        columns=_shown_columns(_FILES_COLUMNS, profiles),
+                        columns=shown_columns(FILES_COLUMNS, profiles),
                     ),
                     {"title": "files"},
                 ),
@@ -260,7 +246,7 @@ class ScanCommand(CompositeViewMixin, Parser):
                     "kinds",
                     ListView(
                         list(runs.kind_rows(path)),
-                        columns=_shown_columns(_MATCH_COLUMNS, profiles),
+                        columns=shown_columns(_MATCH_COLUMNS, profiles),
                     ),
                     {"title": "kinds"},
                 ),
@@ -268,7 +254,7 @@ class ScanCommand(CompositeViewMixin, Parser):
                     "vars",
                     ListView(
                         list(var_rows),
-                        columns=_shown_columns(_VARS_COLUMNS, profiles),
+                        columns=shown_columns(VARS_COLUMNS, profiles),
                     ),
                     {"title": "vars"},
                 ),

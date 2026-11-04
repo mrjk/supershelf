@@ -934,7 +934,7 @@ class _ProfileRun:
         if path is not None and not rows and not self._selector_saw_file(selector, kept):
             raise SupershelfError(
                 f"No kept file {path!r}",
-                advice="Use a path from scan files, or run record without a path.",
+                advice="Use a path from scan files, or run db import without a path.",
             )
         return rows
 

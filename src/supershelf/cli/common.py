@@ -8,6 +8,38 @@ from clak import Argument
 
 from supershelf.constants import APP_NAME
 
+STRUCTURED_FORMATS = frozenset({"json", "yaml"})
+
+FILES_COLUMNS = ("input", "path", "status", "mtime", "ctime", "sha256")
+VARS_COLUMNS = ("path", "kind", "vars", "sources")
+
+
+def shown_columns(columns: tuple[str, ...], profiles: int) -> tuple[str, ...]:
+    """Lead the default columns with profile when more than one profile is selected."""
+    if profiles <= 1:
+        return columns
+    return ("profile", *columns)
+
+
+def show_profile_first(ctx, columns, profiles: int) -> None:
+    """Default columns lead with profile when more than one profile is selected."""
+    if profiles <= 1 or columns is not None or ctx is None:
+        return
+    settings = ctx.plugins.get("view_settings")
+    if not isinstance(settings, dict):
+        return
+    chosen = settings.get("columns")
+    if not chosen or "profile" in chosen:
+        return
+    settings["columns"] = list(shown_columns(tuple(chosen), profiles))
+
+
+def view_format(ctx) -> str | None:
+    """The clak view format, or None when the command has no view context."""
+    if ctx is None:
+        return None
+    return ctx.view_settings.get("format")
+
 
 def kept_path() -> Argument:
     """Optional path shared by every scan subcommand."""

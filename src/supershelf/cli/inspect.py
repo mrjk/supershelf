@@ -6,13 +6,14 @@ import json
 
 from clak import Argument, Command, ListViewMixin, Parser
 
-from supershelf.cli.common import kept_path
-from supershelf.cli.scan import (
-    _FILES_COLUMNS,
-    _VARS_COLUMNS,
+from supershelf.cli.common import (
+    FILES_COLUMNS,
+    VARS_COLUMNS,
+    kept_path,
     show_profile_first,
-    variable_rows,
+    view_format,
 )
+from supershelf.cli.scan import variable_rows
 from supershelf.configs import ShelfConfigs
 from supershelf.data import run_feed
 from supershelf.domain_schema import DomainSchema
@@ -68,8 +69,8 @@ class InspectScanFilesCommand(ListViewMixin, Parser):
     """Every kept file, including unchanged identity rows."""
 
     class Meta:
-        view_columns = _FILES_COLUMNS
-        view_column_names = ("profile", *_FILES_COLUMNS)
+        view_columns = FILES_COLUMNS
+        view_column_names = ("profile", *FILES_COLUMNS)
 
     path = kept_path()
 
@@ -187,8 +188,8 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
     """Every matched file, including unchanged variables."""
 
     class Meta:
-        view_columns = _VARS_COLUMNS
-        view_column_names = ("profile", *_VARS_COLUMNS, "input", "sha", "rule")
+        view_columns = VARS_COLUMNS
+        view_column_names = ("profile", *VARS_COLUMNS, "input", "sha", "rule")
 
     path = kept_path()
     show_all = Argument(
@@ -207,7 +208,7 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
         ctx=None,
         **_,
     ):
-        fmt = ctx.view_settings.get("format") if ctx is not None else None
+        fmt = view_format(ctx)
         runs = ShelfRuns.load(config, profile)
         show_profile_first(ctx, columns, len(runs.shelves))
         walk = runs.changed_resolves(path, dry_run=True, changes_only=False)
