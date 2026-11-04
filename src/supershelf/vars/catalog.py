@@ -480,6 +480,22 @@ class VarCatalog:
             return tuple(name for name, _spec in self.domain_specs())
         return ()
 
+    def csv_create_groups(self, kind: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Feed var names, then schema names, in dictionary order.
+
+        The caller uppercases the feed names. A non-empty feeds list selects
+        names and does not reorder them. A feed name that is not a schema
+        column follows, in list order. Omitted or empty feeds adds none.
+        """
+        schema = self.csv_headers(kind)
+        found = self.kind_schema(kind)
+        if found is None or not found.feeds:
+            return (), schema
+        schema_names = set(schema)
+        ordered = tuple(name for name in schema if name in set(found.feeds))
+        extra = tuple(name for name in found.feeds if name not in schema_names)
+        return ordered + extra, schema
+
     def kind_schemas(self) -> tuple[KindSchema, ...]:
         """Parsed kinds, in profile order."""
         return self._kinds.items()

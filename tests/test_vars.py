@@ -752,7 +752,7 @@ def test_empty_kind_file_is_filled_in_auto(tmp_path: Path) -> None:
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     _values(plan)
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
+    assert kind.read_text(encoding="utf-8") == f"SHA,PATH\n{FILE_DIGEST},a.txt\n"
 
 
 def test_manual_reads_and_does_not_append(tmp_path: Path) -> None:
@@ -776,14 +776,14 @@ def test_always_creates_the_first_template(tmp_path: Path) -> None:
     assert values["owner"] == "DEFAULT-rule"
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
+    assert created.read_text(encoding="utf-8") == f"SHA,PATH\n{FILE_DIGEST},a.txt\n"
     again = _plan(
         _kind_document("{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv", kind_overrides_mode="always"),
         tmp_path,
     )
     _values(again)
     again.commit()
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
+    assert created.read_text(encoding="utf-8") == f"SHA,PATH\n{FILE_DIGEST},a.txt\n"
 
 
 def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
@@ -805,7 +805,7 @@ def test_always_creates_vars_schema_columns(tmp_path: Path) -> None:
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
     assert created.read_text(encoding="utf-8") == (
-        f"PATH,SHA,amount,issued,vendor\na.txt,{FILE_DIGEST},,,\n"
+        f"SHA,PATH,amount,issued,vendor\n{FILE_DIGEST},a.txt,,,\n"
     )
 
 
@@ -835,9 +835,41 @@ def test_always_creates_kind_schema_local_names(tmp_path: Path) -> None:
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
     assert created.read_text(encoding="utf-8") == (
-        f"PATH,SHA,company,employee\na.txt,{FILE_DIGEST},,\n"
+        f"SHA,PATH,company,employee\n{FILE_DIGEST},a.txt,,\n"
     )
 
+
+def test_always_create_orders_feeds_by_the_schema_dict(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            **_kind_document(
+                "{{ __config__.root_dir }}/kinds/{{ __match__.kind }}.csv",
+                kind_overrides_mode="always",
+            ),
+            "vars_schema": {
+                "vendor": {"type": "text"},
+                "owner": {"type": "text"},
+                "issued": {"type": "date"},
+            },
+            "kind_schema": {
+                "note": {
+                    "feeds": ["issued", "vendor"],
+                    "vars_schema": {
+                        "vendor": "vendor",
+                        "owner": "",
+                        "issued": "issued",
+                    },
+                }
+            },
+        },
+        tmp_path,
+    )
+    _values(plan)
+    plan.commit()
+    created = tmp_path / "kinds" / "note.csv"
+    assert created.read_text(encoding="utf-8") == (
+        f"SHA,PATH,VENDOR,ISSUED,vendor,owner,issued\n{FILE_DIGEST},a.txt,,,,,\n"
+    )
 
 def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
     plan = _plan(
@@ -857,7 +889,7 @@ def test_unlisted_kind_uses_vars_schema_columns(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA,amount,vendor\na.txt,{FILE_DIGEST},,\n"
+    assert created.read_text(encoding="utf-8") == f"SHA,PATH,amount,vendor\n{FILE_DIGEST},a.txt,,\n"
 
 
 def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
@@ -875,7 +907,7 @@ def test_empty_kind_schema_keeps_the_fresh_header(tmp_path: Path) -> None:
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA\na.txt,{FILE_DIGEST}\n"
+    assert created.read_text(encoding="utf-8") == f"SHA,PATH\n{FILE_DIGEST},a.txt\n"
 
 
 def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> None:
@@ -896,7 +928,7 @@ def test_schema_names_that_are_not_csv_columns_are_skipped(tmp_path: Path) -> No
     _values(plan)
     plan.commit()
     created = tmp_path / "kinds" / "note.csv"
-    assert created.read_text(encoding="utf-8") == f"PATH,SHA,vendor,date\na.txt,{FILE_DIGEST},,\n"
+    assert created.read_text(encoding="utf-8") == f"SHA,PATH,vendor,date\n{FILE_DIGEST},a.txt,,\n"
 
 
 def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
@@ -911,7 +943,7 @@ def test_blank_kind_file_uses_schema_columns(tmp_path: Path) -> None:
     )
     _values(plan)
     plan.commit()
-    assert kind.read_text(encoding="utf-8") == f"PATH,SHA,amount\na.txt,{FILE_DIGEST},\n"
+    assert kind.read_text(encoding="utf-8") == f"SHA,PATH,amount\n{FILE_DIGEST},a.txt,\n"
 
 
 def test_missing_schema_columns_are_appended_on_the_right(tmp_path: Path) -> None:
@@ -1119,6 +1151,37 @@ def test_duplicate_kind_path_keeps_the_first_row(
     assert "duplicated" in caplog.text
 
 
+def test_sha_path_header_is_read(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        f"SHA,PATH,vendor\n{FILE_DIGEST},a.txt,Mine\n",
+        encoding="utf-8",
+    )
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    assert _values(plan)["vendor"] == "Mine"
+
+def test_existing_path_sha_header_is_not_reordered(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        f"PATH,SHA,vendor\na.txt,{FILE_DIGEST},Mine\n",
+        encoding="utf-8",
+    )
+    plan = _plan(
+        {
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
+            "vars_schema": {
+                "vendor": {"type": "text"},
+                "amount": {"type": "text"},
+            },
+        },
+        tmp_path,
+    )
+    assert _values(plan)["vendor"] == "Mine"
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == (
+        f"PATH,SHA,vendor,amount\na.txt,{FILE_DIGEST},Mine,\n"
+    )
+
 def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text(
@@ -1133,7 +1196,7 @@ def test_semicolon_header_tip_shows_the_expected_columns(tmp_path: Path) -> None
         _values(plan)
     assert caught.value.advice is not None
     assert "kind_overrides_sep is ';'" in caught.value.advice
-    assert "For example: PATH;SHA;amount" in caught.value.advice
+    assert "For example: SHA;PATH;amount" in caught.value.advice
 
 
 def test_semicolon_kind_row_keeps_a_comma_in_the_cell(tmp_path: Path) -> None:

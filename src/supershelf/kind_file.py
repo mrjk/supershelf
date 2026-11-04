@@ -238,6 +238,7 @@ class KindTable:
         self._pending: list[tuple[str, str]] = []
         self._pending_seen: set[tuple[str, str]] = set()
         self._extra_columns: list[str] = []
+        self._fresh_feeds: tuple[str, ...] = ()
         self._notes: list[tuple[str, str, str, int]] = []
         self._sha_sets: dict[str, str] = {}
         self._path_sets: list[tuple[str, str, str]] = []
@@ -303,6 +304,18 @@ class KindTable:
             self._extra_columns.append(name)
             present.add(name)
 
+    def set_fresh_feeds(self, names: tuple[str, ...]) -> None:
+        """Feed columns for a CSV this run creates. An existing file ignores them."""
+        if self.suffix != ".csv":
+            return
+        kept: list[str] = []
+        for name in names:
+            column = self.feed_column_name(name)
+            if not self.is_feed_column(column) or column in kept:
+                continue
+            kept.append(column)
+        self._fresh_feeds = tuple(kept)
+
     def sync_schema_columns(self, dry_run: bool, logger: logging.Logger) -> None:
         """Append missing schema columns on the right of an existing CSV."""
         if self.suffix != ".csv" or not self._extra_columns:
@@ -346,13 +359,16 @@ class KindTable:
         self._append()
 
     def _create_columns(self) -> tuple[str, ...]:
-        if self.suffix == ".csv" and self._extra_columns:
-            return (KIND_CSV_PATH, KIND_CSV_SHA, *self._extra_columns)
-        return self._FRESH_COLUMNS
+        if self.suffix != ".csv":
+            return self._FRESH_COLUMNS
+        return (KIND_CSV_SHA, KIND_CSV_PATH, *self._fresh_feeds, *self._extra_columns)
 
     def _write_new(self) -> None:
-        text = self._rendered(self._create_columns(), header=True)
+        columns = self._create_columns()
+        text = self._rendered(columns, header=True)
         self._replace_bytes(text.encode("utf-8"))
+        if self.suffix == ".csv":
+            self.columns = columns
         self.missing = False
         self.blank = False
 
@@ -612,6 +628,7 @@ class KindTable:
         self._pending.clear()
         self._pending_seen.clear()
         self._extra_columns.clear()
+        self._fresh_feeds = ()
         self._notes.clear()
         self._sha_sets.clear()
         self._path_sets.clear()
@@ -814,27 +831,31 @@ class KindTable:
                 )
             padded = list(raw) + [""] * (len(header) - len(raw))
             relative = ""
-            digest = ""
+            sha_cell: str | None = None
             cells: dict[str, str] = {}
             for name, cell in zip(header, padded, strict=True):
                 if name == KIND_CSV_PATH:
                     relative = cell
                     continue
                 if name == KIND_CSV_SHA:
-                    text_sha = cls._plain(cell)
-                    if text_sha is not None:
-                        digest = cls._check_sha(path, relative or cell, text_sha)
+                    sha_cell = cell
                     continue
                 text_cell = cls._plain(cell)
                 if text_cell is not None:
                     cells[name] = text_cell
             if relative.strip() == "":
-                if cells or digest:
+                pending_sha = "" if sha_cell is None else cls._plain(sha_cell) or ""
+                if cells or pending_sha:
                     raise VarConfigError(
                         f"{path} has a row with an empty PATH",
                         advice=cls._header_advice(sep, header),
                     )
                 continue
+            digest = ""
+            if sha_cell is not None:
+                text_sha = cls._plain(sha_cell)
+                if text_sha is not None:
+                    digest = cls._check_sha(path, relative, text_sha)
             line = KindLine(relative, digest, cells if relative not in rows else dict(cells))
             raw_rows.append(line)
             if relative in rows:
@@ -856,13 +877,21 @@ class KindTable:
                 f"{path} column {repeated!r} is repeated",
                 advice=advice,
             )
-        if not header or header[0] != KIND_CSV_PATH:
+        if not header or header[0] not in (KIND_CSV_SHA, KIND_CSV_PATH):
             found = header[0] if header else ""
             raise VarConfigError(
-                f"{path} first column is {found!r}. The first column must be PATH.",
+                f"{path} first column is {found!r}. The first column must be SHA or PATH.",
                 advice=advice,
             )
-        for name in header[1:]:
+        if header[0] == KIND_CSV_SHA and (len(header) < 2 or header[1] != KIND_CSV_PATH):
+            found = header[1] if len(header) > 1 else ""
+            raise VarConfigError(
+                f"{path} second column is {found!r}. "
+                "When the first column is SHA, the second column must be PATH.",
+                advice=advice,
+            )
+        rest = header[2:] if header[0] == KIND_CSV_SHA else header[1:]
+        for name in rest:
             if name == KIND_CSV_SHA:
                 continue
             if name in cls._SHA_BAD:
@@ -883,22 +912,26 @@ class KindTable:
     def _header_advice(cls, sep: str, columns: tuple[str, ...]) -> str:
         example = cls._header_example(sep, columns)
         return (
-            "The first column must be PATH. SHA is the hash. "
+            "The first column must be SHA or PATH. "
+            "When SHA is first, PATH is second. "
+            "When PATH is first, SHA may follow it. "
             "Other columns are lowercase names. "
             f"kind_overrides_sep is {sep!r}. For example: {example}"
         )
 
     @classmethod
     def _header_example(cls, sep: str, columns: tuple[str, ...]) -> str:
-        names = [KIND_CSV_PATH, KIND_CSV_SHA]
-        for name in columns[1:]:
+        names = [KIND_CSV_SHA, KIND_CSV_PATH]
+        for name in columns:
             if name in cls._SHA_BAD or name == KIND_CSV_SHA or name == KIND_CSV_PATH:
+                continue
+            if cls.is_feed_column(name):
                 continue
             lowered = name.lower()
             if (
                 cls._LOWER_NAME.fullmatch(lowered)
                 and lowered not in names
-                and lowered != "path"
+                and lowered not in {"path", "sha"}
             ):
                 names.append(lowered)
         return sep.join(names)
@@ -1593,8 +1626,13 @@ class KindFiles:
         return None
 
     def _with_headers(self, table: KindTable, kind: str) -> KindTable:
-        if self._catalog is not None:
-            table.add_schema_columns(self._catalog.csv_headers(kind))
+        catalog = self._catalog
+        if catalog is None:
+            return table
+        feeds, schema = catalog.csv_create_groups(kind)
+        table.add_schema_columns(schema)
+        if table.missing or table.blank:
+            table.set_fresh_feeds(feeds)
         return table
 
     def _load_existing(self, path: Path, kind: str) -> KindTable:

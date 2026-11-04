@@ -124,6 +124,14 @@ type = "text"
 [vars_schema.issued]
 type = "date"
 
+[kind_schema.invoice]
+feeds = ["vendor", "owner", "issued"]
+
+[kind_schema.invoice.vars_schema]
+vendor = "vendor"
+owner = "owner"
+issued = "issued"
+
 [default_vars]
 vendor = "Bank2000"
 issued = "2026-04-25"
@@ -215,6 +223,12 @@ kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 [vars_schema.vendor]
 type = "text"
 
+[kind_schema.invoice]
+feeds = ["vendor"]
+
+[kind_schema.invoice.vars_schema]
+vendor = "vendor"
+
 [default_vars]
 vendor = "Bank2000"
 
@@ -252,6 +266,12 @@ kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
 [vars_schema.vendor]
 type = "text"
+
+[kind_schema.invoice]
+feeds = ["vendor"]
+
+[kind_schema.invoice.vars_schema]
+vendor = "vendor"
 
 [default_vars]
 vendor = "Bank2000"
@@ -296,6 +316,14 @@ type = "text"
 [vars_schema.date]
 type = "date"
 
+[kind_schema.invoice]
+feeds = ["path", "sha", "date"]
+
+[kind_schema.invoice.vars_schema]
+path = "path"
+sha = "sha"
+date = "date"
+
 [default_vars]
 path = "rel/a.pdf"
 sha = "abc"
@@ -318,9 +346,9 @@ glob = "**"
     assert row["_SHA_"] == "abc"
     assert row["DATE"] == "2026-04-25"
     assert "_DATE_" not in row
-    assert "PATH" == next(iter(row))
     header = (tmp_path / "invoice.csv").read_text(encoding="utf-8").splitlines()[0]
     names = header.split(",")
+    assert names[:2] == ["SHA", "PATH"]
     assert "SHA" in names
     assert "_SHA_" in names
     assert names.count("DATE") == 1
@@ -635,6 +663,15 @@ def test_shared_path_stops_when_values_differ(
 [config]
 kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
 
+[vars_schema.vendor]
+type = "text"
+
+[kind_schema.invoice]
+feeds = ["vendor"]
+
+[kind_schema.invoice.vars_schema]
+vendor = "vendor"
+
 [[inputs]]
 path = "one"
 
@@ -669,6 +706,15 @@ def test_yaml_rewrite_keeps_the_later_row(
         """\
 [config]
 kind_overrides_config = ["{{ __config__.root_dir }}/invoice.yaml"]
+
+[vars_schema.vendor]
+type = "text"
+
+[kind_schema.invoice]
+feeds = ["vendor"]
+
+[kind_schema.invoice.vars_schema]
+vendor = "vendor"
 
 [default_vars]
 vendor = "Bank2000"
@@ -715,7 +761,7 @@ def test_duplicate_raw_row_is_kept(
     assert rows[1]["vendor"] == "Later"
 
 
-def test_no_schema_feeds_visible_names(
+def test_omitted_feeds_adds_no_uppercase_columns(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -744,11 +790,10 @@ glob = "**"
 
     _dispatch(["scan", "feeds"])
 
-    row = _cells(tmp_path / "note.csv")[0]
-    assert row["VENDOR"] == "Bank2000"
-    assert row["ISSUED"] == "25/04/2026"
-    assert row.get("vendor", "") == ""
-    assert row.get("issued", "") == ""
+    header = (tmp_path / "note.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert header == "SHA,PATH"
+    assert "VENDOR" not in header
+    assert "ISSUED" not in header
 
 
 def test_feed_does_not_write_documents(
@@ -784,6 +829,15 @@ def test_feed_writes_the_cell_and_leaves_the_database(
         """\
 [config]
 kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[vars_schema.author]
+type = "text"
+
+[kind_schema.invoice]
+feeds = ["author"]
+
+[kind_schema.invoice.vars_schema]
+author = "author"
 
 [default_vars]
 author = '{{ meta("pdf", "author") }}'
@@ -830,6 +884,15 @@ def test_dry_run_creates_nothing(
         """\
 [config]
 kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[vars_schema.author]
+type = "text"
+
+[kind_schema.invoice]
+feeds = ["author"]
+
+[kind_schema.invoice.vars_schema]
+author = "author"
 
 [default_vars]
 author = '{{ meta("pdf", "author") }}'
@@ -1089,6 +1152,15 @@ def test_show_can_write_the_meta_cache(
         """\
 [config]
 kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+
+[vars_schema.author]
+type = "text"
+
+[kind_schema.invoice]
+feeds = ["author"]
+
+[kind_schema.invoice.vars_schema]
+author = "author"
 
 [default_vars]
 author = '{{ meta("pdf", "author") }}'

@@ -140,7 +140,7 @@ kind_schema:
   invoice:
     desc: A vendor bill
     # feed_file is optional. Omitted uses kind_overrides_config. 1.9.
-    # feeds lists vars copied into uppercase columns. Omitted feeds every schema var.
+    # feeds lists vars copied into uppercase columns. Omitted or empty adds none.
     # A var left off feeds is still stored in vars_json on import.
     feeds:
       - vendor
@@ -317,11 +317,11 @@ outputs:
 
 2.3.2. Not part of the profile above. Same two rows in each format. `.yml` is the yaml text. The profile example sets `kind_overrides_sep` to `;`. Omitted, the separator is a comma. `issued` is type `date`, so the cell is written with `kind_overrides_date_format` (`%d/%m/%Y`). Stored values are `2026-04-25` and `2026-01-15`. An empty cell is absent.
 
-`invoice` lists local names, so a new CSV header is `PATH;SHA` plus those names in kind_schema order: `vendor`, `owner`, `amount`, `paid`, `issued`. The file below already has columns. Missing schema names are appended on the right. Columns the schema does not name stay.
+`invoice` lists local names and feeds `vendor`, `amount`, and `issued`, so a new CSV header is `SHA;PATH;VENDOR;AMOUNT;ISSUED;vendor;owner;amount;paid;issued`. The file below already has columns. Missing schema names are appended on the right. Columns the schema does not name stay. The app does not create those columns.
 
-`payslip` lists `company` and `employee` only, so a new CSV header is `PATH;SHA;company;employee`.
+`payslip` lists `company` and `employee` only, and `feeds` is omitted, so a new CSV header is `SHA;PATH;company;employee`.
 
-`unsorted` has no `kind_schema` entry, so a new CSV uses the declared `vars_schema` names, including `issued`.
+`unsorted` has no `kind_schema` entry, so a new CSV uses the declared `vars_schema` names, including `issued`. The header is `SHA`, then `PATH`, then those names. There are no uppercase columns.
 
 `profile.default.invoice.csv`
 
@@ -372,6 +372,6 @@ owner = "sample"
 Local names from `kind_schema`. `company` is `company_name`. `employee` is `employee_name`. TOML and YAML use the same row shape as the invoice files, with these keys under `vars`.
 
 ```csv
-PATH;SHA;company;employee
-payroll/PAY_ada.pdf;cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc;Acme;Ada
+SHA;PATH;company;employee
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc;payroll/PAY_ada.pdf;Acme;Ada
 ```

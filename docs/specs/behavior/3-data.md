@@ -41,6 +41,9 @@ This step does not read or write documents, events, or `vars_json`. It does not 
   `manual` and `auto` do not create a missing file.
 - The kind file is chosen as in 2.3.2. The first existing template wins.
 - A new CSV column is appended on the right. Feed does not reorder columns.
+  A file created in this run already has its feed columns when feeds is a non-empty list, in the order from 2.3.2.
+  Feed fills those cells and does not append them.
+  On a file that already had columns, a missing feed column is appended on the right.
   TOML and YAML append a new key and keep the existing key order.
 - The stored feed cell is the display string. A float stays `12.50`. A bool stays `true` or `false`.
 - Two inputs that share one kind file and the same row identifier:
@@ -101,15 +104,15 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
   `Profile {profile} kind {kind} has no config for input {input}` once per input directory that missed.
   `always` does not count a file as found until it is on disk. The notice is logged, then the create still runs.
   `manual` and `auto` do not create a missing file.
-- There is no name filter and no `--var` flag. The names are `feeds` on the kind, or every schema var when `feeds` is omitted. Architecture 1.9.
+- There is no name filter and no `--var` flag. The names are the non-empty `feeds` list on the kind. Omitted or empty feeds writes no uppercase columns. Architecture 1.9.
 
 ### Selectors
 
 - Schema vars are the CSV header names for that kind. 2.3.2.
   A `kind_schema` entry uses its local names. Otherwise the declared `vars_schema` names are used.
-- A kind with no schema columns has no schema vars.
-  Feed then uses the user-visible names `scan vars` would print for files of that kind, so dates and rule vars still get a cell.
-- A name in `feeds` that is not one of those names stops the command.
+- A kind with no `feeds` list, or an empty one, has no uppercase columns.
+  `scan feeds` does not add them.
+- A name in `feeds` that the kind does not resolve stops the command. Architecture 1.9.
 
 ### Write
 
@@ -124,7 +127,10 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
   Custom text belongs in the lowercase column.
 - A `type: date` value is written with `kind_overrides_date_format`, not the stored `YYYY-MM-DD`.
   Other types use the display string. The kind-file format applies to every date-typed cell, as in 2.3.2.
-- A missing feed column is appended on the right. TOML and YAML append the key.
+- A file created in this run already has its feed columns when feeds is a non-empty list, in the create order from 2.3.2.
+  Feed fills those cells and does not append them.
+  On a file that already had columns, a missing feed column is appended on the right.
+  TOML and YAML append the key.
   The row is the kind-file row for this file's identifier. 2.3.2.
   Feed does not rewrite `PATH` or `SHA` on a row that already exists. Identity updates do. 2.3.2.
   A matched file with no row is added when a cell is written, in `auto` and `always`. The new row sets `PATH` and `SHA`. Other lowercase cells are empty.

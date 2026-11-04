@@ -413,13 +413,11 @@ def _feed_plan(
 
 
 def _feed_names(item: _Resolved) -> tuple[str, ...]:
-    """feeds when set, otherwise the schema names, otherwise printed names."""
-    catalog = item.plan.catalog
-    schema = catalog.kind_schema(item.kind)
-    if schema is not None and schema.feeds is not None:
-        return schema.feeds
-    shown = tuple(name for name in item.values if not reserved_var_name(name))
-    return _defined_names(catalog, item.kind, shown)
+    """The kind's feeds list. Omitted or empty writes no uppercase columns."""
+    schema = item.plan.catalog.kind_schema(item.kind)
+    if schema is None or not schema.feeds:
+        return ()
+    return schema.feeds
 
 
 def _open_feed_table(item: _Resolved) -> KindTable | None:
@@ -827,13 +825,6 @@ def _visible_by_kind(resolved: tuple[_Resolved, ...]) -> dict[tuple[str, str], t
                 continue
             names.add(name)
     return {key: tuple(sorted(names)) for key, names in found.items()}
-
-
-def _defined_names(catalog: VarCatalog, kind: str, visible: tuple[str, ...]) -> tuple[str, ...]:
-    headers = catalog.csv_headers(kind)
-    if headers:
-        return headers
-    return visible
 
 
 def _known_kinds(matcher: Matcher, catalog: VarCatalog) -> tuple[str, ...]:
