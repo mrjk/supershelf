@@ -33,7 +33,7 @@ class App(LoggingOptMixin, GlobalFlags, Parser):
         app_name = LOGGER_NAME
         log_prefix = LOGGER_NAME
         log_levels = [
-            [f"WARNING|{LOGGER_NAME}"],
+            [f"NOTICE|{LOGGER_NAME}"],
             [f"INFO|{LOGGER_NAME}"],
             [f"DEBUG|{LOGGER_NAME}"],
             ["DEBUG|"],

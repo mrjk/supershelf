@@ -90,6 +90,48 @@ def test_profiles_missing_config_exits(
     assert "No supershelf config found" in capsys.readouterr().err
 
 
+def test_notice_is_shown_without_verbose(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    app = App(parse=False)
+
+    with pytest.raises(SystemExit):
+        app.dispatch(["profiles"])
+
+    capsys.readouterr()
+    log = logging.getLogger(LOGGER_NAME)
+    assert logging.NOTICE == logging.INFO + 5
+    assert callable(log.notice)
+    assert log.isEnabledFor(logging.NOTICE)
+    assert not log.isEnabledFor(logging.INFO)
+
+    log.notice("notice-marker")
+    log.info("info-marker")
+    err = capsys.readouterr().err
+    assert "notice-marker" in err
+    assert "info-marker" not in err
+
+
+def test_info_needs_one_verbose_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    app = App(parse=False)
+
+    with pytest.raises(SystemExit):
+        app.dispatch(["-v", "profiles"])
+
+    capsys.readouterr()
+    log = logging.getLogger(LOGGER_NAME)
+    assert log.isEnabledFor(logging.INFO)
+    assert not log.isEnabledFor(logging.DEBUG)
+
+
 def test_profiles_does_not_render_templates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

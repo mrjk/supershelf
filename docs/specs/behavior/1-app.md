@@ -50,3 +50,8 @@ Behavior. Index: [README](../README.md).
 - App commands:
   - supershelf profiles: table of profile, type, and path.
     This is the list selected by --config / $SUPERSHELF_CONFIG and --profile / $SUPERSHELF_PROFILES.
+- Logging:
+  - The app logger is supershelf. Call sites use logger.notice.
+  - No -v: the threshold is NOTICE. NOTICE and above are shown. INFO and DEBUG are not.
+  - -v is INFO. -vv is DEBUG for the app logger. -vvv is DEBUG for every logger.
+  - NOTICE is not an extra verbosity step.
