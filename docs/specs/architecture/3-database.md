@@ -46,7 +46,7 @@ Indexes: `events.hash`, `events.destination`.
 
 The sqlite schema does not follow the user's config. `vars_schema`, `kind_schema`, `feeds`, and kind-file columns do not add, remove, or rename tables or columns. Every user variable is one key in the single `vars_json` cell on the document and on each event. A new name, a removed name, or a changed kind entry is a different JSON object on the next import. It is not a migration. Schema version changes only when supershelf changes its own tables. 3.5.
 
-`vars_json` is one JSON object. Keys are sorted. `__file__` and `__match__` are not included. Those facts already have columns: `match_kind`, `rule`, `mtime`, `ctime`, `file_dir`, `file_name`, `file_stem`, `file_ext`, `path`, and `hash` on `contents`. Those column names are supershelf's. They stay. A set user variable is included. `__profile__` and `__config__` are not included. An unset name is left out.
+`vars_json` is one JSON object. Keys are sorted. `__file__`, `__match__`, and `__extract__` are not included. File and match facts already have columns: `match_kind`, `rule`, `mtime`, `ctime`, `file_dir`, `file_name`, `file_stem`, `file_ext`, `path`, and `hash` on `contents`. Those column names are supershelf's. They stay. A capture is included only when an assignment copies it into a user variable. A set user variable is included. `__profile__` and `__config__` are not included. An unset name is left out.
 
 Each binding is `type`, `value`, `display`, and `value_sources`. `value` is the JSON form of the Python value. A float can be `12.5` while `display` is `12.50`. A difference in the name set, the type, the value, the display, or the sources is a variable change.
 

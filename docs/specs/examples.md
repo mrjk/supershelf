@@ -175,10 +175,10 @@ default_vars:
   doc_type: '{{ __match__.kind }}'
 
   # Fallback list. The first candidate that renders wins.
-  # regex_time_var reads the group date, not this list.
+  # parse_date reads the capture, not this list.
   # Do not also set vars_schema.issued.default.
   issued:
-    - '{{regex_time_var(date, "%Y%m%d")}}'
+    - '{{ __extract__.date | parse_date("%Y%m%d") }}'
     - '{{ meta("pdf", "creation_date") }}'
     - '{{ meta("pdf", "modification_date") }}'
 
@@ -253,7 +253,7 @@ match_rules:
 
 
     # Specified in 2.3.1. A string is one template. A list is tried in order.
-    # {{account}} reads the regex group when no earlier layer set account.
+    # {{ __extract__.account }} reads the capture. The variable exists only after this assignment.
     # {{issued}} reads the issued string kept by the earlier layer.
     vars:
       # Simple static vars
@@ -263,13 +263,13 @@ match_rules:
       owner: 'sample'
 
       account:
-        - '{{account}}'
+        - '{{ __extract__.account }}'
       account2:
-        - '{{regex_replace(account, "[0-9]{4}$", "")}}'
+        - '{{regex_replace(__extract__.account, "[0-9]{4}$", "")}}'
       account3:
-        - '{{account}}-{{owner}}'
+        - '{{ __extract__.account }}-{{owner}}'
       issued: # Try this pattern's date first, else keep the earlier issued string.
-        - '{{regex_time_var(date, "%Y%m%d")}}'
+        - '{{ __extract__.date | parse_date("%Y%m%d") }}'
         - '{{issued}}'
 
   # Payslip files use kind_schema local names company and employee.

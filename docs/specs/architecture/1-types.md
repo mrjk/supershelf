@@ -42,13 +42,13 @@ amount:
   value_sources: []
 ```
 
-`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. `__file__` and `__match__` fields are omitted unless `--all` is set. With `--all`, each field is one of those lines. The name is the dotted form, such as `__file__.name`, and the source label is `fact`. `__profile__`, `__config__`, and `__input__` are never printed. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
+`scan vars` prints `name: value` for set vars, using the display string, one name per line, sorted alphabetically. `__file__`, `__match__`, and `__extract__` fields are omitted unless `--all` is set. With `--all`, each field is one of those lines. The name is the dotted form, such as `__file__.name` or `__extract__.account`, and the source label is `fact`. `__profile__`, `__config__`, and `__input__` are never printed. The `sources` column lists the labels for that name, joined by `, `, on the matching line. A `None` value stays off the row. JSON and YAML omit that column and keep `value_sources` on each name. JSON uses the Python value (`7`, `12.5`, `true`, `null`), so a float dump can differ from a display such as `12.50`. `date`, `time`, and `datetime` dump as their display strings.
 
 ## 1.3 Catalog
 
 There is no built-in catalog entry. The user catalog is the top-level profile key `vars_schema`, a mapping of name to VarSpec. Names match `[A-Za-z_][A-Za-z0-9_]*`. A date is a name the user declares with `type: date`.
 
-`__file__`, `__match__`, `__profile__`, `__config__`, and `__input__` are template objects. They are not catalog entries. `desc` and `unit` on the old flat names, such as `__file_name__` or `__kind__`, are a config error, because a new name that starts with `__` is a config error. Empty `__file__.ext` and `__file__.dir` are `""`. `__file__.ctime` and `__file__.mtime` stay text: their stored form has fractional seconds and a UTC offset, which `datetime` rejects. They do not satisfy type `date`.
+`__file__`, `__match__`, `__extract__`, `__profile__`, `__config__`, and `__input__` are template objects. They are not catalog entries. `__extract__` fields are the raw named captures from the winning regex. They are not variables. `desc` and `unit` on the old flat names, such as `__file_name__` or `__kind__`, are a config error, because a new name that starts with `__` is a config error. Empty `__file__.ext` and `__file__.dir` are `""`. `__file__.ctime` and `__file__.mtime` stay text: their stored form has fractional seconds and a UTC offset, which `datetime` rejects. They do not satisfy type `date`.
 
 A name with no entry is an implicit user spec: `type: text`, `mandatory: false`, `internal: false`. The prefix does not add a catalog entry.
 
@@ -80,13 +80,13 @@ These share YAML list syntax and mean different things.
 
 ## 1.6 Jinja stays text
 
-`VarEnvironment.render` returns a string. Built-in commands and user modules take strings and return strings. After a successful cast, the Jinja scope holds the display string. Later templates read that string. `regex_replace(account, ...)` and `regex_time_var(...)` keep working. `{{ amount ~ owner }}` keeps working.
+`VarEnvironment.render` returns a string. Built-in commands and user modules take strings and return strings. After a successful cast, the Jinja scope holds the display string. Later templates read that string. `regex_replace(account, ...)` and `{{ value | parse_date(...) }}` keep working. `{{ amount ~ owner }}` keeps working.
 
 `{{ amount + 1 }}` is not integer math. `{% if paid %}` reads the string `true` or `false`. A non-empty string is truthy in Jinja, so `{% if paid %}` is true for both. Compare with `{% if paid == "true" %}`.
 
-The Python value lives on VarState. Assigned names stay display strings. A set `type: date` value is an object in the Jinja scope only. `str()` uses `default_date_format`. `strftime(pattern)` uses a `strftime` pattern. The fields are `Y`, `m`, and `d` (`%Y`, `%m`, `%d`). `{{ issued.Y }}` is the four-digit year. There is no `.year` and no string slicing. `time` and `datetime` stay display strings. The printed value and `vars_json` stay `YYYY-MM-DD`. `__profile__`, `__config__`, `__file__`, `__match__`, and `__input__` are mappings. With no field, each prints one string: profile name, `root_dir`, filename, kind, and input path. `{{ __file__.name }}` still reads a field. `__profile__.document` is the parsed profile file, still a mapping, and still needs a field. A field on `__file__` and `__match__` is a string.
+The Python value lives on VarState. Assigned names stay display strings. A set `type: date` value is an object in the Jinja scope only. `str()` uses `default_date_format`. `strftime(pattern)` uses a `strftime` pattern. The fields are `Y`, `m`, and `d` (`%Y`, `%m`, `%d`). `{{ issued.Y }}` is the four-digit year. There is no `.year` and no string slicing. `time` and `datetime` stay display strings. The printed value and `vars_json` stay `YYYY-MM-DD`. `__profile__`, `__config__`, `__file__`, `__match__`, `__extract__`, and `__input__` are mappings. With no field, `__profile__` is the name, `__config__` is `root_dir`, `__file__` is the filename, `__match__` is the kind, and `__input__` is the input path. `__extract__` with no field fails that candidate. There is no single capture. `{{ __file__.name }}` still reads a field. `__profile__.document` is the parsed profile file, still a mapping, and still needs a field. A field on `__file__`, `__match__`, and `__extract__` is a string.
 
-`regex_time_var` still returns `YYYY-MM-DD`. That string satisfies type `date` and misses type `time` and type `datetime`.
+`parse_date` returns `default_date_format`, or the `output` pattern when that keyword is set. That string satisfies type `date` when it is `YYYY-MM-DD` or `default_date_format`. An `output` that is neither misses type `date`, type `time`, and type `datetime`. It stays text.
 
 ## 1.7 Cast, then validate
 
@@ -100,7 +100,7 @@ One pipeline for every candidate and every fact. Load time uses it for non-templ
    - `int`: optional `+` or `-`, then digits. `12.0`, `0x10`, `1_000`, and `1e2` miss. Value is a Python int. Display drops the plus and leading zeros: `007` and `+7` display as `7`. There is no overflow cap. Set `le` when a consumer needs one.
    - `float`: optional sign, then digits with an optional decimal point (`12`, `12.50`, `.5`, `12.`). No exponent, no comma, no `NaN` or `Infinity`. Value is a Python float. Display is the stripped spelling, so `12.50` stays `12.50`. `-0` and `-0.0` are valid. `allowed: [0]` matches them, because Python compares them equal. Float is IEEE binary. Keep money in `text` or in integer cents until a later decimal type exists.
    - `bool`: case-insensitive `true`/`yes`/`1` or `false`/`no`/`0`. Display is `true` or `false`. Value is a Python bool.
-   - `date`: the whole string is `YYYY-MM-DD` and round-trips. `2026-04-25T15:04` misses. Display and JSON are that string. A candidate that misses this spelling is parsed with `default_date_format` and stored as `YYYY-MM-DD`. If that also fails, the candidate misses. The packaged format is `%Y-%m-%d`. When that format is already `%Y-%m-%d`, the second parse does not add another spelling. A kind-file cell whose type is `date` is parsed with `kind_overrides_date_format` before this cast. 2.3.2.
+   - `date`: the whole string is `YYYY-MM-DD` and round-trips. `2026-04-25T15:04` misses. Display and JSON are that string. A candidate that misses this spelling is parsed with `default_date_format` and stored as `YYYY-MM-DD`. If that also fails, the candidate misses. The packaged format is `%Y-%m-%d`. When that format is already `%Y-%m-%d`, the second parse does not add another spelling. A `parse_date` result with `output` omitted is `default_date_format`, so this cast accepts it. An `output` that is neither `YYYY-MM-DD` nor `default_date_format` misses. A kind-file cell whose type is `date` is parsed with `kind_overrides_date_format` before this cast. 2.3.2.
    - `time`: the whole string is `HH:MM` or `HH:MM:SS`, zero-padded, and the hour, minute, and second round-trip. `15:4`, `15:04:05.1`, and `15:04Z` miss. Display and JSON keep the accepted spelling. The Python value used for `allowed` and ranges treats `15:04` and `15:04:00` as the same clock.
    - `datetime`: the whole string is `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`, with `T` between the parts. The date part round-trips as a date. The time part follows the `time` rules. `2026-04-25`, `2026-04-25 15:04`, and anything with `Z` or an offset misses. Display and JSON keep the accepted spelling.
 5. Validate, in this order: `allowed`, then `pattern` and lengths, then range. Compare `allowed` and ranges to the Python value (`007` matches `allowed: [7]` when the type is int; the text `007` matches `allowed: ["007"]` only as text). `pattern` is `re.fullmatch` against the display string. Text is not Unicode-normalized. Lengths use that same display string.
@@ -110,9 +110,9 @@ A non-template literal that fails step 4 or 5 is a config error at load, includi
 
 When every candidate in a layer misses, that layer does not write the name. An earlier value and its source list stay. Later layers still run. The name stays `None` when no layer writes it. `mandatory` after the last layer stops the file when the value is still `None`. This is the same rule for every name.
 
-Facts are one value, with no candidate list. A regex group that fails the pipeline stops the command. A filename group `amount` of `12.50`, declared as `float`, becomes the float `12.5` when the match stores it. `EUR12.50` and `12,50` stop the file. A later layer does not repair that fact. To keep fallbacks, capture the text under another name and assign the typed name from a candidate list. `__file__` and `__match__` are not catalog entries. Their fields are already strings.
+Facts are one value, with no candidate list. `__file__`, `__match__`, and `__extract__` are not catalog entries. Their fields are already strings. A regex capture is not cast. `amount: "{{ __extract__.amount }}"` with type `float` stores `12.5` from the capture `12.50`. `EUR12.50` misses that candidate. A later candidate can replace it.
 
-The filename does not set a date. A stem that is a date stays `__file__.stem`. A profile that wants that date writes a candidate on the variable it named, such as `{{ regex_time_var(__file__.stem, __config__.date_format) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
+The filename does not set a date. A stem that is a date stays `__file__.stem`. A profile that wants that date writes a candidate on the variable it named, such as `{{ __file__.stem | parse_date(__config__.date_format) }}`. A blank kind-file cell stays unset and is not a miss. A kind-file cell that fails cast stops the file. It has no next candidate.
 
 `mandatory` runs after the last layer, and only on `None`.
 
@@ -120,7 +120,7 @@ The filename does not set a date. A stem that is a date stays `__file__.stem`. A
 
 While a key is rendering, `{{ that_key }}` reads the previous layer's display string. A layer that misses all of its candidates does not write the name, so a later layer can still set it.
 
-Leading zeros are data only for `text`. An int schema on a regex group `0012` stores `12`. Pad in the template if the width matters.
+Leading zeros are data only for `text`. An int assignment `amount: "{{ __extract__.amount }}"` of capture `0012` stores `12`. The field `__extract__.amount` stays `0012`. Pad in the template if the width matters.
 
 Candidate list. `amount` is `int`, and the candidates are `"nope"` then `"12"`. `"nope"` is a literal, so load fails before the walk. The same key as `"{{ missing }}"` then `"12"` misses the template and keeps `12`.
 
@@ -134,7 +134,7 @@ Mandatory. `amount` with `mandatory: true` and no successful write stops the fil
 
 Date. A filename that is a date does not set a date var. Every candidate in a layer missing leaves the earlier value, or leaves it unset when nothing wrote it. `mandatory: true` stops the file when the value is still `None`. A new name `__custom__` is a config error. `type: list` is a config error.
 
-Leading zeros. Regex group `0012` declared as `int` stores `12`. A group `007` displays as `7`.
+Leading zeros. Assignment `{{ __extract__.amount }}` of capture `0012`, declared as `int`, stores `12`. A capture `007` displays as `7` on that variable. `__extract__.amount` stays the raw capture.
 
 Datetime. `2026-04-25T15:04` and `2026-04-25T15:04:05` are valid. `2026-04-25` misses. Time `15:04` matches `allowed: ["15:04:00"]`. An omitted time var stays unset.
 
@@ -144,12 +144,12 @@ Append a label only when that layer writes the name. A later write appends. It k
 
 Labels:
 
-- `fact` for file metadata, aliases, and regex groups
+- `fact` for `__file__`, `__match__`, and `__extract__` fields
 - `default` for the spec default or `default_vars`
 - `rule:<rule name>`
 - `kind:<kind file path>`
 
-Resolver order in `VarPlan.resolve`: facts, then `default_vars`, then match-rule `vars`, then the kind file. The kind file is the last assignment layer.
+A user variable copied from a capture uses the assignment label, not `fact`. Resolver order in `VarPlan.resolve`: `default_vars`, then match-rule `vars`, then the kind file. The kind file is the last assignment layer. `__file__`, `__match__`, and `__extract__` are in scope for every template. They are not assignment layers.
 
 Sources. `default_vars` sets `vendor`, the rule replaces it, and the kind file replaces it. The labels are `default`, `rule:invoice`, and `kind:<path>`. The value is the kind-file cell.
 
