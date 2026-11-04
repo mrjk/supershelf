@@ -19,6 +19,13 @@ _MATCH_COLUMNS = ("path", "kind", "rule", "groups")
 _VARS_COLUMNS = ("path", "kind", "vars", "sources")
 
 
+def _shown_columns(columns: tuple[str, ...], profiles: int) -> tuple[str, ...]:
+    """Lead the default columns with profile when more than one profile is selected."""
+    if profiles <= 1:
+        return columns
+    return ("profile", *columns)
+
+
 def show_profile_first(ctx, columns, profiles: int) -> None:
     """Default columns lead with profile when more than one profile is selected."""
     if profiles <= 1 or columns is not None or ctx is None:
@@ -225,31 +232,46 @@ class ScanCommand(CompositeViewMixin, Parser):
         runs = ShelfRuns.load(config, profile)
         dry = bool(dry_run)
         # Resolve in the vars step before the feed write. A resolve error stops here.
+        profiles = len(runs.shelves)
         var_rows = variable_rows(
             runs.changed_resolves(path, mode=kind_overrides_mode, dry_run=dry),
             fmt,
-            profiles=len(runs.shelves),
+            profiles=profiles,
         )
-        sections = [
-            ("files", runs.file_rows(path), "files"),
-            ("kinds", runs.kind_rows(path), "kinds"),
-            ("vars", var_rows, "vars"),
-            (
-                "feeds",
-                run_feed(
-                    config,
-                    profile,
-                    path,
-                    mode=kind_overrides_mode,
-                    dry_run=dry,
-                    verbosity=int(verbosity or 0),
-                ),
-                "feeds",
-            ),
-        ]
+        feed_rows = run_feed(
+            config,
+            profile,
+            path,
+            mode=kind_overrides_mode,
+            dry_run=dry,
+            verbosity=int(verbosity or 0),
+        )
         return CompositeView(
             [
-                (key, ListView(list(rows)), {"title": title})
-                for key, rows, title in sections
+                (
+                    "files",
+                    ListView(
+                        list(runs.file_rows(path)),
+                        columns=_shown_columns(_FILES_COLUMNS, profiles),
+                    ),
+                    {"title": "files"},
+                ),
+                (
+                    "kinds",
+                    ListView(
+                        list(runs.kind_rows(path)),
+                        columns=_shown_columns(_MATCH_COLUMNS, profiles),
+                    ),
+                    {"title": "kinds"},
+                ),
+                (
+                    "vars",
+                    ListView(
+                        list(var_rows),
+                        columns=_shown_columns(_VARS_COLUMNS, profiles),
+                    ),
+                    {"title": "vars"},
+                ),
+                ("feeds", ListView(list(feed_rows)), {"title": "feeds"}),
             ]
         )

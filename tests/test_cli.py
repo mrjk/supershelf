@@ -1061,7 +1061,15 @@ def test_bare_scan_dry_run_creates_nothing_and_does_not_import(
             "always",
         ]
     )
-    preview = capsys.readouterr().out
+    preview = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+    vars_section = preview.split("=== vars ===", 1)[1].split("=== feeds ===", 1)[0]
+    assert "| path " in vars_section
+    assert "| kind " in vars_section
+    assert "| vars " in vars_section
+    assert "| sources " in vars_section
+    assert "| input " not in vars_section
+    assert "| sha " not in vars_section
+    assert "| rule " not in vars_section
     assert "a.pdf" in preview
     assert "new" in preview
     assert "import" not in preview
