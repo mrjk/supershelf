@@ -31,7 +31,7 @@ Product steps live in `behavior/` only. `2` is profile load only. Scan, match, a
 
 - `1` App initialization: [behavior/1-app.md](behavior/1-app.md)
 - `2` Profile initialization: [behavior/2-profile.md](behavior/2-profile.md)
-- `2.1` Scan files (`2.1.1` command, `2.1.2` walk): [behavior/2.1-scan.md](behavior/2.1-scan.md)
+- `2.1` Scan files (`2.1.1` command, `2.1.2` walk, `2.1.3` run): [behavior/2.1-scan.md](behavior/2.1-scan.md)
 - `2.2` Matching (`2.2.1` commands, `2.2.2` algorithm): [behavior/2.2-match.md](behavior/2.2-match.md)
 - `2.3` Vars. There is no `2.3` file.
   - `2.3.1` resolve: [behavior/2.3.1-resolve.md](behavior/2.3.1-resolve.md)

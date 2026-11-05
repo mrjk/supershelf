@@ -49,8 +49,9 @@ The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve a
   Kind files do not store this key. The kind-file row identifier is the first step. 2.3.2.
   The `--record-identity` flag does not change that key.
   Two rules may share a kind and use different lists.
-- A bad value stops `db import` before the walk. Exit 2. Nothing is written.
+- A bad value stops `db import` and `scan files` before the walk. Exit 2. Nothing is written.
   A bad config or environment value also stops the scan steps that resolve it. 2.3.2.
+  `scan match` and `inspect scan kinds` do not resolve it. 2.2.
   Bad: a different case, an empty string, an empty list, an empty comma item, a repeated step, a step other than `path` or `hash`, or a template string.
   The word `key` is reserved and is bad in this version. drafts/record-key.md.
   The message names the flag, the environment variable, `config.record_identity`, or the match rule.
@@ -107,6 +108,7 @@ The walk is the full walk from 2.1.2. There is no `--quick`. Variables resolve a
 - PATH limits the observed set to matching paths in inputs that were walked. The run does not mark, move, or insert anything outside that set. A filtered run can mark a selected path missing while those bytes still exist outside the filter. A full run reconciles that.
 - An mtime, ctime, or input-index change updates the current row and does not append an event. The status word is `refresh`.
 - A kind, rule, or variable change appends `vars` and does not bump the generation. A generation or a move carries the new variable snapshot in that one event.
+- When the clock and the variables both change, `scan files` still prints `refresh`. `db import` prints `vars`. The import row carries the new clock. The identity comparison and the import comparison are separate. 2.1.3.
 - Coming back from `missing` or `unmatched` with the same hash and the same variables appends `present`. A hash change on that return is `generation`. A variable change with the same hash is `vars`.
 
 ### Cases
