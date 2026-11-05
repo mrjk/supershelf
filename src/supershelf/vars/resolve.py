@@ -30,6 +30,7 @@ from supershelf.constants import (
     KEY_DEFAULT_VARS,
     KEY_METADATA_DRIVER,
     KEY_VAR_MODULES,
+    KIND_MODE_DISABLED,
     LOGGER_NAME,
     MATCH_FIELDS,
     SOURCE_DEFAULT,
@@ -408,16 +409,35 @@ class VarPlan:
         rules = RecordIdentity.rule_lists(document, profile_name, steps)
         return {name: item[0] for name, item in rules.items()}, steps[0]
 
-    def resolve(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
-        """Resolve one matched file."""
+    def resolve(
+        self,
+        file: InputFile,
+        match: FileMatch,
+        input_dir: Path,
+        *,
+        overrides: bool | None = None,
+    ) -> FileVars:
+        """Resolve one matched file.
+
+        ``overrides`` is None for bare scan, feeds, and import: kind cells follow
+        the mode. True forces a read, including when mode is disabled. False skips
+        the kind-file layer. Scan vars passes True or False.
+        """
         self._require_metadata(file, match)
         token = self._session.bind(MetadataFile.from_input(file))
         try:
-            return self._resolve_bound(file, match, input_dir)
+            return self._resolve_bound(file, match, input_dir, overrides=overrides)
         finally:
             self._session.unbind(token)
 
-    def _resolve_bound(self, file: InputFile, match: FileMatch, input_dir: Path) -> FileVars:
+    def _resolve_bound(
+        self,
+        file: InputFile,
+        match: FileMatch,
+        input_dir: Path,
+        *,
+        overrides: bool | None = None,
+    ) -> FileVars:
         file_ns = _file_namespace(file)
         match_ns = _match_namespace(match.kind, match.rule)
         groups = dict(match.groups)
@@ -437,14 +457,23 @@ class VarPlan:
             match.kind,
         )
         rule_layer = dict(scope)
-        self._apply_cells(
-            self._kinds.cells_for(match.kind, input_dir, file.path, match, file.sha256 or ""),
-            scope,
-            states,
-            order,
-            match,
-            file.path,
-        )
+        if overrides is not False:
+            read_only = overrides is True and self._kinds.mode == KIND_MODE_DISABLED
+            self._apply_cells(
+                self._kinds.cells_for(
+                    match.kind,
+                    input_dir,
+                    file.path,
+                    match,
+                    file.sha256 or "",
+                    read_only=read_only,
+                ),
+                scope,
+                states,
+                order,
+                match,
+                file.path,
+            )
         for name in self._catalog.csv_headers(match.kind):
             if name in states:
                 continue

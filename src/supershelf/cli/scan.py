@@ -16,6 +16,7 @@ from supershelf.cli.common import (
     view_format,
 )
 from supershelf.data import run_feed
+from supershelf.errors import SupershelfError
 from supershelf.kind_file import KindOverrideMode
 from supershelf.scan.runs import ShelfRuns, order_scan_row
 from supershelf.vars import FileVars
@@ -36,6 +37,36 @@ def checked_kind_mode(value: str | None) -> str | None:
     if value is not None:
         KindOverrideMode.check(value, "--kind-overrides-mode")
     return value
+
+
+def overrides_flag() -> Argument:
+    """Apply kind-file cells. Default when neither flag is set."""
+    return Argument(
+        "--overrides",
+        action="store_true",
+        help="Apply kind-file cells to the printed vars. Default.",
+    )
+
+
+def no_overrides_flag() -> Argument:
+    """Skip kind-file cells for scan vars."""
+    return Argument(
+        "--no-overrides",
+        action="store_true",
+        help="Skip kind-file cells. Print default_vars and rule vars only.",
+    )
+
+
+def checked_overrides(*, overrides: bool, no_overrides: bool) -> bool:
+    """True applies kind cells. Both flags together are a usage error."""
+    if overrides and no_overrides:
+        raise SupershelfError(
+            "Use --overrides or --no-overrides, not both",
+            advice="Omit both flags to apply kind-file cells.",
+        )
+    if no_overrides:
+        return False
+    return True
 
 
 _UNSET_TEXT = "null"
@@ -134,6 +165,8 @@ class ScanVarsCommand(ListViewMixin, Parser):
 
     path = kept_path()
     kind_overrides_mode = kind_overrides_flag()
+    overrides = overrides_flag()
+    no_overrides = no_overrides_flag()
     show_all = Argument(
         "--all",
         action="store_true",
@@ -147,6 +180,8 @@ class ScanVarsCommand(ListViewMixin, Parser):
         path=None,
         dry_run=False,
         kind_overrides_mode=None,
+        overrides=False,
+        no_overrides=False,
         show_all=False,
         columns=None,
         ctx=None,
@@ -154,12 +189,17 @@ class ScanVarsCommand(ListViewMixin, Parser):
     ):
         fmt = view_format(ctx)
         mode = checked_kind_mode(kind_overrides_mode)
+        apply_overrides = checked_overrides(
+            overrides=bool(overrides),
+            no_overrides=bool(no_overrides),
+        )
         runs = ShelfRuns.load(config, profile)
         show_profile_first(ctx, columns, len(runs.shelves))
         walk = runs.changed_resolves(
             path,
             mode=mode,
             dry_run=bool(dry_run),
+            overrides=apply_overrides,
         )
         return variable_rows(
             walk,

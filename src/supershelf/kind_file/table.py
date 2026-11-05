@@ -966,15 +966,18 @@ class KindFiles:
         relative: str,
         match: FileMatch,
         digest: str,
+        *,
+        read_only: bool = False,
     ) -> KindRow:
-        """Return the literal cells for one file. auto and always record the file."""
-        if self._mode == KIND_MODE_DISABLED:
+        """Return the literal cells for one file. auto and always record the file.
+
+        ``read_only`` still opens when mode is disabled, and never notes a write.
+        Scan vars uses that under ``--overrides``.
+        """
+        if self._mode == KIND_MODE_DISABLED and not read_only:
             return KindRow(None, {})
-        table = self.open_table(
-            kind,
-            input_dir,
-            create=self._mode == KIND_MODE_ALWAYS,
-        )
+        create = False if read_only else self._mode == KIND_MODE_ALWAYS
+        table = self.open_table(kind, input_dir, create=create)
         if table is None:
             return KindRow(None, {})
         identity = self.identity_for(match.rule)
@@ -983,7 +986,7 @@ class KindFiles:
             match,
             relative,
         )
-        if self._mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
+        if not read_only and self._mode in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
             table.note(relative, digest, identity, match.index)
         return KindRow(str(table.path), cells)
 

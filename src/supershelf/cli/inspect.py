@@ -13,7 +13,12 @@ from supershelf.cli.common import (
     show_profile_first,
     view_format,
 )
-from supershelf.cli.scan import variable_rows
+from supershelf.cli.scan import (
+    checked_overrides,
+    no_overrides_flag,
+    overrides_flag,
+    variable_rows,
+)
 from supershelf.configs import ShelfConfigs
 from supershelf.data import run_feed
 from supershelf.domain_schema import DomainSchema
@@ -192,6 +197,8 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
         view_column_names = ("profile", *VARS_COLUMNS, "input", "sha", "rule")
 
     path = kept_path()
+    overrides = overrides_flag()
+    no_overrides = no_overrides_flag()
     show_all = Argument(
         "--all",
         action="store_true",
@@ -203,17 +210,24 @@ class InspectScanVarsCommand(ListViewMixin, Parser):
         config=None,
         profile=None,
         path=None,
+        overrides=False,
+        no_overrides=False,
         show_all=False,
         columns=None,
         ctx=None,
         **_,
     ):
         fmt = view_format(ctx)
+        apply_overrides = checked_overrides(
+            overrides=bool(overrides),
+            no_overrides=bool(no_overrides),
+        )
         runs = ShelfRuns.load(config, profile)
         show_profile_first(ctx, columns, len(runs.shelves))
         walk = runs.changed_resolves(
             path,
             dry_run=True,
+            overrides=apply_overrides,
             changes_only=False,
             provided_only=False,
         )

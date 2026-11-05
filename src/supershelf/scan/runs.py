@@ -303,8 +303,12 @@ class ShelfRuns:
         *,
         mode: str | None = None,
         dry_run: bool = False,
+        overrides: bool | None = None,
     ) -> FileSelection:
-        """Resolve every matched file. The working list stays the provided subset."""
+        """Resolve every matched file. The working list stays the provided subset.
+
+        ``overrides`` is None for bare scan and import. Scan vars passes True or False.
+        """
         if not selection.match_ready:
             self.apply_match(selection)
         if selection.vars_ready:
@@ -322,7 +326,12 @@ class ShelfRuns:
             if item.match is None:
                 continue
             plan = by_name[item.profile]
-            resolved = plan.resolve(item.found, item.match, item.result.config.path)
+            resolved = plan.resolve(
+                item.found,
+                item.match,
+                item.result.config.path,
+                overrides=overrides,
+            )
             item.resolved = resolved
             item.var_plan = plan
             previous = stored.get(item.profile, {}).get(item.location())
@@ -479,6 +488,7 @@ class ShelfRuns:
         *,
         mode: str | None = None,
         dry_run: bool = False,
+        overrides: bool | None = None,
         changes_only: bool = True,
         provided_only: bool = True,
         selection: FileSelection | None = None,
@@ -495,7 +505,7 @@ class ShelfRuns:
         if provided_only:
             self.apply_files(chosen, log=False)
         self.apply_match(chosen)
-        self.apply_vars(chosen, mode=mode, dry_run=dry_run)
+        self.apply_vars(chosen, mode=mode, dry_run=dry_run, overrides=overrides)
         return list(self._var_walk(chosen, changes_only=changes_only, provided_only=provided_only))
 
     def _var_walk(

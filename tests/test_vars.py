@@ -1076,6 +1076,30 @@ def test_disabled_ignores_an_existing_kind_file(
     assert caplog.records == []
 
 
+def test_overrides_false_skips_kind_cells(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with_cells = dict(plan.resolve(_file(), _match(), Path("/in")).items)
+    without = dict(plan.resolve(_file(), _match(), Path("/in"), overrides=False).items)
+    assert with_cells["owner"] == "ada"
+    assert without["owner"] == "DEFAULT-rule"
+
+
+def test_overrides_true_reads_kind_cells_when_disabled(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    original = "PATH,owner\na.txt,ada\n"
+    kind.write_text(original, encoding="utf-8")
+    plan = _plan(
+        _kind_document("{{ __config__.root_dir }}/note.csv", kind_overrides_mode="disabled"),
+        tmp_path,
+    )
+    values = dict(plan.resolve(_file(), _match(), Path("/in"), overrides=True).items)
+    plan.commit()
+    assert values["owner"] == "ada"
+    assert kind.read_text(encoding="utf-8") == original
+
+
 def test_flag_wins_over_env_and_config(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     plan = _plan(

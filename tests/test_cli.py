@@ -809,6 +809,78 @@ def test_scan_vars_rejects_a_bad_kind_mode(
     assert "--kind-overrides-mode must be auto, manual, always, or disabled" in error
 
 
+def test_scan_vars_overrides_flags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (tmp_path / "note.csv").write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n"
+        "kind_overrides_config = ['{{ __config__.root_dir }}/note.csv']\n\n"
+        "[default_vars]\nowner = 'Bank2000'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "a.txt"])
+    assert "owner: ada" in capsys.readouterr().out
+
+    app.dispatch(["scan", "vars", "--overrides", "a.txt"])
+    assert "owner: ada" in capsys.readouterr().out
+
+    app.dispatch(["scan", "vars", "--no-overrides", "a.txt"])
+    skipped = capsys.readouterr().out
+    assert "owner: Bank2000" in skipped
+    assert "owner: ada" not in skipped
+
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "vars", "--overrides", "--no-overrides", "a.txt"])
+    assert caught.value.code == 1
+    assert "Use --overrides or --no-overrides, not both" in capsys.readouterr().err
+
+
+def test_scan_vars_overrides_reads_when_mode_is_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    kind_file = tmp_path / "note.csv"
+    kind_file.write_text("PATH,owner\na.txt,ada\n", encoding="utf-8")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[config]\nprofile = 'work'\n"
+        "kind_overrides_mode = 'disabled'\n"
+        "kind_overrides_config = ['{{ __config__.root_dir }}/note.csv']\n\n"
+        "[default_vars]\nowner = 'Bank2000'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["scan", "vars", "a.txt"])
+    assert "owner: ada" in capsys.readouterr().out
+    assert kind_file.read_text(encoding="utf-8") == "PATH,owner\na.txt,ada\n"
+
+    app.dispatch(["inspect", "scan", "vars", "a.txt"])
+    assert "owner: ada" in capsys.readouterr().out
+
+    app.dispatch(["inspect", "scan", "vars", "--no-overrides", "a.txt"])
+    plain = capsys.readouterr().out
+    assert "owner: Bank2000" in plain
+    assert "owner: ada" not in plain
+
+
 def test_scan_vars_dry_run_does_not_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
