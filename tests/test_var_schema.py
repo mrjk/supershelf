@@ -189,6 +189,10 @@ def test_float_keeps_spelling_and_matches_zero() -> None:
     assert cast.display == "12.50"
     with pytest.raises(CastMiss, match="not a float"):
         cast_value(plain, "1e2")
+    with pytest.raises(CastMiss, match="not a float"):
+        cast_value(plain, "39,45")
+    with pytest.raises(CastMiss, match="not a float"):
+        cast_value(plain, "EUR12.50")
 
     spec = _spec({"type": "float", "validation": {"allowed": [0], "ge": 0}})
     assert cast_value(spec, "-0").display == "-0"
@@ -207,6 +211,8 @@ def test_bool_display() -> None:
 
     with pytest.raises(CastMiss, match="not a bool"):
         cast_value(spec, "maybe")
+    with pytest.raises(CastMiss, match="not a bool"):
+        cast_value(spec, "on")
 
 
 def test_text_keeps_whitespace_pattern_and_allowed() -> None:

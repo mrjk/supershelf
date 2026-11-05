@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 from collections.abc import Mapping
 from datetime import datetime
@@ -29,6 +30,7 @@ from supershelf.constants import (
     KEY_DEFAULT_VARS,
     KEY_METADATA_DRIVER,
     KEY_VAR_MODULES,
+    LOGGER_NAME,
     MATCH_FIELDS,
     SOURCE_DEFAULT,
     SOURCE_FACT,
@@ -64,6 +66,9 @@ from supershelf.vars.spec import (
     layer_source,
     reserved_var_name,
 )
+
+
+logger = logging.getLogger(LOGGER_NAME)
 
 
 class DateScope:
@@ -565,23 +570,41 @@ class VarPlan:
     ) -> CastValue | None:
         spec = self._catalog.effective(kind, key)
         for source in candidates:
+            produced: object = source
             try:
                 if isinstance(source, str):
-                    rendered = self._environment.render(source, scope)
-                    cast = cast_value(spec, rendered, allow_typed=False)
+                    produced = self._environment.render(source, scope)
+                    cast = cast_value(spec, produced, allow_typed=False)
                 else:
                     cast = cast_value(spec, source, allow_typed=True)
             except VarCandidateError:
                 continue
             except CastMiss:
-                if spec.type != TYPE_DATE or not isinstance(source, str):
-                    continue
-                try:
-                    cast = cast_date_display(rendered, self._date_display_format())
-                except CastMiss:
-                    continue
+                if (
+                    spec.type == TYPE_DATE
+                    and isinstance(source, str)
+                    and isinstance(produced, str)
+                ):
+                    try:
+                        cast = cast_date_display(produced, self._date_display_format())
+                    except CastMiss:
+                        self._warn_cast(key, produced, spec.type)
+                        continue
+                    return cast
+                self._warn_cast(key, produced, spec.type)
+                continue
             return cast
         return None
+
+    def _warn_cast(self, key: str, produced: object, var_type: str) -> None:
+        """Log one abandoned cast. The value is the produced string."""
+        text = produced if isinstance(produced, str) else str(produced)
+        logger.warning(
+            "Failed to convert '%s' string to %s with value: %s",
+            key,
+            var_type,
+            text,
+        )
 
     def _save(
         self,
@@ -616,6 +639,7 @@ class VarPlan:
         try:
             cast = cast_value(spec, raw, allow_typed=False)
         except CastMiss as exc:
+            self._warn_cast(key, raw, spec.type)
             raise self._failed(match, path, key, str(exc)) from exc
         self._save(key, cast, label, scope, states, order)
 

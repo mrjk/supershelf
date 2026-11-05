@@ -8,6 +8,7 @@ import pytest
 from supershelf.cli import present_sources, present_vars
 from supershelf.constants import LOGGER_NAME
 from supershelf.errors import VarConfigError, VarResolveError
+from supershelf.kind_file import KindTable
 from supershelf.scan.match import FileMatch
 from supershelf.scan import InputFile
 from supershelf.vars import VarPlan
@@ -1141,6 +1142,37 @@ def test_duplicate_kind_path_keeps_the_first_row(
     assert "duplicated" in caplog.text
 
 
+def test_empty_path_row_is_kept_and_logged(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        "PATH,SHA,owner\na.txt,,ada\n,,tracked\n  ,,spaced\n",
+        encoding="utf-8",
+    )
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    assert _values(plan)["owner"] == "ada"
+    assert caplog.text.count("has a row with an empty PATH") == 2
+    assert "The first column must be SHA or PATH" not in caplog.text
+    assert "duplicated" not in caplog.text
+    table = KindTable.read(kind, logging.getLogger(LOGGER_NAME), ",")
+    assert [line.path for _index, line in table.unmatched(set(), set())] == ["a.txt"]
+    plan.commit()
+    assert kind.read_text(encoding="utf-8") == (
+        f"PATH,SHA,owner\na.txt,{FILE_DIGEST},ada\n,,tracked\n  ,,spaced\n"
+    )
+
+
+def test_empty_path_with_a_bad_sha_is_still_an_error(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text("PATH,SHA,owner\n,abc,tracked\n", encoding="utf-8")
+    plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
+    with pytest.raises(VarConfigError, match="64 lowercase hex"):
+        _values(plan)
+
+
 def test_sha_path_header_is_read(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text(
@@ -1573,7 +1605,11 @@ def test_kind_validation_rejects_a_rule_literal_at_load(tmp_path: Path) -> None:
         )
 
 
-def test_kind_cell_cast_failure_stops_the_file(tmp_path: Path) -> None:
+def test_kind_cell_cast_failure_stops_the_file(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,amount\na.txt,EUR12.50\n", encoding="utf-8")
     plan = _plan(
@@ -1586,6 +1622,99 @@ def test_kind_cell_cast_failure_stops_the_file(tmp_path: Path) -> None:
     )
     with pytest.raises(VarResolveError, match="variable amount failed"):
         _values(plan)
+    assert "Failed to convert 'amount' string to float with value: EUR12.50" in caplog.text
+
+
+def test_parse_float_stores_a_comma_amount(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "float"}},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_regex": r"(?P<amount>[0-9,]+)\.txt",
+                    "vars": {"amount": "{{ __extract__.amount | parse_float }}"},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    values = _values(
+        plan,
+        file=_file("39,45.txt"),
+        match=_match("39,45.txt", groups={"amount": "39,45"}),
+    )
+    assert values["amount"] == "39.45"
+
+
+def test_failed_float_cast_warns_and_stays_unset(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "float"}},
+            "default_vars": {"amount": '{{ "39,45" }}'},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+    assert "amount" not in _values(plan)
+    assert "Failed to convert 'amount' string to float with value: 39,45" in caplog.text
+
+
+def test_failed_cast_warns_when_a_later_candidate_succeeds(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "float"}},
+            "default_vars": {"amount": ['{{ "39,45" }}', "12.50"]},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+    assert _values(plan)["amount"] == "12.50"
+    assert "Failed to convert 'amount' string to float with value: 39,45" in caplog.text
+
+
+def test_date_recovered_by_the_profile_format_does_not_warn(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    plan = _plan(
+        {
+            "vars_schema": {"issued": {"type": "date"}},
+            "default_vars": {"issued": '{{ "20211231" }}'},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+        {"__config__": {"date_format": "%Y%m%d"}},
+    )
+    assert _values(plan)["issued"] == "2021-12-31"
+    assert "Failed to convert 'issued'" not in caplog.text
+
+
+def test_bad_float_literal_is_a_config_error_without_a_warning(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    with pytest.raises(VarConfigError, match="cannot be cast"):
+        _plan(
+            {
+                "vars_schema": {"amount": {"type": "float"}},
+                "default_vars": {"amount": "39,45"},
+                "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+            },
+            tmp_path,
+        )
+    assert "Failed to convert 'amount' string to float with value: 39,45" not in caplog.text
 
 
 def test_hash_identity_rewrites_the_path_and_keeps_cells(

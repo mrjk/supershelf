@@ -37,6 +37,13 @@ from supershelf.constants import (
 )
 from supershelf.errors import VarConfigError
 from supershelf.template.environment import is_template
+from supershelf.vars.convert import (
+    BOOL_FALSE,
+    BOOL_TRUE,
+    format_calendar,
+    parse_calendar,
+    parse_round_trip,
+)
 
 _IDENT = re.compile(VAR_NAME_PATTERN)
 _INT_TEXT = re.compile(r"[+-]?[0-9]+\Z")
@@ -46,8 +53,6 @@ _TIME_TEXT = re.compile(r"([0-9]{2}):([0-9]{2})(?::([0-9]{2}))?\Z")
 _DATETIME_TEXT = re.compile(
     r"([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}(?::[0-9]{2})?)\Z"
 )
-_BOOL_TRUE = frozenset({"true", "yes", "1"})
-_BOOL_FALSE = frozenset({"false", "no", "0"})
 _TIME_FORMATS = ("%H:%M:%S", "%H:%M")
 _RESERVED_ADVICE = "A layer may set names that do not start with __."
 _LENGTH_TYPES = frozenset({TYPE_TEXT, TYPE_DATE, TYPE_TIME, TYPE_DATETIME})
@@ -611,9 +616,9 @@ def _cast_float(text: str) -> CastValue:
 
 def _cast_bool(text: str) -> CastValue:
     token = text.lower()
-    if token in _BOOL_TRUE:
+    if token in BOOL_TRUE:
         return CastValue(True, "true", True)
-    if token in _BOOL_FALSE:
+    if token in BOOL_FALSE:
         return CastValue(False, "false", False)
     raise CastMiss(f"{text!r} is not a bool")
 
@@ -621,7 +626,7 @@ def _cast_bool(text: str) -> CastValue:
 def _cast_date(text: str) -> CastValue:
     if _DATE_TEXT.fullmatch(text) is None or not _round_trip_date(text):
         raise CastMiss(f"{text!r} is not a YYYY-MM-DD date")
-    parsed = datetime.strptime(text, DATE_TEXT).date()
+    parsed = parse_calendar(text, DATE_TEXT).date()
     return CastValue(text, text, parsed)
 
 
@@ -631,21 +636,19 @@ def cast_date_display(text: str, fmt: str) -> CastValue:
         raise CastMiss(f"{text!r} is not a YYYY-MM-DD date")
     stripped = text.strip()
     try:
-        parsed = datetime.strptime(stripped, fmt)
+        parsed = parse_round_trip(stripped, fmt)
     except ValueError as exc:
         raise CastMiss(f"{text!r} is not a YYYY-MM-DD date") from exc
-    if parsed.strftime(fmt) != stripped:
-        raise CastMiss(f"{text!r} is not a YYYY-MM-DD date")
-    iso = parsed.strftime(DATE_TEXT)
+    iso = format_calendar(parsed, DATE_TEXT)
     return CastValue(iso, iso, parsed.date())
 
 
 def _round_trip_date(text: str) -> bool:
     try:
-        parsed = datetime.strptime(text, DATE_TEXT)
+        parsed = parse_calendar(text, DATE_TEXT)
     except ValueError:
         return False
-    return parsed.strftime(DATE_TEXT) == text
+    return format_calendar(parsed, DATE_TEXT) == text
 
 
 def _cast_time(text: str) -> CastValue:
