@@ -169,6 +169,7 @@ Left off `feeds`. `owner` is a schema var and is not listed in `feeds`. No `OWNE
   Overrides on a dropped row are gone. A later return of that path starts from empty lowercase cells.
   A file that moved to another kind is dropped from the old kind file when its identifier is not still live there.
   Two inputs that share one kind file keep the row when either input still matches that identifier for that kind.
+  A row with an empty PATH is not dropped.
 - List every dropped row before the write: the path, the SHA when set, and whether any user cell is non-empty.
   `--dry-run` prints that list and writes nothing.
   `--force` is not a flag.

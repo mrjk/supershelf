@@ -67,19 +67,16 @@ class KindCsv(KindFormat):
                 text_cell = self._plain(cell)
                 if text_cell is not None:
                     cells[name] = text_cell
-            if relative.strip() == "":
-                pending_sha = "" if sha_cell is None else self._plain(sha_cell) or ""
-                if cells or pending_sha:
-                    raise VarConfigError(
-                        f"{path} has a row with an empty PATH",
-                        advice=self._header_advice(sep, header),
-                    )
-                continue
             digest = ""
             if sha_cell is not None:
                 text_sha = self._plain(sha_cell)
                 if text_sha is not None:
                     digest = KindNames.check_sha(path, relative, text_sha)
+            if KindNames.empty_path(relative):
+                if cells or digest:
+                    logger.info("%s has a row with an empty PATH", path)
+                    raw_rows.append(KindLine(relative, digest, cells))
+                continue
             line = KindLine(relative, digest, cells if relative not in rows else dict(cells))
             raw_rows.append(line)
             if relative in rows:

@@ -51,6 +51,11 @@ class KindNames:
             return False
         return True
 
+    @staticmethod
+    def empty_path(value: str) -> bool:
+        """True when PATH is empty or whitespace. The cell text stays as written."""
+        return value.strip() == ""
+
     @classmethod
     def check_sha(cls, path: Path, relative: str, value: str) -> str:
         """A non-empty SHA is 64 lowercase hex digits."""

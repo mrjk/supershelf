@@ -213,8 +213,9 @@ class KindTable:
         self.raw_rows = [] if raw_rows is None else raw_rows
         self.row_sha = {}
         for line in self.raw_rows:
-            if line.path not in self.row_sha:
-                self.row_sha[line.path] = line.sha
+            if KindNames.empty_path(line.path) or line.path in self.row_sha:
+                continue
+            self.row_sha[line.path] = line.sha
         self._bom = bom
         self._pending: list[tuple[str, str]] = []
         self._pending_seen: set[tuple[str, str]] = set()
@@ -417,6 +418,8 @@ class KindTable:
         """Rows whose path is not a path-identity file and whose hash is not a hash-identity file."""
         found: list[tuple[int, KindLine]] = []
         for index, line in enumerate(self.raw_rows):
+            if KindNames.empty_path(line.path):
+                continue
             if line.path in live_paths:
                 continue
             if line.sha and line.sha in live_hashes:
@@ -434,7 +437,7 @@ class KindTable:
         self.rows.clear()
         self.row_sha.clear()
         for line in self.raw_rows:
-            if line.path in self.rows:
+            if KindNames.empty_path(line.path) or line.path in self.rows:
                 continue
             self.rows[line.path] = line.cells
             self.row_sha[line.path] = line.sha
@@ -444,6 +447,9 @@ class KindTable:
         emitted: set[str] = set()
         ordered: list[KindLine] = []
         for line in self.raw_rows:
+            if KindNames.empty_path(line.path):
+                ordered.append(line)
+                continue
             if line.path not in self.rows:
                 continue
             if line.path not in emitted:
@@ -699,6 +705,8 @@ class KindTable:
             live = {relative for relative, _digest, _identity, _index in self._notes}
             warned: set[str] = set()
             for line in self.raw_rows:
+                if KindNames.empty_path(line.path):
+                    continue
                 if line.sha or line.path in live or line.path in warned:
                     continue
                 warned.add(line.path)
