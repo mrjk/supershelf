@@ -52,11 +52,34 @@ class ShelfRuns:
 
     def __init__(self, shelves: list[ShelfProfile]) -> None:
         self.shelves = shelves
+        self._identity: (
+            dict[str, tuple[tuple[str, ...], dict[str, tuple[str, ...]]]] | None
+        ) = None
 
     @classmethod
     def load(cls, config: str | None, profile: str | None) -> ShelfRuns:
         loaded = ShelfConfigs.load(config_option=config, profile_option=profile)
         return cls([ShelfProfile.from_config(item) for item in loaded.config_list])
+
+    def check_identity(
+        self,
+    ) -> dict[str, tuple[tuple[str, ...], dict[str, tuple[str, ...]]]]:
+        """Resolve record_identity for every profile. Raises before any walk."""
+        if self._identity is not None:
+            return self._identity
+        from supershelf.record import RecordIdentity
+
+        checked: dict[str, tuple[tuple[str, ...], dict[str, tuple[str, ...]]]] = {}
+        for shelf in self.shelves:
+            steps = RecordIdentity.resolve(
+                shelf.config_section(shelf.document),
+                None,
+                os.environ,
+            )
+            rules = RecordIdentity.rule_lists(shelf.document, shelf.name, steps)
+            checked[shelf.name] = (steps, rules)
+        self._identity = checked
+        return checked
 
     def scans(self, *, quick: bool, path: str | None):
         groups = [shelf.scan(quick=quick) for shelf in self.shelves]
@@ -142,49 +165,25 @@ class ShelfRuns:
         selection: FileSelection,
         *,
         log: bool,
-        steps: tuple[str, ...] | None = None,
     ) -> FileSelection:
-        """Annotate identity. The next list is the identity-change files, not the whole walk."""
+        """Annotate identity on every kept file. The inventory stays intact."""
         if selection.files_ready:
             if log:
                 self._log_file_warnings(selection)
             return selection
-        from supershelf.record import LiveFile, RecordIdentity, RecordPlan
+        if not selection.match_ready:
+            self.apply_match(selection)
+        selection.ensure_hashed()
+        from supershelf.record import LiveFile, RecordPlan
 
+        identity = self.check_identity()
         for shelf, scans in zip(selection.shelves, selection.groups, strict=True):
-            resolved_steps = steps
-            if resolved_steps is None:
-                resolved_steps = RecordIdentity.resolve(
-                    shelf.config_section(shelf.document),
-                    None,
-                    os.environ,
-                )
-            matcher = Matcher.from_document(shelf.document, shelf.name)
+            profile_steps, rules = identity[shelf.name]
             walked = {str(result.config.path) for result in scans}
             ignored = set(selection.ignored.get(shelf.name, ()))
             kept: set[tuple[str, str]] = set()
             live: list[LiveFile] = []
             seen: list[SelectedFile] = []
-            for item in selection.inventory:
-                if item.profile != shelf.name:
-                    continue
-                if item.location() in ignored:
-                    continue
-                kept.add(item.location())
-                seen.append(item)
-                hit = matcher.claim(item.found)
-                if hit is None or not item.found.sha256:
-                    continue
-                live.append(
-                    LiveFile.from_match(
-                        item.result,
-                        item.found,
-                        kind=hit.kind,
-                        rule=hit.rule,
-                        snapshot="{}",
-                        steps=resolved_steps,
-                    )
-                )
             with ShelfDatabase.open_read(shelf.database_file) as database:
                 documents = database.documents()
                 stored_at = {
@@ -196,20 +195,38 @@ class ShelfRuns:
                     if event.event == EVENT_OUTPUT:
                         continue
                     prior[event.document_id] = event.identity
-            stamped: list[LiveFile] = []
-            for item in live:
+            for item in selection.inventory:
+                if item.profile != shelf.name:
+                    continue
+                if item.location() in ignored:
+                    continue
+                kept.add(item.location())
+                seen.append(item)
+                hit = item.match
+                if hit is None or not item.found.sha256:
+                    continue
+                rule_steps = rules.get(hit.rule, profile_steps)
                 document = stored_at.get(item.location())
                 if document is None:
-                    stamped.append(item)
+                    live.append(
+                        LiveFile.from_match(
+                            item.result,
+                            item.found,
+                            kind=hit.kind,
+                            rule=hit.rule,
+                            snapshot="{}",
+                            steps=rule_steps,
+                        )
+                    )
                     continue
-                stamped.append(
+                live.append(
                     LiveFile(
-                        input_index=item.input_index,
-                        input_path=item.input_path,
-                        path=item.path,
-                        hash=item.hash,
-                        mtime=item.mtime,
-                        ctime=item.ctime,
+                        input_index=item.index,
+                        input_path=str(item.result.config.path),
+                        path=item.found.path,
+                        hash=item.found.sha256,
+                        mtime=item.found.mtime,
+                        ctime=item.found.ctime,
                         match_kind=document.match_kind,
                         rule=document.rule,
                         file_dir=document.file_dir,
@@ -217,16 +234,16 @@ class ShelfRuns:
                         file_stem=document.file_stem,
                         file_ext=document.file_ext,
                         vars_json=document.vars_json,
-                        steps=item.steps,
+                        steps=rule_steps,
                     )
                 )
             plan = RecordPlan(
                 documents,
-                stamped,
+                live,
                 kept,
                 walked,
                 selection.selector,
-                {},
+                rules,
                 prior,
                 ignored,
                 profile=shelf.name,
@@ -240,11 +257,6 @@ class ShelfRuns:
             }
             for item in seen:
                 item.identity_status = by_location.get(item.location())
-        selection.files = [
-            item
-            for item in selection.inventory
-            if item.identity_status in FILE_CHANGE_STATUSES
-        ]
         selection.files_ready = True
         if log:
             self._log_file_warnings(selection)
@@ -254,9 +266,6 @@ class ShelfRuns:
         """Annotate kind and rule on the inventory. Unmatched files are warned once."""
         if selection.match_ready:
             return selection
-        incoming = {id(item) for item in selection.files}
-        chosen: list[SelectedFile] = []
-        seen: set[int] = set()
         for shelf, scans in zip(selection.shelves, selection.groups, strict=True):
             matcher = Matcher.from_document(shelf.document, shelf.name)
             claimed: dict[tuple[int, str], FileMatch] = {}
@@ -285,12 +294,6 @@ class ShelfRuns:
                     item.kind_status = _RULE_STATUS
                 else:
                     item.kind_status = STATUS_UNCHANGED
-                take = id(item) in incoming or item.kind_status in KIND_CHANGE_STATUSES
-                if not take or id(item) in seen:
-                    continue
-                seen.add(id(item))
-                chosen.append(item)
-        selection.files = chosen
         selection.match_ready = True
         return selection
 
@@ -336,6 +339,8 @@ class ShelfRuns:
         selection: FileSelection | None = None,
     ) -> list[dict[str, object]]:
         """Identity changes. Does not resolve variables or create the database."""
+        if selection is None:
+            self.check_identity()
         chosen = self.use_selection(
             path,
             selection,
@@ -479,6 +484,8 @@ class ShelfRuns:
         selection: FileSelection | None = None,
     ):
         """Vars for files the earlier steps provide. Inspect passes ``provided_only=False``."""
+        if selection is None and provided_only:
+            self.check_identity()
         chosen = self.use_selection(
             path,
             selection,
@@ -499,10 +506,14 @@ class ShelfRuns:
         provided_only: bool,
     ):
         shelves = {shelf.name: shelf for shelf in selection.shelves}
-        source = selection.files if provided_only else selection.inventory
-        for item in source:
+        for item in selection.inventory:
             if item.match is None or item.resolved is None or item.var_plan is None:
                 continue
+            if provided_only:
+                identity_hit = item.identity_status in FILE_CHANGE_STATUSES
+                kind_hit = item.kind_status in KIND_CHANGE_STATUSES
+                if not identity_hit and not kind_hit:
+                    continue
             if changes_only and not item.vars_changed:
                 continue
             yield (

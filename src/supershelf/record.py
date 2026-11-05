@@ -854,7 +854,6 @@ class _ProfileRun:
         self.linked = []
         runs = ShelfRuns([self.shelf])
         selection = runs.open_selection(path, quick=False, require_kept=False)
-        runs.apply_files(selection, log=False, steps=self.steps)
         runs.apply_match(selection)
         runs.apply_vars(selection, dry_run=dry_run)
         database_path = self.shelf.database_file.resolve()

@@ -225,9 +225,10 @@ class ScanCommand(CompositeViewMixin, Parser):
         dry = bool(dry_run)
         profiles = len(runs.shelves)
         # One list for every step. Resolve before the feed write.
+        runs.check_identity()
         selection = runs.open_selection(path, quick=False, require_kept=True)
-        runs.apply_files(selection, log=False)
         runs.apply_match(selection)
+        runs.apply_files(selection, log=False)
         runs.apply_vars(selection, mode=mode, dry_run=dry)
         var_rows = variable_rows(
             runs.changed_resolves(

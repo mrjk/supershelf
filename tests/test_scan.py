@@ -1,6 +1,7 @@
 """Input walks."""
 
 import hashlib
+import json
 import logging
 import os
 from datetime import datetime
@@ -370,3 +371,167 @@ record_identity = "key"
     assert "a.pdf" in output
     assert "bill" in output
     assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_files_stops_on_bad_record_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.pdf").write_bytes(b"bank")
+    (tmp_path / "profile.work.toml").write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+record_identity = "key"
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["scan", "files"])
+    assert caught.value.code == 2
+    assert "match rule bill" in capsys.readouterr().err
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_files_hash_identity_marks_a_duplicate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.pdf").write_bytes(b"same")
+    (inbox / "b.pdf").write_bytes(b"same")
+    (tmp_path / "profile.work.toml").write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+record_identity = "hash"
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    app.dispatch(["scan", "files", "--format", "json"])
+    rows = {row["path"]: row["status"] for row in json.loads(capsys.readouterr().out)}
+    assert rows == {"a.pdf": "new", "b.pdf": "duplicate"}
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+
+
+def test_scan_files_skips_a_kind_only_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.pdf").write_bytes(b"bank")
+    profile = tmp_path / "profile.work.toml"
+    profile.write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+    profile.write_text(
+        """\
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "receipt"
+glob = "**"
+""",
+        encoding="utf-8",
+    )
+    app.dispatch(["scan", "files"])
+    files_out = capsys.readouterr().out
+    assert "a.pdf" not in files_out
+    app.dispatch(["scan", "match"])
+    match_out = capsys.readouterr().out
+    assert "a.pdf" in match_out
+    assert "receipt" in match_out
+    assert "kind" in match_out
+
+
+def test_scan_files_refresh_when_clock_and_vars_both_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    target = inbox / "a.pdf"
+    target.write_bytes(b"bank")
+    profile = tmp_path / "profile.work.toml"
+    profile.write_text(
+        """\
+[default_vars]
+vendor = "Bank2000"
+
+[vars_schema]
+vendor.type = "text"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+""",
+        encoding="utf-8",
+    )
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+    os.utime(target, (1_700_000_000, 1_700_000_000))
+    profile.write_text(
+        """\
+[default_vars]
+vendor = "Bank2001"
+
+[vars_schema]
+vendor.type = "text"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "**"
+""",
+        encoding="utf-8",
+    )
+    app.dispatch(["scan", "files", "--format", "json"])
+    files_rows = json.loads(capsys.readouterr().out)
+    assert len(files_rows) == 1
+    assert files_rows[0]["path"] == "a.pdf"
+    assert files_rows[0]["status"] == "refresh"
+    app.dispatch(["db", "import", "--format", "json", "--dry-run"])
+    import_rows = json.loads(capsys.readouterr().out)
+    assert any(row["path"] == "a.pdf" and row["status"] == "vars" for row in import_rows)
