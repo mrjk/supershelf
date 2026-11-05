@@ -57,6 +57,7 @@ from supershelf.template.environment import VarEnvironment, is_template
 from supershelf.template.render import ScopeObject, scope_field
 from supershelf.vars.catalog import VarCatalog
 from supershelf.vars.spec import (
+    _QUOTE_ADVICE,
     CastMiss,
     CastValue,
     VarState,
@@ -181,7 +182,11 @@ class FileVars:
     @property
     def items(self) -> tuple[tuple[str, str], ...]:
         """Set variables in first-seen order. The value is the display string."""
-        return tuple((name, state.display) for name, state in self.states)
+        return tuple(
+            (name, state.display)
+            for name, state in self.states
+            if state.value is not None
+        )
 
     @property
     def sources(self) -> dict[str, tuple[str, ...]]:
@@ -203,10 +208,19 @@ class FileVars:
         return dumped
 
 
+def _is_native_literal(value: object) -> bool:
+    """True for a bool, int, or float. A bool is not an int here."""
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float)
+
+
 class VarTable:
     """Ordered variable definitions. Each value is one or more candidates."""
 
-    def __init__(self, keys: tuple[str, ...], candidates: dict[str, tuple[str, ...]]) -> None:
+    def __init__(self, keys: tuple[str, ...], candidates: dict[str, tuple[object, ...]]) -> None:
         self.keys = keys
         self.candidates = candidates
 
@@ -223,21 +237,24 @@ class VarTable:
         label: str,
         environment: VarEnvironment,
     ) -> VarTable:
-        """Parse a mapping of strings or string lists and compile every candidate."""
+        """Parse a mapping of candidates. Null is the same as omitting the key."""
         if raw is None:
             return cls.empty()
         if not isinstance(raw, dict):
             raise VarConfigError(
                 f"{label} must be a mapping",
-                advice="Use a name, then a string or a list of strings.",
+                advice="Use a name, then a string, a typed literal, null, or a list.",
             )
         keys: list[str] = []
-        candidates: dict[str, tuple[str, ...]] = {}
+        candidates: dict[str, tuple[object, ...]] = {}
         for key, value in raw.items():
             cls._check_key(key, label)
+            if value is None:
+                continue
             items = cls._candidates(value, label, str(key))
             for item in items:
-                environment.compile_source(item)
+                if isinstance(item, str):
+                    environment.compile_source(item)
             keys.append(str(key))
             candidates[str(key)] = items
         return cls(tuple(keys), candidates)
@@ -247,20 +264,38 @@ class VarTable:
         check_assignment_key(key, label)
 
     @classmethod
-    def _candidates(cls, value: object, label: str, key: str) -> tuple[str, ...]:
-        if isinstance(value, str):
+    def _candidates(cls, value: object, label: str, key: str) -> tuple[object, ...]:
+        if isinstance(value, str) or _is_native_literal(value):
             return (value,)
         if isinstance(value, list):
             if not value:
                 raise VarConfigError(
                     f"{label} key {key} has an empty list",
-                    advice="Add at least one string, or remove the key.",
+                    advice="Add at least one candidate, or remove the key.",
                 )
-            if all(isinstance(item, str) for item in value):
-                return tuple(value)
+            items: list[object] = []
+            for item in value:
+                if item is None:
+                    raise VarConfigError(
+                        f"{label} key {key} contains null",
+                        advice="Null is the whole value only. Omit the key, or drop the null item.",
+                    )
+                if isinstance(item, list):
+                    raise VarConfigError(
+                        f"{label} key {key} contains a nested list",
+                        advice="Each candidate is one scalar. The list is only the fallback order.",
+                    )
+                if isinstance(item, str) or _is_native_literal(item):
+                    items.append(item)
+                    continue
+                raise VarConfigError(
+                    f"{label} key {key} must be a string, a typed literal, or null",
+                    advice=_QUOTE_ADVICE,
+                )
+            return tuple(items)
         raise VarConfigError(
-            f"{label} key {key} must be a string or a list of strings",
-            advice="Quote scalars such as dates so they stay strings.",
+            f"{label} key {key} must be a string, a typed literal, or null",
+            advice=_QUOTE_ADVICE,
         )
 
 
@@ -410,12 +445,12 @@ class VarPlan:
             match,
             file.path,
         )
-        self._require_mandatory(states, match, file.path)
-        chosen = tuple(
-            (key, states[key])
-            for key in order
-            if key in states and states[key].value is not None
-        )
+        for name in self._catalog.csv_headers(match.kind):
+            if name in states:
+                continue
+            states[name] = VarState()
+            order.append(name)
+        chosen = tuple((key, states[key]) for key in order if key in states)
         facts = _fact_lines(file_ns, match_ns)
         facts.update(_extract_lines(groups))
         return FileVars(
@@ -643,24 +678,6 @@ class VarPlan:
             raise self._failed(match, path, key, str(exc)) from exc
         self._save(key, cast, label, scope, states, order)
 
-    def _require_mandatory(
-        self,
-        states: dict[str, VarState],
-        match: FileMatch,
-        path: str,
-    ) -> None:
-        for name in self._catalog.names_for(match.kind):
-            spec = self._catalog.effective(match.kind, name)
-            if not spec.mandatory:
-                continue
-            state = states.get(name)
-            if state is None or state.value is None:
-                reason = f"{name} is mandatory according the schema."
-                raise VarResolveError(
-                    f"Profile {match.profile} input {match.index} path {path} "
-                    f"variable {name} failed: {reason}"
-                )
-
     def _failed(self, match: FileMatch, path: str, key: str, advice: str) -> VarResolveError:
         return VarResolveError(
             f"Profile {match.profile} input {match.index} path {path} variable {key} failed",
@@ -686,10 +703,10 @@ class VarPlan:
         for key in table.keys:
             spec = catalog.effective(kind, key)
             for item in table.candidates[key]:
-                if is_template(item):
+                if isinstance(item, str) and is_template(item):
                     continue
                 try:
-                    cast_value(spec, item, allow_typed=False)
+                    cast_value(spec, item, allow_typed=True)
                 except CastMiss as exc:
                     raise VarConfigError(
                         f"{label} key {key} cannot be cast",

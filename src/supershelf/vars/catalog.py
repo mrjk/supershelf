@@ -53,7 +53,7 @@ class KindSchema:
 
 _KIND_VAR_ADVICE = (
     "Use a catalog name, leave the value empty to use the local name, "
-    "or set schema and any of desc, unit, mandatory, default, or validation."
+    "or set schema and any of desc, unit, default, or validation."
 )
 
 
@@ -70,6 +70,9 @@ def _stored_feed_file(feed_file: str | list[str] | None) -> tuple[str, ...] | No
     return tuple(feed_file)
 
 
+_KIND_VAR_KEYS = frozenset({"schema", "desc", "unit", "default", "validation"})
+
+
 def _reject_kind_var_keys(data: Mapping[str, Any], label: str) -> None:
     if "type" in data:
         raise VarConfigError(
@@ -80,6 +83,13 @@ def _reject_kind_var_keys(data: Mapping[str, Any], label: str) -> None:
         raise VarConfigError(
             f"{label} cannot set internal",
             advice="internal is only for variables supershelf fills in.",
+        )
+    unknown = [str(key) for key in data if key not in _KIND_VAR_KEYS]
+    if unknown:
+        joined = ", ".join(unknown)
+        raise VarConfigError(
+            f"{label} has unknown keys: {joined}",
+            advice="Remove it. Check the spelling.",
         )
 
 
@@ -95,7 +105,6 @@ class KindVarRef(BaseModel):
     )
     desc: str | None = None
     unit: str | None = None
-    mandatory: bool | None = None
     default: Any = None
     validation: ValidationSpec | None = None
 
@@ -347,10 +356,10 @@ class KindCatalog:
         base = specs[ref]
         data = base.model_dump(exclude_unset=True)
         data.pop("default", None)
-        for field in ("desc", "unit", "mandatory", "validation"):
+        for field in ("desc", "unit", "validation"):
             if field in written:
                 data[field] = written[field]
-        if "default" in written:
+        if "default" in written and written["default"] is not None:
             data["default"] = written["default"]
         spec = VarSpec.load(
             data,
@@ -564,7 +573,7 @@ class VarCatalog:
             if not isinstance(body, dict):
                 raise VarConfigError(
                     f"{label} must be a mapping",
-                    advice="Set type, desc, unit, mandatory, default, or validation.",
+                    advice="Set type, desc, unit, default, or validation.",
                 )
             if str(name).startswith("__"):
                 raise VarConfigError(
@@ -609,7 +618,7 @@ class VarCatalog:
         if not isinstance(raw, dict):
             raise VarConfigError(
                 "default_vars must be a mapping",
-                advice="Use a name, then a string or a list of strings.",
+                advice="Use a name, then a string, a typed literal, null, or a list.",
             )
         for name, value in raw.items():
             label = f"default_vars.{name}"
@@ -620,6 +629,8 @@ class VarCatalog:
                     f"default_vars cannot set {key}",
                     advice=_RESERVED_ADVICE,
                 )
+            if value is None:
+                continue
             spec = specs.get(key)
             if spec is None:
                 spec = cls._implicit(key, label)
@@ -632,7 +643,7 @@ class VarCatalog:
             specs[key] = spec.with_default(
                 value,
                 label=label,
-                from_schema=False,
+                from_schema=True,
                 compile_source=compile_source,
             )
 
@@ -644,4 +655,4 @@ class VarCatalog:
                 f"{label} is not a supershelf variable",
                 advice="Do not declare names that start with __. Those are reserved.",
             )
-        return VarSpec(type=TYPE_TEXT, mandatory=False, internal=False)
+        return VarSpec(type=TYPE_TEXT, internal=False)

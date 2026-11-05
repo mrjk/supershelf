@@ -68,7 +68,6 @@ vars_schema:
   vendor:
     type: text
     desc: Who issued the document
-    mandatory: false
     validation:
       min_length: 1
       max_length: 80
@@ -123,7 +122,7 @@ vars_schema:
 
 # Architecture 1.9. Optional. A kind with no entry keeps the profile catalog.
 # A string names a vars_schema entry. Null or "" uses the local name.
-# An object may set schema, desc, unit, mandatory, default, and validation.
+# An object may set schema, desc, unit, default, and validation.
 # type and internal stay on the referenced spec.
 # default is not copied from the profile. It applies only to files of this kind.
 # A present validation mapping replaces the referenced one. It is not merged.
@@ -143,7 +142,6 @@ kind_schema:
       amount:
       paid:
         schema: paid
-        mandatory: false
       issued:
   payslip:
     desc: A payroll slip
@@ -153,7 +151,6 @@ kind_schema:
         schema: employee_name
         desc: Person paid
         unit: person
-        mandatory: true
         default: UNKNOWN
         validation:
           min_length: 1
@@ -164,6 +161,9 @@ default_vars:
   vendor: UNKNOWN
   date: UNKNOWN
   doc_type: '{{ __match__.kind }}'
+  # A typed literal matches the var type. null is the same as omitting the key.
+  amount: 12.5
+  pages: null
 
   # Fallback list. The first candidate that renders wins.
   # parse_date reads the capture, not this list.

@@ -47,7 +47,6 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 - The stored feed cell is the display string. A float stays `12.50`. A bool stays `true` or `false`.
 - Two inputs that share one kind file and the same row identifier:
   if the fed values differ, stop and name both inputs. Do not pick one. Write nothing, including the sqlite file when this step is part of `scan`.
-- A mandatory var that is still unset stops the command before any write.
 - Duplicate path rows: update the first, leave the later row, and keep the warning from 2.3.2.
   A rewrite must not drop that later row.
 - `--dry-run` prints the same rows and writes nothing. It does not create `cache_file`.

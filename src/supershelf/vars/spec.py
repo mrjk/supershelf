@@ -147,20 +147,22 @@ class VarSpec(BaseModel):
     type: VarTypeName = TYPE_TEXT
     unit: str | None = None
     internal: bool = False
-    mandatory: bool = False
     default: Any = None
     validation: ValidationSpec | None = None
     _rules: ValidationRules | None = PrivateAttr(default=None)
 
     @property
     def has_default(self) -> bool:
-        """True when vars_schema.default or default_vars set this name."""
-        return "default" in self.model_fields_set
+        """True when vars_schema.default or default_vars set this name.
+
+        Null is the same as omitting the key, so it does not occupy the slot.
+        """
+        return "default" in self.model_fields_set and self.default is not None
 
     @property
     def candidates(self) -> tuple[object, ...]:
         """Assignment candidates. A list here is not the stored value."""
-        if "default" not in self.model_fields_set:
+        if not self.has_default:
             return ()
         raw = self.default
         if isinstance(raw, list):
@@ -274,10 +276,7 @@ class VarSpec(BaseModel):
     ) -> None:
         raw = self.default
         if raw is None:
-            raise VarConfigError(
-                f"{label} is null",
-                advice="Omit the key to leave the variable unset. null is not unset.",
-            )
+            return
         if isinstance(raw, list):
             if not raw:
                 raise VarConfigError(
@@ -288,6 +287,11 @@ class VarSpec(BaseModel):
         else:
             candidates = (raw,)
         for item in candidates:
+            if item is None:
+                raise VarConfigError(
+                    f"{label} contains null",
+                    advice="Null is the whole value only. Omit the key to leave the variable unset.",
+                )
             if isinstance(item, list):
                 raise VarConfigError(
                     f"{label} contains a nested list",
@@ -505,10 +509,10 @@ def layer_source(prefix: str, detail: str) -> str:
 def cast_value(spec: VarSpec, raw: object, *, allow_typed: bool = False) -> CastValue:
     """Cast one produced value, then validate it. A miss raises CastMiss.
 
-    Typed literals are accepted only when `allow_typed` is set, which is the
-    vars_schema.default path. Assignment strings and rendered templates stay
-    strings. Empty text is a value. Empty input for every other type is a miss,
-    not None.
+    Typed literals are accepted when `allow_typed` is set: `vars_schema.default`,
+    `default_vars`, and rule `vars`. A rendered template stays a string. Empty
+    text is a value. Empty input for every other type is a miss, not None.
+    Null is not a candidate. Omit the key to leave the variable unset.
     """
     cast = _cast_unvalidated(spec, raw, allow_typed=allow_typed)
     _validate(spec, cast)

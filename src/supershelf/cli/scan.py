@@ -38,9 +38,15 @@ def checked_kind_mode(value: str | None) -> str | None:
     return value
 
 
+_UNSET_TEXT = "null"
+
+
 def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
     """Printed variables in table order: alphabetical by name."""
-    visible = list(resolved.items)
+    visible = [
+        (name, _UNSET_TEXT if state.value is None else state.display)
+        for name, state in resolved.states
+    ]
     if show_all:
         visible.extend(resolved.facts.items())
     return tuple(sorted(visible))

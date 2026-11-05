@@ -161,8 +161,6 @@ class DomainSchema:
         if extra:
             kwargs["json_schema_extra"] = extra
         annotation = _JSON_TYPES[spec.type]
-        if spec.mandatory:
-            return (annotation, Field(**kwargs))
         return (annotation | None, Field(default=None, **kwargs))
 
     def _patterns(self, spec: VarSpec) -> list[str]:
@@ -217,38 +215,15 @@ class DomainSchema:
             prop = properties.get(name)
             if not isinstance(prop, dict):
                 continue
-            self._collapse_null(prop)
             prop.pop("title", None)
             if name in defaults:
                 prop["default"] = defaults[name]
             elif prop.get("default") is None:
                 prop.pop("default", None)
-        required = [name for name, spec in fields if spec.mandatory]
-        if required:
-            schema["required"] = required
-        else:
-            schema.pop("required", None)
+        schema.pop("required", None)
         schema["additionalProperties"] = False
         schema["type"] = "object"
         return schema
-
-    @staticmethod
-    def _collapse_null(prop: dict[str, Any]) -> None:
-        options = prop.get("anyOf")
-        if not isinstance(options, list):
-            return
-        kept = [
-            item
-            for item in options
-            if isinstance(item, dict) and item.get("type") != "null"
-        ]
-        if len(kept) != 1 or len(options) != len(kept) + 1:
-            return
-        prop.pop("anyOf")
-        if prop.get("default") is None:
-            prop.pop("default", None)
-        for key, value in kept[0].items():
-            prop.setdefault(key, value)
 
     @staticmethod
     def _python_name(name: str, used: set[str]) -> str:

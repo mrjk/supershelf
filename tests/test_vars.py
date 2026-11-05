@@ -1340,7 +1340,7 @@ def test_regex_capture_stays_on_extract_until_assigned(tmp_path: Path) -> None:
 
     bare = _plan(
         {
-            "vars_schema": {"amount": {"type": "float", "mandatory": True}},
+            "vars_schema": {"amount": {"type": "float"}},
             "match_rules": [
                 {
                     "name": "notes",
@@ -1351,12 +1351,12 @@ def test_regex_capture_stays_on_extract_until_assigned(tmp_path: Path) -> None:
         },
         tmp_path,
     )
-    with pytest.raises(VarResolveError, match="variable amount failed"):
-        bare.resolve(
-            _file("12.50.txt"),
-            _match("12.50.txt", groups={"amount": "12.50"}),
-            Path("/in"),
-        )
+    unset = bare.resolve(
+        _file("12.50.txt"),
+        _match("12.50.txt", groups={"amount": "12.50"}),
+        Path("/in"),
+    )
+    assert "amount" not in dict(unset.items)
 
 
 def test_missing_extract_field_tries_the_next_candidate(tmp_path: Path) -> None:
@@ -1451,75 +1451,138 @@ def test_bool_display_stays_text_in_templates(tmp_path: Path) -> None:
     assert resolved.dump_vars()["paid"]["value"] is False
 
 
-def test_mandatory_none_stops_and_omitted_time_does_not(tmp_path: Path) -> None:
+def test_null_default_stays_unset_and_a_typed_literal_is_kept(tmp_path: Path) -> None:
     plan = _plan(
         {
             "vars_schema": {
-                "issued": {"type": "date", "mandatory": True},
-                "amount": {"type": "int", "mandatory": True},
+                "issued": {"type": "date"},
+                "payment_amount": {"type": "float"},
                 "opens": {"type": "time"},
             },
+            "default_vars": {"payment_amount": None, "issued": None},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
         tmp_path,
     )
-    with pytest.raises(VarResolveError, match="variable issued failed") as caught:
-        _values(plan)
-    assert str(caught.value) == (
-        "Profile work input 1 path a.txt variable issued failed: "
-        "issued is mandatory according the schema."
-    )
-    assert caught.value.advice is None
+    values = _values(plan)
+    assert "issued" not in values
+    assert "payment_amount" not in values
+    assert "opens" not in values
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+    text = str(present_vars(resolved, None))
+    assert text.splitlines() == [
+        "issued: null",
+        "opens: null",
+        "payment_amount: null",
+    ]
+    dumped = present_vars(resolved, "json")
+    assert dumped["payment_amount"]["value"] is None
+    assert dumped["payment_amount"]["value_sources"] == []
+    assert present_sources(resolved).split("\n") == ["", "", ""]
+    assert "payment_amount" not in plan.snapshot(resolved)
 
     dated = _plan(
         {
             "vars_schema": {
-                "amount": {"type": "int", "mandatory": True},
+                "payment_amount": {"type": "float"},
                 "opens": {"type": "time"},
             },
-            "default_vars": {"amount": "12"},
-            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+            "default_vars": {"payment_amount": 12.5},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "**",
+                    "vars": {"payment_amount": None, "opens": "15:04"},
+                }
+            ],
         },
         tmp_path,
     )
     values = _values(dated)
-    assert values["amount"] == "12"
-    assert "opens" not in values
+    assert values["payment_amount"] == "12.5"
+    assert values["opens"] == "15:04"
+    resolved = dated.resolve(_file(), _match(), Path("/in"))
+    assert resolved.sources["payment_amount"] == ("default",)
 
 
-def test_kind_schema_mandatory_applies_only_to_that_kind(tmp_path: Path) -> None:
+def test_scan_prints_kind_schema_nulls_and_written_extras(tmp_path: Path) -> None:
     plan = _plan(
         {
             "vars_schema": {
-                "amount": {"type": "int", "mandatory": True},
-                "company_name": {"type": "text", "default": "Bank2000"},
+                "amount": {"type": "float"},
+                "vendor": {"type": "text", "default": "Bank2000"},
+                "company_name": {"type": "text"},
             },
             "kind_schema": {
-                "note": {
-                    "vars_schema": {"amount": {"schema": "amount", "mandatory": False}}
-                },
                 "invoice": {
-                    "desc": "A vendor bill",
                     "vars_schema": {
-                        "amount": {"schema": "amount", "mandatory": False},
-                        "company": {"schema": "company_name", "mandatory": True},
-                    },
-                },
+                        "amount": "amount",
+                        "company": "company_name",
+                    }
+                }
             },
-            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+            "match_rules": [
+                {
+                    "name": "bills",
+                    "kind": "invoice",
+                    "filename_glob": "**",
+                    "vars": {"note_tag": "paid"},
+                }
+            ],
+        },
+        tmp_path,
+    )
+    invoice = plan.resolve(
+        _file(),
+        _match(kind="invoice", rule="bills"),
+        Path("/in"),
+    )
+    text = str(present_vars(invoice, None))
+    assert text.splitlines() == [
+        "amount: null",
+        "company: null",
+        "note_tag: paid",
+    ]
+    assert "vendor" not in text
+    dumped = present_vars(invoice, "json")
+    assert dumped["amount"] == {"value": None, "value_sources": []}
+    assert dumped["note_tag"]["value"] == "paid"
+    assert "vendor" not in dumped
+    assert present_sources(invoice).split("\n") == ["", "", "rule:bills"]
+    stored = plan.snapshot(invoice)
+    assert "amount" not in stored
+    assert "note_tag" in stored
+
+    other = plan.resolve(_file(), _match(kind="note", rule="notes"), Path("/in"))
+    other_text = str(present_vars(other, None))
+    assert other_text.splitlines() == [
+        "amount: null",
+        "company_name: null",
+        "vendor: Bank2000",
+    ]
+    assert "company:" not in other_text
+    assert "note_tag" not in other_text
+
+
+def test_rule_typed_literal_replaces_the_default(tmp_path: Path) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"pages": {"type": "int"}},
+            "default_vars": {"pages": 3},
+            "match_rules": [
+                {
+                    "name": "notes",
+                    "kind": "note",
+                    "filename_glob": "**",
+                    "vars": {"pages": 9},
+                }
+            ],
         },
         tmp_path,
     )
 
-    note = _values(plan)
-    assert "amount" not in note
-    assert "company_name" not in note
-    assert "company" not in note
-
-    with pytest.raises(VarResolveError, match="variable amount failed"):
-        _values(plan, match=_match(kind="other"))
-    with pytest.raises(VarResolveError, match="variable company failed"):
-        _values(plan, match=_match(kind="invoice", rule="bills"))
+    assert _values(plan)["pages"] == "9"
 
 
 def test_kind_default_replaces_the_profile_default_for_that_kind(tmp_path: Path) -> None:

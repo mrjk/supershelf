@@ -1155,7 +1155,7 @@ def test_schema_prints_json_for_the_profile(
         "[config]\nprofile = 'work'\n\n"
         "[vars_schema.amount]\ntype = 'float'\nunit = 'EUR'\n\n"
         "[kind_schema.invoice]\ndesc = 'A vendor bill'\n\n"
-        "[kind_schema.invoice.vars_schema.amount]\nschema = 'amount'\nmandatory = true\n",
+        "[kind_schema.invoice.vars_schema.amount]\nschema = 'amount'\n",
     )
 
     app = App(parse=False)
@@ -1163,8 +1163,11 @@ def test_schema_prints_json_for_the_profile(
     document = json.loads(capsys.readouterr().out)
     invoice = document["work"]["$defs"]["invoice"]
 
-    assert invoice["required"] == ["amount"]
-    assert invoice["properties"]["amount"]["x-unit"] == "EUR"
+    assert "required" not in invoice
+    amount = invoice["properties"]["amount"]
+    assert amount["x-unit"] == "EUR"
+    assert any(item.get("type") == "null" for item in amount["anyOf"])
+    assert any(item.get("type") == "number" for item in amount["anyOf"])
     assert invoice["additionalProperties"] is False
 
 

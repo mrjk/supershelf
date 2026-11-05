@@ -1,7 +1,5 @@
 """Catalog load and cast rules for variable types."""
 
-import json
-
 import pytest
 
 from supershelf.errors import VarConfigError
@@ -29,7 +27,6 @@ def test_implicit_text_stores_the_rendered_string() -> None:
     spec = catalog.spec("vendor")
 
     assert spec.type == "text"
-    assert spec.mandatory is False
     assert spec.internal is False
     cast = cast_value(spec, "Bank2000")
 
@@ -44,7 +41,6 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
                 "issued": {
                     "type": "date",
                     "desc": "Document date",
-                    "mandatory": True,
                     "default": "2026-04-25",
                     "validation": {"ge": "2020-01-01"},
                 },
@@ -55,7 +51,6 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
 
     assert dated.type == "date"
     assert dated.internal is False
-    assert dated.mandatory is True
     assert dated.candidates == ("2026-04-25",)
     with pytest.raises(VarConfigError, match="not a supershelf variable"):
         _catalog({"vars_schema": {"__kind__": {"desc": "Matched kind", "unit": "label"}}})
@@ -75,8 +70,8 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
         ({"vars_schema": {"amount": {"type": "INT"}}}, "unknown"),
         ({"vars_schema": {"amount": {"type": "timedate"}}}, "unknown"),
         ({"vars_schema": {"amount": {"mendatory": True}}}, "unknown"),
+        ({"vars_schema": {"amount": {"mandatory": True}}}, "unknown"),
         ({"vars_schema": {"vendor": {"internal": True}}}, "cannot be internal"),
-        ({"vars_schema": {"amount": {"type": "int", "default": None}}}, "null"),
         ({"vars_schema": {"amount": {"type": "int", "default": []}}}, "empty list"),
         ({"vars_schema": {"amount": {"type": "int", "default": [[1]]}}}, "nested list"),
         ({"vars_schema": {"1bad": {"type": "text"}}}, "not a variable name"),
@@ -88,7 +83,28 @@ def test_date_can_take_a_default_and_other_roots_are_rejected() -> None:
             "vars_schema.default and default_vars",
         ),
         ({"default_vars": {"__custom__": "x"}}, "cannot set __custom__"),
-        ({"default_vars": {"amount": 12}}, "string or a list of strings"),
+        ({"default_vars": {"amount": 12}}, "does not match type text"),
+        ({"default_vars": {"amount": [None, "12"]}}, "contains null"),
+        (
+            {"vars_schema": {"amount": {"type": "int", "default": [None, 1]}}},
+            "contains null",
+        ),
+        (
+            {
+                "vars_schema": {"amount": {"type": "float"}},
+                "default_vars": {"amount": 12},
+            },
+            "does not match type float",
+        ),
+        (
+            {
+                "vars_schema": {"amount": {"type": "int"}},
+                "kind_schema": {
+                    "invoice": {"vars_schema": {"amount": {"mandatory": True}}}
+                },
+            },
+            "unknown",
+        ),
         ({"vars_schema": {"opens": {"type": "time", "default": "15:4"}}}, "cannot be cast"),
         (
             {"vars_schema": {"issued": {"type": "datetime", "validation": {"ge": "2026-04-25"}}}},
@@ -149,6 +165,64 @@ def test_default_vars_fills_an_implicit_spec() -> None:
     assert spec.type == "text"
     assert spec.has_default is True
     assert spec.candidates == ("Bank2000",)
+
+
+def test_null_default_does_not_occupy_the_slot() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {"payment_amount": {"type": "float", "default": None}},
+            "default_vars": {"payment_amount": None, "pages": None},
+        }
+    )
+
+    assert catalog.spec("payment_amount").has_default is False
+    assert catalog.spec("payment_amount").candidates == ()
+    assert "pages" not in catalog
+
+
+def test_null_default_vars_keeps_the_schema_default() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {"payment_amount": {"type": "float", "default": 0.0}},
+            "default_vars": {"payment_amount": None},
+        }
+    )
+
+    assert catalog.spec("payment_amount").candidates == (0.0,)
+
+
+def test_typed_default_vars_match_the_var_type() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {
+                "pages": {"type": "int"},
+                "payment_amount": {"type": "float"},
+                "paid": {"type": "bool"},
+            },
+            "default_vars": {"pages": 3, "payment_amount": 12.5, "paid": True},
+        }
+    )
+
+    assert catalog.spec("pages").candidates == (3,)
+    assert catalog.spec("payment_amount").candidates == (12.5,)
+    assert catalog.spec("paid").candidates == (True,)
+
+
+def test_null_kind_default_is_the_same_as_omitting_it() -> None:
+    catalog = _catalog(
+        {
+            "vars_schema": {"amount": {"type": "int", "default": 12}},
+            "kind_schema": {
+                "invoice": {
+                    "vars_schema": {"amount": {"schema": "amount", "default": None}}
+                }
+            },
+        }
+    )
+    invoice = catalog.kind_schemas()[0]
+
+    assert invoice.vars["amount"].has_default is False
+    assert catalog.default_candidates("invoice", "amount") == (12,)
 
 
 def test_schema_without_default_takes_default_vars() -> None:
@@ -334,7 +408,7 @@ def test_kind_var_shorthand_resolves_catalog_names() -> None:
                         "my_amount": "amount",
                         "my_currency": "currency",
                         "tax": {"schema": "tax"},
-                        "paid": {"mandatory": True},
+                        "paid": {},
                     },
                 }
             },
@@ -351,14 +425,13 @@ def test_kind_var_shorthand_resolves_catalog_names() -> None:
     assert receipt.vars["my_currency"].type == "text"
     assert receipt.vars["tax"].type == "float"
     assert receipt.vars["paid"].type == "bool"
-    assert receipt.vars["paid"].mandatory is True
 
 
 def test_blank_kind_var_uses_the_local_name() -> None:
     catalog = _catalog(
         {
             "vars_schema": {
-                "amount": {"type": "int", "desc": "Money", "mandatory": True},
+                "amount": {"type": "int", "desc": "Money"},
                 "issued": {"type": "date"},
             },
             "kind_schema": {
@@ -369,7 +442,7 @@ def test_blank_kind_var_uses_the_local_name() -> None:
                     }
                 },
                 "bill": {
-                    "vars_schema": {"amount": {"schema": "", "mandatory": False}},
+                    "vars_schema": {"amount": {"schema": ""}},
                 },
                 "note": {
                     "vars_schema": {"cost": " amount "},
@@ -381,11 +454,9 @@ def test_blank_kind_var_uses_the_local_name() -> None:
 
     assert invoice.vars["amount"].type == "int"
     assert invoice.vars["amount"].desc == "Money"
-    assert invoice.vars["amount"].mandatory is True
     assert invoice.vars["issued"].type == "date"
     assert bill.vars["amount"].type == "int"
     assert bill.vars["amount"].desc == "Money"
-    assert bill.vars["amount"].mandatory is False
     assert note.vars["cost"].type == "int"
     assert note.vars["cost"].desc == "Money"
 
@@ -438,7 +509,7 @@ def test_kind_schema_stores_feed_file_and_feeds() -> None:
                 "feeds": ["company", "issued"],
                 "vars_schema": {
                     "company": "company_name",
-                    "employee": {"schema": "employee_name", "mandatory": True},
+                    "employee": {"schema": "employee_name"},
                     "issued": None,
                 },
             },
@@ -500,6 +571,19 @@ def test_kind_schema_rejects_an_unresolved_feed_name() -> None:
         )
 
 
+def _non_null_branch(prop: dict[str, object]) -> dict[str, object]:
+    options = prop.get("anyOf")
+    assert isinstance(options, list)
+    assert any(isinstance(item, dict) and item.get("type") == "null" for item in options)
+    kept = [
+        item
+        for item in options
+        if isinstance(item, dict) and item.get("type") != "null"
+    ]
+    assert len(kept) == 1
+    return kept[0]
+
+
 def test_domain_schema_accepts_kind_var_shorthand() -> None:
     from supershelf.domain_schema import DomainSchema
 
@@ -521,8 +605,9 @@ def test_domain_schema_accepts_kind_var_shorthand() -> None:
     ).document()
     receipt = document["$defs"]["receipt"]
 
-    assert receipt["properties"]["issued"]["type"] == "string"
-    assert receipt["properties"]["my_amount"]["type"] == "number"
+    assert "required" not in receipt
+    assert _non_null_branch(receipt["properties"]["issued"])["type"] == "string"
+    assert _non_null_branch(receipt["properties"]["my_amount"])["type"] == "number"
     assert receipt["properties"]["my_amount"]["x-unit"] == "EUR"
 
 
@@ -544,7 +629,7 @@ def test_domain_schema_uses_kind_properties() -> None:
                 "invoice": {
                     "desc": "A vendor bill",
                     "vars_schema": {
-                        "company": {"schema": "company_name", "mandatory": True},
+                        "company": {"schema": "company_name"},
                         "amount": {"schema": "amount"},
                     },
                 }
@@ -555,16 +640,16 @@ def test_domain_schema_uses_kind_properties() -> None:
 
     assert invoice["description"] == "A vendor bill"
     assert invoice["additionalProperties"] is False
-    assert invoice["required"] == ["company"]
+    assert "required" not in invoice
     assert invoice["properties"]["company"]["description"] == "Payer"
-    assert invoice["properties"]["company"]["type"] == "string"
+    assert _non_null_branch(invoice["properties"]["company"])["type"] == "string"
     amount = invoice["properties"]["amount"]
-    assert amount["type"] == "number"
+    number = _non_null_branch(amount)
+    assert number["type"] == "number"
     assert amount["x-unit"] == "EUR"
     assert amount["enum"] == [1.5, 2.5]
-    assert amount["minimum"] == 0
+    assert number["minimum"] == 0
     assert amount["default"] == 1.5
-    assert "null" not in json.dumps(invoice)
 
 
 def test_domain_schema_without_kinds_lists_declared_names() -> None:
@@ -580,7 +665,9 @@ def test_domain_schema_without_kinds_lists_declared_names() -> None:
     ).document()
 
     assert set(document["properties"]) == {"vendor", "issued"}
-    assert document["properties"]["issued"]["pattern"].startswith("^[0-9]{4}")
+    assert "required" not in document
+    issued = _non_null_branch(document["properties"]["issued"])
+    assert issued["pattern"].startswith("^[0-9]{4}")
 
 
 def test_domain_schema_requires_a_declared_schema() -> None:
