@@ -440,10 +440,15 @@ def test_duplicate_path_is_left_out(
     app = App(parse=False)
     app.dispatch(["db", "import"])
     capsys.readouterr()
-    app.dispatch(["output", "run"])
+    app.dispatch(["-v", "output", "run"])
+    quiet = capsys.readouterr()
+    assert "duplicate left out" not in quiet.err
     assert (tmp_path / "output" / "books" / "a.pdf").is_file()
     assert (tmp_path / "output" / "books" / "b.pdf").exists() is False
-    capsys.readouterr()
+    app.dispatch(["-vv", "output", "run"])
+    verbose = capsys.readouterr()
+    assert "Output books: 2 files" in verbose.err
+    assert "Output books b.pdf duplicate left out" in verbose.err
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "run", "b.pdf"])
     assert caught.value.code == 1
@@ -502,6 +507,79 @@ def test_when_template_casts_bool_words_and_rejects_other_text(
         app.dispatch(["output", "run"])
     assert caught.value.code == 1
     assert "Bank2000" in capsys.readouterr().err
+
+
+def test_defined_and_missing_skips_and_logs_when_false(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(tmp_path, extra=_BOOKS + "when = '{{ missing is defined and missing }}'\n")
+    app = App(parse=False)
+    app.dispatch(["-v", "output", "preview"])
+    quiet = capsys.readouterr()
+    assert "skip" in quiet.out
+    assert "false" in quiet.out
+    assert "when false" not in quiet.err
+    app.dispatch(["-vv", "output", "preview"])
+    verbose = capsys.readouterr()
+    assert "skip" in verbose.out
+    assert "Output books: 1 files" in verbose.err
+    assert "Output books a.pdf when false" in verbose.err
+
+
+def test_undefined_when_tips_is_defined(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    _write(tmp_path, extra=_BOOKS + "when = '{{ payment_account }}'\n")
+    app = App(parse=False)
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["output", "preview"])
+    err = capsys.readouterr().err
+    assert caught.value.code == 1
+    assert "payment_account" in err
+    assert "is defined" in err
+
+
+def test_kind_miss_logs_left_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    profile = """\
+[default_vars]
+vendor = "Bank2000"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+glob = "a.pdf"
+
+[[match_rules]]
+name = "note"
+glob = "b.pdf"
+"""
+    inbox = _write(tmp_path, profile=profile, extra=_BOOKS + 'kinds = ["bill"]\n')
+    (inbox / "b.pdf").write_bytes(b"note-file")
+    app = App(parse=False)
+    with pytest.raises(SystemExit):
+        app.dispatch(["-v", "output", "preview"])
+    quiet = capsys.readouterr()
+    assert "kind note left out" not in quiet.err
+    with pytest.raises(SystemExit) as caught:
+        app.dispatch(["-vv", "output", "preview"])
+    assert caught.value.code == 1
+    verbose = capsys.readouterr()
+    assert "Output books: 2 files" in verbose.err
+    assert "Output books a.pdf when true" in verbose.err
+    assert "Output books b.pdf kind note left out" in verbose.err
 
 
 def test_symlink_and_hardlink(

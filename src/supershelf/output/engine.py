@@ -584,6 +584,7 @@ class OutputSession:
             documents = {row.id: row for row in database.documents()}
         actions: list[OutputAction] = []
         for item in profile.items:
+            _LOGGER.debug("Output %s: %s files", item.name, len(matches))
             for match in matches:
                 planned = self._one(profile, item, match, events, documents)
                 if planned is not None:
@@ -599,10 +600,18 @@ class OutputSession:
         documents: Mapping[int, DocumentRow],
     ) -> OutputAction | None:
         if match.row.status == STATUS_DUPLICATE:
+            _LOGGER.debug("Output %s %s duplicate left out", item.name, match.found.path)
             return None
         if item.kinds is not None and match.resolved.kind not in item.kinds:
+            _LOGGER.debug(
+                "Output %s %s kind %s left out",
+                item.name,
+                match.found.path,
+                match.resolved.kind,
+            )
             return None
         when = self._when(item, match)
+        _LOGGER.debug("Output %s %s when %s", item.name, match.found.path, when)
         operation = getattr(item.prepared, "operation", "")
         if not isinstance(operation, str):
             operation = ""
@@ -647,9 +656,12 @@ class OutputSession:
         try:
             rendered = match.var_plan.render_file(item.when, match.resolved, match.found)
         except VarCandidateError as exc:
+            advice = "Set when to a template that renders true or false."
+            if "is undefined" in str(exc):
+                advice = "Test a missing name with `is defined`."
             raise OutputResolveError(
                 f"Output {item.name} {match.found.path} when failed: {exc}",
-                advice="Set when to a template that renders true or false.",
+                advice=advice,
             ) from exc
         except VarResolveError as exc:
             raise OutputResolveError(str(exc), advice=exc.advice) from exc

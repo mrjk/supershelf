@@ -77,6 +77,13 @@ Each item has `name`, `driver`, `kinds`, and `when`. The driver owns every other
   `{{ __match__.kind == "invoice" }}` renders `True` or `False`, and those cast.
   `false` is status `skip`. The layout is not rendered. No event is written.
   An undefined name stops the command, same as a variable template.
+  The tip says to test the name with `is defined`.
+- -vv logs each output item, then one line per file that item walks.
+  `Output {name}: {count} files` uses the number of files in that walk, including files another kind leaves out and duplicates.
+  A file of another kind logs `Output {name} {path} kind {kind} left out`.
+  A rendered when logs `Output {name} {path} when true` or `Output {name} {path} when false`.
+  A duplicate logs `Output {name} {path} duplicate left out`.
+  -v does not add these lines.
 
 A live file the document plan marks `duplicate` has no document. It is left out. It does not stop the other files. The owning document is the one that can be written. A `PATH` that matches only that extra file stops the command, because no kept output source was selected.
 
