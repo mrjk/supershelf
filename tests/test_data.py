@@ -146,7 +146,7 @@ def test_empty_cell_is_filled_and_filled_cell_stays(
     assert rows[0]["issued"] == ""
     assert rows[0]["ISSUED"] == "25/04/2026"
     assert rows[0]["owner"] == "Clerk2000"
-    assert "OWNER" not in rows[0]
+    assert rows[0]["OWNER"] == "Clerk2000"
     assert (tmp_path / "profile.work.sqlite").exists() is False
 
 
@@ -269,7 +269,60 @@ glob = "**"
 
     row = _cells(kind)[0]
     assert row["vendor"] == "Mine"
-    assert row["VENDOR"] == "Bank2000"
+    assert row["VENDOR"] == "Mine"
+
+
+def test_feed_uppercase_matches_kind_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_config = ["{{ __config__.root_dir }}/invoice.csv"]
+kind_overrides_date_format = "%d/%m/%Y"
+
+[vars_schema.vendor]
+type = "text"
+
+[vars_schema.issued]
+type = "date"
+
+[kind_schema.invoice]
+feeds = ["vendor", "issued"]
+
+[kind_schema.invoice.vars_schema]
+vendor = "vendor"
+issued = "issued"
+
+[default_vars]
+vendor = "Bank2000"
+issued = "2020-01-01"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "invoice"
+glob = "**"
+""",
+    )
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        "PATH,vendor,issued,VENDOR,ISSUED\na.pdf,Mine,25/04/2026,,\n",
+        encoding="utf-8",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    row = _cells(kind)[0]
+    assert row["vendor"] == "Mine"
+    assert row["VENDOR"] == "Mine"
+    assert row["issued"] == "25/04/2026"
+    assert row["ISSUED"] == "25/04/2026"
 
 
 def test_reserved_names_use_wrapped_columns(

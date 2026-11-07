@@ -208,7 +208,7 @@ def _reject_feed_conflicts(resolved: tuple[_Resolved, ...]) -> None:
         row_key = item.sha if identity == IDENTITY_HASH and item.sha else item.relative
         for name in names:
             value = _cell_text(
-                item.rule_layer.get(name),
+                item.values.get(name),
                 item.plan.kind_files,
                 item.plan.catalog.type_of(item.kind, name),
             )
@@ -283,7 +283,7 @@ def _feed_plan(
             create_sha = ""
         for name in names:
             value = _cell_text(
-                item.rule_layer.get(name),
+                item.values.get(name),
                 kinds,
                 item.plan.catalog.type_of(item.kind, name),
             )

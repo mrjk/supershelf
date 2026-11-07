@@ -15,8 +15,8 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 ## 3.1 Shared rules
 
 - The plan is computed before any write. Identity updates from 2.3.2 run first. Row drop is 3.3. Feed cells are last.
-- The fed value is the display string of the resolve with the kind-file layer skipped. Facts, `default_vars`, and rule `vars` are included. A lowercase cell is not copied into the uppercase column.
-- A lowercase cell is the user override. The next resolve still uses it. The uppercase column is not read back. The source label is not `kind:<path>` from that feed column.
+- The fed value is the final resolve display string. That is the same layering as `scan vars --overrides`: `default_vars`, rule `vars`, then kind-file cells. 2.3.1.
+- This step does not write a lowercase cell. The next resolve still uses that cell when it is set. The uppercase column is not read back. The source label is not `kind:<path>` from that feed column.
 - An unset var does not blank a cell and does not add an empty cell.
 - Namespace fields stay out. A name that starts with `__` is not a user variable.
 - `kind_overrides_mode` gates this step.
@@ -71,9 +71,9 @@ Disabled mode. `kind_overrides_mode` is `disabled`. No kind file is read or writ
 
 Shared path. Two inputs resolve the same kind file and the same relative path, and the fed `vendor` values differ. The command stops and names both inputs.
 
-Override stays put. The rule set `vendor` and the lowercase cell is empty. Feed writes the rule display string into `VENDOR`. `vendor` stays empty. The next resolve still uses the rule.
+Override stays put. The rule set `vendor` and the lowercase cell is empty. Feed writes the final display string into `VENDOR`. `vendor` stays empty. The next resolve still uses the rule.
 
-Custom cell. `vendor` holds `Mine`. Feed writes the rule-layer string into `VENDOR`. `vendor` stays `Mine` and still wins on the next resolve. `VENDOR` does not become `Mine`.
+Custom cell. `vendor` holds `Mine`. Feed writes `Mine` into `VENDOR`. `vendor` stays `Mine` and still wins on the next resolve.
 
 Documents left alone. Feed writes `VENDOR` and leaves `vendor` empty. No document row and no event is written.
 
@@ -118,7 +118,7 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
   `vendor` is `VENDOR`. `issued` is `ISSUED`.
   When that form is `PATH` or `SHA`, wrap it: `_PATH_` or `_SHA_`.
   Feed never writes the headers `PATH` or `SHA`.
-- Write the rule-layer display string into that column.
+- Write the final resolve display string into that column.
   Replace the cell when the text differs. An equal cell is not a change.
   A lowercase or mixed-case cell is never written by this step.
   An edit in the uppercase column is replaced on the next feed.
@@ -146,7 +146,7 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 
 Date round-trip. Stored `issued` is `2026-04-25` and its type is `date`. `kind_overrides_date_format` is `%d/%m/%Y`. Feed writes `ISSUED` as `25/04/2026`. The `issued` cell stays. A text var stays its display string.
 
-Filled uppercase cell. `VENDOR` already holds the rule-layer display string. The text stays, and the file is not rewritten for that cell. A different `VENDOR` cell is replaced. The lowercase `vendor` cell stays.
+Filled uppercase cell. `VENDOR` already holds the final display string. The text stays, and the file is not rewritten for that cell. A different `VENDOR` cell is replaced. The lowercase `vendor` cell stays.
 
 Unset. No layer set `owner`. Feed does not blank `OWNER` or `owner`, and it does not add an empty cell.
 
