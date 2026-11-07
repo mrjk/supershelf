@@ -357,9 +357,12 @@ def test_other_document_is_not_taken(
         app.dispatch(["output", "run", "b.pdf"])
     assert caught.value.code == 1
     error = capsys.readouterr().err
+    assert 'Destination "' in error
     assert "shared.pdf" in error
-    assert "a.pdf" in error
-    assert "b.pdf" in error
+    assert "is already claimed." in error
+    assert 'Owner: profile "work" path "a.pdf" output "books"' in error
+    assert 'Requested: profile "work" path "b.pdf" output "books"' in error
+    assert "overwrite cannot take a path recorded for someone else." in error
     dest = tmp_path / "output" / "books" / "shared.pdf"
     assert dest.read_bytes() == b"bank-2000"
 
@@ -425,7 +428,12 @@ layout = "same.pdf"
     with pytest.raises(SystemExit) as caught:
         app.dispatch(["output", "preview"])
     assert caught.value.code == 1
-    assert "same.pdf" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert 'Two files in this run map to the same destination "' in error
+    assert "same.pdf" in error
+    assert 'First: profile "work" path "a.pdf" output "books"' in error
+    assert 'Second: profile "work" path "a.pdf" output "cards"' in error
+    assert "Change the layout so each file renders a different path." in error
     assert (tmp_path / "output").exists() is False
 
 

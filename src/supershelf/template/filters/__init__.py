@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from supershelf.template.filters.enclose import enclose
 from supershelf.template.filters.parse_boolean import parse_boolean
 from supershelf.template.filters.parse_date import parse_date
 from supershelf.template.filters.parse_float import parse_float
@@ -12,6 +13,7 @@ FILTERS = {
     "parse_float": parse_float,
     "parse_int": parse_int,
     "parse_boolean": parse_boolean,
+    "enclose": enclose,
 }
 
 

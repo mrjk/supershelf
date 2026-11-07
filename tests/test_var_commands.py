@@ -148,3 +148,53 @@ def test_regex_replace_miss_fails_the_candidate() -> None:
             '{{ regex_replace(value, "[0-9]", "x") }}',
             {"value": "ab"},
         )
+
+
+def test_enclose_omits_undefined_and_empty() -> None:
+    environment = VarEnvironment()
+    missing = environment.render('{{ value | enclose(prefix=" ", suffix="!") }}', {})
+    empty = environment.render(
+        '{{ value | enclose(prefix=" ", suffix="!") }}',
+        {"value": ""},
+    )
+    assert missing == ""
+    assert empty == ""
+
+
+def test_enclose_wraps_a_set_value() -> None:
+    environment = VarEnvironment()
+    rendered = environment.render(
+        '{{ value | enclose(prefix=" ", suffix="!") }}',
+        {"value": "QC1"},
+    )
+    assert rendered == " QC1!"
+
+
+def test_enclose_default_fills_absent_middle() -> None:
+    environment = VarEnvironment()
+    missing = environment.render(
+        '{{ value | enclose(default="UNKNOWN", prefix="_", suffix="") }}',
+        {},
+    )
+    empty = environment.render(
+        '{{ value | enclose(default="UNKNOWN", prefix="_", suffix="") }}',
+        {"value": ""},
+    )
+    set_value = environment.render(
+        '{{ value | enclose(default="UNKNOWN", prefix="_", suffix="") }}',
+        {"value": "QC1"},
+    )
+    assert missing == "_UNKNOWN"
+    assert empty == "_UNKNOWN"
+    assert set_value == "_QC1"
+
+
+def test_enclose_rejects_a_non_string_affix() -> None:
+    environment = VarEnvironment()
+    with pytest.raises(VarCandidateError, match="enclose prefix needs a string"):
+        environment.render("{{ value | enclose(prefix=1) }}", {"value": "QC1"})
+    with pytest.raises(VarCandidateError, match="enclose default needs a string"):
+        environment.render(
+            "{{ value | enclose(default=1, prefix='_') }}",
+            {"value": ""},
+        )

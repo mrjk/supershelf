@@ -58,6 +58,11 @@ _WHEN_TRUE = frozenset({"true", "yes", "1"})
 _WHEN_FALSE = frozenset({"false", "no", "0"})
 
 
+def dest_source(profile: str, path: str, output: str) -> str:
+    """One labeled source for a destination conflict message."""
+    return f'profile "{profile}" path "{path}" output "{output}"'
+
+
 class WhenText:
     """Cast a when result to the boolean string `true` or `false`."""
 
@@ -700,9 +705,10 @@ class OutputSession:
             other = seen.get(action.dest)
             if other is not None:
                 raise OutputResolveError(
-                    f"Destination {action.dest} is planned for {other.profile} {other.path} "
-                    f"output {other.output} and {action.profile} {action.path} output {action.output}",
-                    advice="Use a layout that gives each file its own destination.",
+                    f'Two files in this run map to the same destination "{action.dest}". '
+                    f"First: {dest_source(other.profile, other.path, other.output)}. "
+                    f"Second: {dest_source(action.profile, action.path, action.output)}.",
+                    advice="Change the layout so each file renders a different path.",
                 )
             seen[action.dest] = action
 

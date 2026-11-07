@@ -35,6 +35,7 @@ from supershelf.output.engine import (
     OutputAction,
     OutputContext,
     OutputDriver,
+    dest_source,
 )
 from supershelf.profile import ShelfProfile
 
@@ -171,9 +172,9 @@ class FileOutputDriver(OutputDriver):
             profile = context.shelf.name
             live = context.match.found.path
             raise OutputResolveError(
-                f"Destination {dest_text} belongs to profile {profile} {claim.path} "
-                f"output {claim.output_name} and profile {profile} {live} "
-                f"output {context.output_name}",
+                f'Destination "{dest_text}" is already claimed. '
+                f"Owner: {dest_source(profile, claim.path, claim.output_name)}. "
+                f"Requested: {dest_source(profile, live, context.output_name)}.",
                 advice="Choose another layout. overwrite cannot take a path recorded for someone else.",
             )
         matched = (

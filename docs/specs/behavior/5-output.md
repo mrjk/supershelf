@@ -142,8 +142,12 @@ The latest event for a document and output name is the prior apply. The latest e
   `overwrite`: status `replace`. `previous` is `existed` true and `ours` false. Revert cannot restore those bytes. The database stores the hash, not the file.
 - The prior apply matches, but the file on disk does not. The same three words. `overwrite` stores `existed` true and `ours` true, with the prior operation and source hash.
 - A new layout points the document at a new path. The old file stays. Prune is a later `output prune`. The new path follows the rules above.
-- The latest event for the destination belongs to another document, or to another output name of this document. The command stops. `on_conflict` does not apply. The message names the destination and both sources: profile, path, and output name. It does not use a document id.
-- Two planned actions in this run resolve to the same destination. The command stops before any write. The message names the destination and both sources. This includes two profiles selected together.
+- The latest event for the destination belongs to another document, or to another output name of this document. The command stops. `on_conflict` does not apply. It does not use a document id.
+  Message: `Destination "{dest}" is already claimed. Owner: profile "{profile}" path "{path}" output "{output}". Requested: profile "{profile}" path "{path}" output "{output}".`
+  Advice: `Choose another layout. overwrite cannot take a path recorded for someone else.`
+- Two planned actions in this run resolve to the same destination. The command stops before any write. This includes two profiles selected together.
+  Message: `Two files in this run map to the same destination "{dest}". First: profile "{profile}" path "{path}" output "{output}". Second: profile "{profile}" path "{path}" output "{output}".`
+  Advice: `Change the layout so each file renders a different path.`
 - The source path and the destination path are the same file. The command stops.
 - The destination exists and is a directory. The command stops.
 
@@ -171,7 +175,7 @@ Skip. The same foreign file, with `on_conflict: skip`. Status `skip`. The file s
 
 Overwrite. The same foreign file, with `on_conflict: overwrite`. The file is replaced. `previous` has `existed` true and `ours` false.
 
-Other document. The latest event for that path belongs to another document. The command stops. The message names the destination and both source paths. `overwrite` does not take the path.
+Other document. The latest event for that path belongs to another document. The command stops. The message is the already-claimed text above. `overwrite` does not take the path.
 
 Layout move. `layout` changes. The new path is `write`. The old file stays on disk. The old event stays.
 
