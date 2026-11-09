@@ -1,5 +1,6 @@
 """Variable layers for one matched file."""
 
+import json
 import logging
 from pathlib import Path
 
@@ -1503,7 +1504,15 @@ def test_null_default_stays_unset_and_a_typed_literal_is_kept(tmp_path: Path) ->
     assert dumped["payment_amount"]["value"] is None
     assert dumped["payment_amount"]["value_sources"] == []
     assert present_sources(resolved).split("\n") == ["", "", ""]
-    assert "payment_amount" not in plan.snapshot(resolved)
+    stored = json.loads(plan.snapshot(resolved))
+    assert stored["payment_amount"] == {
+        "type": "float",
+        "value": None,
+        "display": "",
+        "value_sources": [],
+    }
+    assert stored["issued"]["value"] is None
+    assert stored["opens"]["value"] is None
 
     dated = _plan(
         {
@@ -1574,9 +1583,16 @@ def test_scan_prints_kind_schema_nulls_and_written_extras(tmp_path: Path) -> Non
     assert dumped["note_tag"]["value"] == "paid"
     assert "vendor" not in dumped
     assert present_sources(invoice).split("\n") == ["", "", "rule:bills"]
-    stored = plan.snapshot(invoice)
-    assert "amount" not in stored
-    assert "note_tag" in stored
+    stored = json.loads(plan.snapshot(invoice))
+    assert stored["amount"] == {
+        "type": "float",
+        "value": None,
+        "display": "",
+        "value_sources": [],
+    }
+    assert stored["company"]["value"] is None
+    assert stored["note_tag"]["value"] == "paid"
+    assert "vendor" not in stored
 
     other = plan.resolve(_file(), _match(kind="note", rule="notes"), Path("/in"))
     other_text = str(present_vars(other, None))
@@ -1587,6 +1603,30 @@ def test_scan_prints_kind_schema_nulls_and_written_extras(tmp_path: Path) -> Non
     ]
     assert "company:" not in other_text
     assert "note_tag" not in other_text
+
+
+def test_snapshot_keeps_unset_schema_vars_and_jinja_sees_them(
+    tmp_path: Path,
+) -> None:
+    plan = _plan(
+        {
+            "vars_schema": {"amount": {"type": "float"}, "vendor": {"type": "text"}},
+            "default_vars": {"vendor": "Bank2000"},
+            "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+    stored = json.loads(plan.snapshot(resolved))
+    assert stored["amount"] == {
+        "type": "float",
+        "value": None,
+        "display": "",
+        "value_sources": [],
+    }
+    assert stored["vendor"]["value"] == "Bank2000"
+    rendered = plan.render_file("{{ amount }}|{{ vendor }}", resolved, _file())
+    assert rendered == "|Bank2000"
 
 
 def test_rule_typed_literal_replaces_the_default(tmp_path: Path) -> None:

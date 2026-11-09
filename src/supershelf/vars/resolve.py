@@ -501,8 +501,6 @@ class VarPlan:
         for name, state in resolved.states:
             if reserved_var_name(name):
                 continue
-            if state.value is None:
-                continue
             spec = self._catalog.effective(resolved.kind, name)
             body[name] = {
                 "type": spec.type,
@@ -521,7 +519,7 @@ class VarPlan:
         scope = {
             name: state.display
             for name, state in resolved.states
-            if state.value is not None
+            if not reserved_var_name(name)
         }
         return self._environment.render(
             source,

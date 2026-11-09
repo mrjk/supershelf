@@ -9,6 +9,7 @@ from clak import Argument, Command, ListViewMixin, Parser
 
 from supershelf.cli.common import (
     STRUCTURED_FORMATS,
+    UNSET_TEXT,
     kept_path,
     show_profile_first,
     shown_columns,
@@ -45,12 +46,19 @@ def present_stored_vars(raw: str, fmt: str | None) -> object:
 
 
 def stored_var_map(raw: str) -> dict[str, str]:
-    """Display map from a stored vars_json cell, keys sorted."""
+    """Printed map from a stored vars_json cell, keys sorted."""
     body = json.loads(raw) if raw else {}
-    return {
-        name: body[name].get("display", "") if isinstance(body[name], dict) else ""
-        for name in sorted(body)
-    }
+    shown: dict[str, str] = {}
+    for name in sorted(body):
+        entry = body[name]
+        if not isinstance(entry, dict):
+            shown[name] = ""
+            continue
+        if entry.get("value") is None:
+            shown[name] = UNSET_TEXT
+            continue
+        shown[name] = entry.get("display", "")
+    return shown
 
 
 def present_vars_yaml(shown: dict[str, str], fmt: str | None) -> object:
@@ -59,8 +67,11 @@ def present_vars_yaml(shown: dict[str, str], fmt: str | None) -> object:
         return shown
     if not shown:
         return ""
+    body = {
+        name: None if value == UNSET_TEXT else value for name, value in shown.items()
+    }
     return yaml.safe_dump(
-        shown,
+        body,
         sort_keys=True,
         allow_unicode=True,
         default_flow_style=False,

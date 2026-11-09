@@ -1,5 +1,6 @@
 """Link rules: path, hash, duplicates, missing, unmatched, and the path filter."""
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -709,7 +710,13 @@ def test_snapshot_keeps_date_and_drops_identity_facts(tmp_path: Path) -> None:
     assert "__kind__" not in text
     assert "Bank2000" in text
     assert "issued" in text
-    assert "empty" not in text
+    body = json.loads(text)
+    assert body["empty"] == {
+        "type": "text",
+        "value": None,
+        "display": "",
+        "value_sources": [],
+    }
 
 
 def test_a_second_missing_run_prints_nothing(

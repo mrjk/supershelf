@@ -9,6 +9,7 @@ from clak.views import CompositeView, ListView
 from supershelf.cli.common import (
     FILES_COLUMNS,
     STRUCTURED_FORMATS,
+    UNSET_TEXT,
     VARS_COLUMNS,
     kept_path,
     show_profile_first,
@@ -69,13 +70,10 @@ def checked_overrides(*, overrides: bool, no_overrides: bool) -> bool:
     return True
 
 
-_UNSET_TEXT = "null"
-
-
 def _table_pairs(resolved: FileVars, *, show_all: bool = False) -> tuple[tuple[str, str], ...]:
     """Printed variables in table order: alphabetical by name."""
     visible = [
-        (name, _UNSET_TEXT if state.value is None else state.display)
+        (name, UNSET_TEXT if state.value is None else state.display)
         for name, state in resolved.states
     ]
     if show_all:

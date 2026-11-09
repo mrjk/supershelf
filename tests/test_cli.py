@@ -312,6 +312,46 @@ def test_db_vars_prints_yaml_vars_cell(
     assert "vendor" not in rows[0]
 
 
+def test_db_vars_prints_null_for_unset_schema_vars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\namount.type = 'float'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+
+    app.dispatch(["db", "vars"])
+    table = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+    assert "amount: null" in table
+    assert "vendor: Bank2000" in table
+
+    app.dispatch(["db", "vars", "--format", "json"])
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["vars"] == {"amount": "null", "vendor": "Bank2000"}
+
+    app.dispatch(["db", "table", "--format", "json"])
+    table_rows = json.loads(capsys.readouterr().out)
+    assert table_rows[0]["amount"] == "null"
+    assert table_rows[0]["vendor"] == "Bank2000"
+
+    app.dispatch(["db", "show", "--format", "json"])
+    show_rows = json.loads(capsys.readouterr().out)
+    assert show_rows[0]["vars"] == {"amount": "null", "vendor": "Bank2000"}
+
+
 def test_db_table_prints_one_column_per_var(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

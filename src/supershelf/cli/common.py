@@ -12,6 +12,7 @@ STRUCTURED_FORMATS = frozenset({"json", "yaml"})
 
 FILES_COLUMNS = ("input", "path", "status", "mtime", "ctime", "sha256")
 VARS_COLUMNS = ("path", "kind", "vars", "sources")
+UNSET_TEXT = "null"
 
 
 def shown_columns(columns: tuple[str, ...], profiles: int) -> tuple[str, ...]:
