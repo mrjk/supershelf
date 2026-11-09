@@ -276,6 +276,134 @@ def test_db_show_prints_vars_in_one_cell(
     assert "vendor" not in rows[0]
 
 
+def test_db_vars_prints_yaml_vars_cell(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+
+    app.dispatch(["db", "vars"])
+    table = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+    assert "a.txt" in table
+    assert "note" in table
+    assert "vendor: Bank2000" in table
+
+    app.dispatch(["db", "vars", "--format", "json"])
+    rows = json.loads(capsys.readouterr().out)
+    assert list(rows[0]) == ["path", "kind", "vars"]
+    assert rows[0]["path"] == "a.txt"
+    assert rows[0]["kind"] == "note"
+    assert rows[0]["vars"] == {"vendor": "Bank2000"}
+    assert "vendor" not in rows[0]
+
+
+def test_db_table_prints_one_column_per_var(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\nowner = 'Ada'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\nowner.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+
+    app.dispatch(["db", "table", "--format", "json"])
+    rows = json.loads(capsys.readouterr().out)
+    assert list(rows[0]) == ["path", "kind", "owner", "vendor"]
+    assert rows[0]["path"] == "a.txt"
+    assert rows[0]["kind"] == "note"
+    assert rows[0]["owner"] == "Ada"
+    assert rows[0]["vendor"] == "Bank2000"
+    assert "vars" not in rows[0]
+
+
+def test_db_vars_and_table_filter_by_kind(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    (inbox / "b.pdf").write_bytes(b"bill")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[default_vars]\nvendor = 'Bank2000'\n\n"
+        "[vars_schema]\nvendor.type = 'text'\n\n"
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n\n"
+        "[[match_rules]]\nname = 'bills'\nkind = 'invoice'\nfilename_glob = 'b.pdf'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["db", "import"])
+    capsys.readouterr()
+
+    app.dispatch(["db", "vars", "invoice", "--format", "json"])
+    vars_rows = json.loads(capsys.readouterr().out)
+    assert [row["path"] for row in vars_rows] == ["b.pdf"]
+    assert vars_rows[0]["kind"] == "invoice"
+
+    app.dispatch(["db", "table", "note", "--format", "json"])
+    table_rows = json.loads(capsys.readouterr().out)
+    assert [row["path"] for row in table_rows] == ["a.txt"]
+    assert table_rows[0]["kind"] == "note"
+
+    app.dispatch(["db", "vars", "missing-kind", "--format", "json"])
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_db_vars_without_a_database_prints_no_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.txt").write_bytes(b"hello")
+    _write(
+        tmp_path / "profile.work.toml",
+        "[[inputs]]\npath = 'inbox'\n\n"
+        "[[match_rules]]\nname = 'notes'\nkind = 'note'\nfilename_glob = 'a.txt'\n",
+    )
+
+    app = App(parse=False)
+    app.dispatch(["db", "vars"])
+    assert (tmp_path / "profile.work.sqlite").exists() is False
+    assert "a.txt" not in capsys.readouterr().out
+
+    app.dispatch(["db", "table"])
+    assert "a.txt" not in capsys.readouterr().out
+
+
 def test_scan_files_prefix_selects_paths_that_start_with(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
