@@ -2,7 +2,7 @@
 
 Architecture. Index: [README](../README.md).
 
-Behavior 5. A driver writes one kind of destination. The file driver is built in. Schema version stays `2`. The file driver calls `append_output`. A later csv, json, or sql driver is not this section. `append_output` accepts only `copy`, `symlink`, and `hardlink`.
+Behavior 5. A driver writes one kind of destination. The built-in drivers are `file` and `sqlite`. Schema version stays `2`. The file driver calls `append_output`. The sqlite driver does not. `append_output` accepts only `copy`, `symlink`, and `hardlink`. A later csv or json driver is not this section. Custom SQL and views on the export database are a later sqlite mode, not this section.
 
 Metadata drivers fill variables. They are not output drivers. `metadata_driver` and `output_modules` are different lists.
 
@@ -34,6 +34,16 @@ The built-in name is `file`. Behavior 5.3 is the path, the layout, the operation
 
 ## 4.3 Modules
 
-`config.output_modules` lists importable modules. Omitted, null, and `[]` add no drivers. Built-in `file` is registered first. Each module exports `DRIVERS`, a list of `OutputDriver` subclasses. Import order is list order. A repeated name stops the command. An import failure stops the command.
+`config.output_modules` lists importable modules. Omitted, null, and `[]` add no drivers. Built-in `file` is registered first, then built-in `sqlite`. Each module exports `DRIVERS`, a list of `OutputDriver` subclasses. Import order is list order. A repeated name stops the command. An import failure stops the command.
 
 A module that exports no `DRIVERS` stops the command. A value that is not a driver class stops the command. The message names the module.
+
+## 4.4 Sqlite driver
+
+The built-in name is `sqlite`. Behavior 5.4 is the path, the export tables, the upsert rule, and schema sync.
+
+`plan` decides `write`, `replace`, or `unchanged` from the export database row for that content hash. `apply` upserts into the export file. It does not call `append_output`. The profile document projection stays as it is.
+
+Identity in the export file is the content hash. One hash is one document. The `files` row and each `data_<kind>` row use that hash as the primary key. External tools may insert other rows. Supershelf does not delete them.
+
+`operation` is the word `upsert`. The CLI `dest` is the document path relative to the input root. The destination file is the rendered `path`.

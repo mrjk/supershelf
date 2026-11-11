@@ -2,7 +2,7 @@
 
 Behavior. Index: [README](../README.md).
 
-`supershelf output` writes a destination for matched files and documents that apply. The driver contract is architecture 4. This step ships the file driver. It calls `ShelfDatabase.append_output`. Schema version stays `2`. No new column. `record_key` keeps the next migration.
+`supershelf output` writes a destination for matched files and documents that apply. The driver contract is architecture 4. This step ships the `file` and `sqlite` drivers. The file driver calls `ShelfDatabase.append_output`. The sqlite driver does not. Schema version stays `2`. No new column. `record_key` keeps the next migration.
 
 One profile has one sqlite file. Profiles do not share events. `cache_file` is the metadata cache in behavior 2.3.3. `output` uses the document plan from behavior 4, so a miss does not write it. `extension_remap` is not read.
 
@@ -107,7 +107,7 @@ A file that fails `kinds`, or whose `when` is `false`, does not face that gate. 
 
 The profile sqlite file is ignored when it sits inside an input, same as `db import`.
 
-`config.output_modules` is an optional list of importable module paths. Omitted, null, and `[]` add no drivers. The built-in `file` driver is registered first. Each module is imported in list order and exports `DRIVERS`, a list of driver classes. A name that repeats `file`, or an earlier module, stops the command. An import failure stops the command. This list is not `var_modules` and not `metadata_driver`.
+`config.output_modules` is an optional list of importable module paths. Omitted, null, and `[]` add no drivers. The built-in `file` driver is registered first, then built-in `sqlite`. Each module is imported in list order and exports `DRIVERS`, a list of driver classes. A name that repeats `file`, `sqlite`, or an earlier module, stops the command. An import failure stops the command. This list is not `var_modules` and not `metadata_driver`.
 
 ## 5.3 File driver
 
@@ -186,3 +186,64 @@ Bool words. `when: '{{ __match__.kind == "invoice" }}'` becomes `true` or `false
 Escape. A layout that renders `../outside` stops the command. A layout that renders an absolute path stops the command. No directory is created.
 
 Two outputs. One file matches `books` and `cards`. Both destinations are planned. The same destination from both items stops the command before any write.
+
+## 5.4 Sqlite driver
+
+`driver: sqlite` writes an external sqlite file. Architecture 4.4. It does not call `append_output`. Profile schema version stays `2`.
+
+- `path` is required. It is a profile path template, the same language as `inputs.path`. It is rendered once. A relative result resolves from `__config__.root_dir`. An empty result stops the command. A result that exists and is a directory stops the command. A missing parent is created only on a real write. Preview and `--dry-run` create nothing.
+- Shared `kinds` and `when` follow 5.2. Listed kinds also name which `data_<kind>` tables to ensure. Omitted `kinds` means every matched kind. A kind name that is not a SQL identifier `[A-Za-z_][A-Za-z0-9_]*` stops the command.
+- Unknown keys stop the command. The sqlite driver accepts only `path` beyond the shared keys.
+- Custom SQL, views, and user queries are a later mode. They are not read in this step.
+
+Export tables:
+
+- `hash`: primary key `hash` TEXT, the content sha256.
+- `files`: primary key `hash` references `hash(hash)`. Columns: `path`, `file_dir`, `file_name`, `file_stem`, `file_ext`, `match_kind`, `rule`, `mtime`, `ctime`. `path` is the input-relative path with `/` separators, the same meaning as the profile document path.
+- `data_<kind>`: one table per kind that is listed or appears in the planned set. Primary key `hash` references `hash(hash)`. One column per `kind_schema` local var name for that kind. A kind with no `kind_schema` entry still gets `data_<kind>` with only `hash`.
+
+Type map: `text`, `date`, `time`, and `datetime` are TEXT. `int` and `bool` are INTEGER. `float` is REAL. Unset variables store SQL NULL. Bool stores `0` or `1`. Date, time, and datetime store their display strings.
+
+Identity is the content hash. One hash is one document. The `files` row and the `data_<kind>` row for that kind use the same hash. Two planned files in this run that share a hash for the same output item stop the command before any write. External rows that supershelf did not write are left alone. Supershelf does not delete rows when a document leaves the library.
+
+Schema sync runs on a real write, before the upsert:
+
+1. Ensure `hash` and `files` exist with the fixed columns.
+2. For each required kind, ensure `data_<kind>` exists with the expected columns and declared types.
+3. A missing column is added with `ALTER TABLE ... ADD COLUMN`.
+4. An incompatible existing column type, or any other unrecoverable drift, stops the command. The tip says to delete the sqlite file and re-run so the schema can be recreated.
+5. Extra columns that the schema no longer lists stay. Unrelated rows stay.
+
+`plan` opens the export file read-only when it already exists. A missing file is not created at plan time.
+
+- No row for this hash: status `write`.
+- A row exists and every compared `files` and `data_<kind>` value matches: status `unchanged`. No write.
+- A row exists and any compared value differs: status `replace`.
+
+`operation` is `upsert`. The CLI `dest` is the document relative path. `run` prints `write` and `replace` rows the same way as the file driver. Preview prints `unchanged` too.
+
+`apply` creates the parent directory and the sqlite file when needed, syncs the schema, then upserts `hash`, `files`, and `data_<match_kind>` in one transaction. It does not append a profile output event.
+
+The document gate from 5.2 still applies. A stale file does not write the export database.
+
+### Cases
+
+First run. The export file is missing. Status `write`. The file, `hash`, `files`, and `data_<kind>` are created. No profile output event.
+
+Second run. The same hash and the same values. Status `unchanged`. `run` prints no row for it. The export file is not opened for write.
+
+Vars change. `db import` stored the new snapshot. The next output run replaces the `data_<kind>` row. Status `replace`.
+
+New kind column. The kind schema gains a local var. The next real write adds the column and upserts. Existing rows keep NULL in that column until updated.
+
+Incompatible schema. A column type does not match the kind schema. The command stops. The tip says to delete the sqlite file and re-run.
+
+Preview and dry-run. Status `write` is planned. The export file is not created.
+
+Duplicate hash. Two selected files share a hash for the same sqlite output. The command stops before any write.
+
+Stale document. The file is `new`. Preview warns and exits 1. `run` writes nothing. The export file is not created when it was missing.
+
+When. `when` renders `false`. Status `skip`. No upsert.
+
+Two sqlite outputs. Different `path` values. The same document relative path is allowed. The host destination key includes the export file.

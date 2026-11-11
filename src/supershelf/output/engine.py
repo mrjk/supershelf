@@ -1,4 +1,4 @@
-"""Plan and apply output drivers. The file driver is output.drivers.file."""
+"""Plan and apply output drivers. Built-ins live in output.drivers."""
 
 from __future__ import annotations
 
@@ -224,7 +224,7 @@ class OutputRegistry:
             where = f" from {module}" if module else ""
             raise OutputConfigError(
                 f"Output driver {name!r} is already registered{where}",
-                advice="Use a different driver name. The built-in file driver cannot be replaced.",
+                advice="Use a different driver name. Built-in file and sqlite cannot be replaced.",
             )
         self._drivers[name] = driver
 
@@ -234,7 +234,7 @@ class OutputRegistry:
         if found is None:
             raise OutputConfigError(
                 f"Output driver {name!r} is unknown",
-                advice="Use file, or list the module in config.output_modules.",
+                advice="Use file or sqlite, or list the module in config.output_modules.",
             )
         return found
 
@@ -244,10 +244,12 @@ class OutputModules:
 
     @staticmethod
     def load(section: Mapping[str, Any], registry: OutputRegistry) -> None:
-        """Register file, then each module's DRIVERS, in list order."""
+        """Register file and sqlite, then each module's DRIVERS, in list order."""
         from supershelf.output.drivers.file import FileOutputDriver
+        from supershelf.output.drivers.sqlite import SqliteOutputDriver
 
         registry.add(FileOutputDriver())
+        registry.add(SqliteOutputDriver())
         raw = section.get(KEY_OUTPUT_MODULES)
         if raw is None or raw == []:
             return
