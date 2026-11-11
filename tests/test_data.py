@@ -3,6 +3,7 @@
 import io
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from pypdf import PdfWriter
 from supershelf.cli import App
 from supershelf.constants import EVENT_NEW
 from supershelf.database import DatabaseChange, ShelfDatabase, StoredFile
+from supershelf.kind_file import backup_kind_file
 from tests.helpers import isolate_env, write_text
 
 
@@ -1010,5 +1012,115 @@ def test_hash_identity_recovers_stuck_duplicate_sha(
     assert len(rows) == 1
     assert rows[0]["PATH"] == "bills/a.pdf"
     assert rows[0]["owner"] == "Kept"
+
+
+def test_existing_kind_file_is_backed_up(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED)
+    kind = tmp_path / "invoice.csv"
+    original = "PATH,vendor\na.pdf,\n"
+    kind.write_text(original, encoding="utf-8")
+
+    _dispatch(["scan", "feeds"])
+
+    backups = list((tmp_path / ".backups").iterdir())
+    assert len(backups) == 1
+    assert backups[0].name.startswith("invoice.csv.")
+    assert backups[0].read_text(encoding="utf-8") == original
+    assert _cells(kind)[0]["VENDOR"] == "Bank2000"
+
+
+def test_no_backup_skips_kind_file_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED)
+    kind = tmp_path / "invoice.csv"
+    kind.write_text("PATH,vendor\na.pdf,\n", encoding="utf-8")
+
+    _dispatch(["scan", "feeds", "--no-backup"])
+
+    assert (tmp_path / ".backups").exists() is False
+    assert _cells(kind)[0]["VENDOR"] == "Bank2000"
+
+
+def test_dry_run_makes_no_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED)
+    kind = tmp_path / "invoice.csv"
+    original = "PATH,vendor\na.pdf,\n"
+    kind.write_text(original, encoding="utf-8")
+
+    _dispatch(["scan", "feeds", "--dry-run"])
+
+    assert (tmp_path / ".backups").exists() is False
+    assert kind.read_text(encoding="utf-8") == original
+
+
+def test_new_kind_file_makes_no_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(
+        tmp_path,
+        """\
+[config]
+kind_overrides_mode = "always"
+kind_overrides_config = ["{{ __config__.root_dir }}/note.csv"]
+
+[vars_schema.vendor]
+type = "text"
+
+[kind_schema.note]
+feeds = ["vendor"]
+
+[kind_schema.note.vars_schema]
+vendor = "vendor"
+
+[default_vars]
+vendor = "Bank2000"
+
+[[inputs]]
+path = "inbox"
+
+[[match_rules]]
+name = "bill"
+kind = "note"
+glob = "**"
+""",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    assert (tmp_path / "note.csv").exists()
+    assert (tmp_path / ".backups").exists() is False
+
+
+def test_backup_collision_uses_numeric_suffix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    kind = tmp_path / "invoice.csv"
+    kind.write_text("PATH,vendor\na.pdf,\n", encoding="utf-8")
+    folder = tmp_path / ".backups"
+    folder.mkdir()
+    stamp = datetime(2026, 4, 25, 13, 45, 6)
+    taken = folder / f"invoice.csv.{stamp.strftime('%y%m%d-%H%M%S')}"
+    taken.write_text("taken\n", encoding="utf-8")
+
+    target = backup_kind_file(kind, now=stamp)
+
+    assert target == folder / "invoice.csv.260425-134506-2"
+    assert target.read_text(encoding="utf-8") == "PATH,vendor\na.pdf,\n"
+    assert taken.read_text(encoding="utf-8") == "taken\n"
 
 

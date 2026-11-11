@@ -17,7 +17,7 @@ from supershelf.constants import (
     TYPE_DATE,
 )
 from supershelf.errors import VarConfigError
-from supershelf.kind_file import KindFiles, KindLine, KindTable
+from supershelf.kind_file import KindFiles, KindLine, KindTable, backup_kind_file
 from supershelf.profile import ShelfProfile
 from supershelf.scan.match import Matcher
 from supershelf.scan.runs import ShelfRuns, order_scan_row
@@ -87,6 +87,7 @@ def run_feed(
     *,
     mode: str | None = None,
     dry_run: bool = False,
+    backup: bool = True,
     verbosity: int = 0,
     changes_only: bool = True,
     selection: FileSelection | None = None,
@@ -134,7 +135,7 @@ def run_feed(
     )
     rows = _feed_rows(writes, drops, profiles=len(runs.shelves))
     if not dry_run:
-        _apply_feed(writes, drops, identity_tables)
+        _apply_feed(writes, drops, identity_tables, backup=backup)
     return rows
 
 
@@ -425,6 +426,8 @@ def _apply_feed(
     writes: tuple[_CellWrite, ...],
     drops: tuple[_FeedDrop, ...],
     identity_tables: tuple[KindTable, ...] = (),
+    *,
+    backup: bool = True,
 ) -> None:
     indexes: dict[int, set[int]] = {}
     tables: dict[int, KindTable] = {}
@@ -451,6 +454,8 @@ def _apply_feed(
         seen.add(identity)
         dirty.append(write.table)
     for table in dirty:
+        if backup and table.path.is_file():
+            backup_kind_file(table.path)
         table.save()
 
 

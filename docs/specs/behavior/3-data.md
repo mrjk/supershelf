@@ -60,6 +60,12 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 - Duplicate path rows: update the first, leave the later row, and keep the warning from 2.3.2.
   A rewrite must not drop that later row.
 - `--dry-run` prints the same rows and writes nothing. It does not create `cache_file`.
+- Before a real write to an existing kind file, copy that file to
+  `{cwd}/.backups/{basename}.{YYmmdd}-{hhmmss}` using local time.
+  Create `.backups` when it is missing. The basename is the kind file name only.
+  When that name is already taken, append `-2`, then `-3`, and so on until free.
+  Skip the copy when the kind file is not on disk yet, when `--dry-run` is set,
+  or when `--no-backup` is set. A failed copy stops that kind-file write.
 - A resolve error writes no kind file. A cache entry already stored during that resolve stays.
 - `PATH` limits which live files are fed. It does not drop kind-file rows outside that selection. A full run drops. 3.3.
 - There is no prompt and no `--force`.
@@ -87,7 +93,9 @@ Custom cell. `vendor` holds `Mine`. Feed writes `Mine` into `VENDOR`. `vendor` s
 
 Documents left alone. Feed writes `VENDOR` and leaves `vendor` empty. This step still writes no document row and no event. `db import` is the step that stores the resolved value.
 
-Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`. The kind-file notice is still logged.
+Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`. The kind-file notice is still logged. No `.backups` copy.
+
+Backup. `scan feeds` rewrites an on-disk kind file. A copy lands in `.backups` under the process cwd before that write. `--no-backup` skips it. A new kind file has no copy.
 
 ## 3.2 scan feeds
 
@@ -97,6 +105,7 @@ Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`
 - Writes fed values into the uppercase columns, after the identity updates and the row drop.
 - `PATH` is the relative path from 2.1.1. Omit it to feed every matched file.
 - `--kind-overrides-mode` is the flag from 2.3.2. It belongs to `scan feeds` and to bare `scan`.
+- `--no-backup` skips the kind-file copy in 3.1. It belongs to `scan feeds` and to bare `scan`.
 - `--dry-run` writes nothing. It still logs the kind file. 3.1.
 - For each profile and kind that matched a file, log the kind file.
   `supershelf scan` and `inspect scan feeds` log the same lines.

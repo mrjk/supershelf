@@ -58,6 +58,15 @@ def no_overrides_flag() -> Argument:
     )
 
 
+def no_backup_flag() -> Argument:
+    """Skip the pre-write kind-file copy under .backups."""
+    return Argument(
+        "--no-backup",
+        action="store_true",
+        help="Skip copying existing kind files into .backups before a write.",
+    )
+
+
 def checked_overrides(*, overrides: bool, no_overrides: bool) -> bool:
     """True applies kind cells. Both flags together are a usage error."""
     if overrides and no_overrides:
@@ -212,6 +221,7 @@ class ScanFeedsCommand(ListViewMixin, Parser):
 
     path = kept_path()
     kind_overrides_mode = kind_overrides_flag()
+    no_backup = no_backup_flag()
 
     def cli_run(
         self,
@@ -220,6 +230,7 @@ class ScanFeedsCommand(ListViewMixin, Parser):
         path=None,
         dry_run=False,
         kind_overrides_mode=None,
+        no_backup=False,
         verbosity=0,
         **_,
     ):
@@ -229,6 +240,7 @@ class ScanFeedsCommand(ListViewMixin, Parser):
             path,
             mode=checked_kind_mode(kind_overrides_mode),
             dry_run=bool(dry_run),
+            backup=not bool(no_backup),
             verbosity=int(verbosity or 0),
         )
 
@@ -237,6 +249,7 @@ class ScanCommand(CompositeViewMixin, Parser):
     """Scan profile inputs. With no step, run files, kinds, vars, then feeds."""
 
     kind_overrides_mode = kind_overrides_flag()
+    no_backup = no_backup_flag()
 
     files = Command(ScanFilesCommand, help="List file-identity changes")
     match = Command(
@@ -253,6 +266,7 @@ class ScanCommand(CompositeViewMixin, Parser):
         path=None,
         dry_run=False,
         kind_overrides_mode=None,
+        no_backup=False,
         verbosity=0,
         ctx=None,
         **_,
@@ -289,6 +303,7 @@ class ScanCommand(CompositeViewMixin, Parser):
             path,
             mode=mode,
             dry_run=dry,
+            backup=not bool(no_backup),
             verbosity=int(verbosity or 0),
             selection=selection,
         )
