@@ -267,7 +267,12 @@ class ScanCommand(CompositeViewMixin, Parser):
         selection = runs.open_selection(path, quick=False, require_kept=True)
         runs.apply_match(selection)
         runs.apply_files(selection, log=False)
-        runs.apply_vars(selection, mode=mode, dry_run=dry)
+        runs.apply_vars(
+            selection,
+            mode=mode,
+            dry_run=dry,
+            recover_duplicate_sha=True,
+        )
         var_rows = variable_rows(
             runs.changed_resolves(
                 path,

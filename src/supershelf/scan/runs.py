@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 from supershelf.configs import ShelfConfigs
 from supershelf.constants import (
     EVENT_NEW,
     EVENT_OUTPUT,
     EVENT_UNMATCHED,
+    KIND_MODE_ALWAYS,
+    KIND_MODE_AUTO,
     LOGGER_NAME,
     STATUS_UNCHANGED,
 )
@@ -138,6 +141,7 @@ class ShelfRuns:
         *,
         mode: str | None = None,
         dry_run: bool = False,
+        recover_duplicate_sha: bool = False,
     ) -> list[tuple[ShelfProfile, Matcher, VarPlan]]:
         """One matcher and var plan per profile. Does not walk."""
         prepared: list[tuple[ShelfProfile, Matcher, VarPlan]] = []
@@ -155,6 +159,7 @@ class ShelfRuns:
                         shelf.scope,
                         mode=mode,
                         dry_run=dry_run,
+                        recover_duplicate_sha=recover_duplicate_sha,
                     ),
                 )
             )
@@ -304,17 +309,26 @@ class ShelfRuns:
         mode: str | None = None,
         dry_run: bool = False,
         overrides: bool | None = None,
+        recover_duplicate_sha: bool = False,
     ) -> FileSelection:
         """Resolve every matched file. The working list stays the provided subset.
 
         ``overrides`` is None for bare scan and import. Scan vars passes True or False.
+        ``recover_duplicate_sha`` lets scan feeds collapse unambiguous duplicate SHA rows
+        before resolve. Scan vars leaves it false so a bad kind file still errors on load.
         """
         if not selection.match_ready:
             self.apply_match(selection)
         if selection.vars_ready:
             return selection
-        prepared = self.plans(mode=mode, dry_run=dry_run)
+        prepared = self.plans(
+            mode=mode,
+            dry_run=dry_run,
+            recover_duplicate_sha=recover_duplicate_sha,
+        )
         by_name = {shelf.name: plan for shelf, _matcher, plan in prepared}
+        if recover_duplicate_sha:
+            self._recover_kind_duplicates(selection, prepared)
         stored: dict[str, dict[tuple[str, str], str]] = {}
         for shelf in selection.shelves:
             with ShelfDatabase.open_read(shelf.database_file) as database:
@@ -339,6 +353,32 @@ class ShelfRuns:
         selection.prepared = prepared
         selection.vars_ready = True
         return selection
+
+    def _recover_kind_duplicates(
+        self,
+        selection: FileSelection,
+        prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
+    ) -> None:
+        """Open kind tables and collapse duplicate SHA rows onto the one live path."""
+        by_name = {shelf.name: plan for shelf, _matcher, plan in prepared}
+        live: dict[tuple[VarPlan, Path], set[str]] = {}
+        for item in selection.inventory:
+            if item.match is None:
+                continue
+            plan = by_name[item.profile]
+            kinds = plan.kind_files
+            if kinds.mode not in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
+                continue
+            table = kinds.open_table(item.match.kind, item.result.config.path, create=False)
+            if table is None:
+                continue
+            key = (plan, table.path.resolve())
+            live.setdefault(key, set()).add(item.found.path)
+        by_plan: dict[VarPlan, dict[Path, set[str]]] = {}
+        for (plan, path), paths in live.items():
+            by_plan.setdefault(plan, {})[path] = paths
+        for plan, paths in by_plan.items():
+            plan.kind_files.recover_duplicate_hashes(paths)
 
     def file_rows(
         self,

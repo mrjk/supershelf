@@ -94,20 +94,30 @@ def run_feed(
     """Write rule-layer display strings into uppercase columns.
 
     Resolve every selected profile first. A resolve error writes nothing.
-    auto and always commit path and hash, then drop, then write feed cells.
+    auto and always stage path and hash, then drop, then feed cells, then one write.
     A passed ``selection`` is not walked again.
     """
     if selection is None:
         runs = ShelfRuns.load(config, profile)
         selection = runs.use_selection(path, None, quick=False, require_kept=True)
         runs.apply_match(selection)
-        runs.apply_vars(selection, mode=mode, dry_run=dry_run)
+        runs.apply_vars(
+            selection,
+            mode=mode,
+            dry_run=dry_run,
+            recover_duplicate_sha=True,
+        )
     else:
         runs = ShelfRuns(selection.shelves)
         selection = runs.use_selection(path, selection, quick=False, require_kept=False)
         if not selection.vars_ready:
             runs.apply_match(selection)
-            runs.apply_vars(selection, mode=mode, dry_run=dry_run)
+            runs.apply_vars(
+                selection,
+                mode=mode,
+                dry_run=dry_run,
+                recover_duplicate_sha=True,
+            )
     prepared = selection.prepared
     resolved = _resolved_from(selection)
     selector = selection.selector
@@ -115,7 +125,7 @@ def run_feed(
     if _feeds_disabled(prepared):
         return []
     _reject_feed_conflicts(resolved)
-    _commit_identity(prepared, dry_run=dry_run)
+    identity_tables = _stage_identity(prepared)
     writes, drops = _feed_plan(
         resolved,
         selector,
@@ -124,7 +134,7 @@ def run_feed(
     )
     rows = _feed_rows(writes, drops, profiles=len(runs.shelves))
     if not dry_run:
-        _apply_feed(writes, drops)
+        _apply_feed(writes, drops, identity_tables)
     return rows
 
 
@@ -227,20 +237,26 @@ def _reject_feed_conflicts(resolved: tuple[_Resolved, ...]) -> None:
             choices[key] = _Choice(item.profile, item.index, item.input_path, value)
 
 
-def _commit_identity(
+def _stage_identity(
     prepared: list[tuple[ShelfProfile, Matcher, VarPlan]],
-    *,
-    dry_run: bool,
-) -> None:
+) -> tuple[KindTable, ...]:
+    """Queue and apply path/hash edits in memory. Do not write yet."""
+    dirty: list[KindTable] = []
+    seen: set[int] = set()
     for _shelf, _matcher, plan in prepared:
         kinds = plan.kind_files
         if kinds.mode not in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
             continue
-        kinds.commit()
-        if dry_run:
-            kinds.stage_identity()
-            continue
-        kinds.reload_tables()
+        if kinds._dry_run:
+            kinds.commit()
+        kinds.stage_identity()
+        for table in kinds.identity_dirty():
+            mark = id(table)
+            if mark in seen:
+                continue
+            seen.add(mark)
+            dirty.append(table)
+    return tuple(dirty)
 
 
 def _feed_plan(
@@ -405,7 +421,11 @@ def _feed_rows(
     return rows
 
 
-def _apply_feed(writes: tuple[_CellWrite, ...], drops: tuple[_FeedDrop, ...]) -> None:
+def _apply_feed(
+    writes: tuple[_CellWrite, ...],
+    drops: tuple[_FeedDrop, ...],
+    identity_tables: tuple[KindTable, ...] = (),
+) -> None:
     indexes: dict[int, set[int]] = {}
     tables: dict[int, KindTable] = {}
     for drop in drops:
@@ -416,6 +436,12 @@ def _apply_feed(writes: tuple[_CellWrite, ...], drops: tuple[_FeedDrop, ...]) ->
         table.drop_indexes(indexes[identity])
     dirty: list[KindTable] = list(tables.values())
     seen = set(tables)
+    for table in identity_tables:
+        mark = id(table)
+        if mark in seen:
+            continue
+        seen.add(mark)
+        dirty.append(table)
     for write in writes:
         if not write.table.set_cell(write.relative, write.name, write.value, write.sha):
             continue

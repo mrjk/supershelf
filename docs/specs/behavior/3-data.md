@@ -15,6 +15,14 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 ## 3.1 Shared rules
 
 - The plan is computed before any write. Identity updates from 2.3.2 run first. Row drop is 3.3. Feed cells are last.
+  `auto` and `always` stage those steps in memory and write each kind file once.
+  Do not flush identity to disk before drop.
+- Duplicate SHA recovery runs before identity updates, and only for `auto` and `always`.
+  Several rows share one non-empty SHA, and exactly one of those PATH values is a live matched file of that kind in this scan:
+  keep that row, delete the other rows with that SHA, and for each lowercase or feed cell, when the kept cell is empty and a discarded row has a non-empty value, copy it.
+  Warn with the kind file, the digest, the kept path, and the removed paths.
+  Two or more of those paths are live, or none of them are live: error, same message as 2.3.2, write nothing.
+  `scan vars`, `manual`, and `disabled` do not recover.
 - The fed value is the final resolve display string. That is the same layering as `scan vars --overrides`: `default_vars`, rule `vars`, then kind-file cells. 2.3.1.
 - This step does not write a lowercase cell. The next resolve still uses that cell when it is set.
   When the lowercase cell is empty, a non-empty feed cell applies as the kind override for that var. 2.3.2.
@@ -160,6 +168,7 @@ Left off `feeds`. `owner` is a schema var and is not listed in `feeds`. No `OWNE
 
 - This is part of `scan feeds`. It is not its own command.
 - It runs after the path and hash updates in 2.3.2, and before feed cells are written.
+  Those steps stay in memory until the one kind-file write. 3.1.
 - `auto` and `always` only. `manual` and `disabled` do not drop rows.
 - Drop a kind-file row whose identifier is not a matched file of that kind in this scan.
   A row is kept when its path is a live file of that kind whose first step is path,

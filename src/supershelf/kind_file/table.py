@@ -225,6 +225,8 @@ class KindTable:
         self._sha_sets: dict[str, str] = {}
         self._path_sets: list[tuple[str, str, str]] = []
         self._prepared = False
+        self._sha_conflicts: dict[str, list[str]] = {}
+        self._identity_dirty = False
 
     @classmethod
     def missing(cls, path: Path, sep: str) -> KindTable:
@@ -256,7 +258,7 @@ class KindTable:
             raw_rows=parsed.raw_rows,
             bom=bom,
         )
-        table._reject_duplicate_sha()
+        table._collect_duplicate_sha()
         return table
 
     def ensure(self, relative: str) -> None:
@@ -487,11 +489,15 @@ class KindTable:
         self._notes.clear()
         self._sha_sets.clear()
         self._path_sets.clear()
+        self._sha_conflicts = dict(fresh._sha_conflicts)
+        self._identity_dirty = False
         self._prepared = True
 
     def save(self) -> None:
         """Rewrite the kind file. A later duplicate row is kept."""
         self._require_parent()
+        if self.columns is None:
+            self.columns = self._create_columns()
         text = self._full_text()
         payload = text.encode("utf-8")
         if self._bom:
@@ -499,6 +505,7 @@ class KindTable:
         self._replace_bytes(payload)
         self.missing = False
         self.blank = False
+        self._identity_dirty = False
 
     def _full_text(self) -> str:
         return CSV.full_text(self.sep, self.columns, self.output_rows())
@@ -614,6 +621,7 @@ class KindTable:
             logger.debug("Added column SHA to kind file %s", self.path)
 
     def _apply_edits(self) -> None:
+        changed = bool(self._path_sets or self._sha_sets or self._pending)
         for old, new, digest in self._path_sets:
             self._retarget(old, new, digest)
         for path, digest in self._sha_sets.items():
@@ -623,6 +631,8 @@ class KindTable:
         self._pending.clear()
         self._path_sets.clear()
         self._sha_sets.clear()
+        if changed:
+            self._identity_dirty = True
 
     def _retarget(self, old: str, new: str, digest: str) -> None:
         for line in self.raw_rows:
@@ -798,18 +808,79 @@ class KindTable:
         self._pending.append(mark)
         self._pending_seen.add(mark)
 
-    def _reject_duplicate_sha(self) -> None:
-        seen: dict[str, str] = {}
+    def _collect_duplicate_sha(self) -> None:
+        """Record digests that appear on more than one row."""
+        seen: dict[str, list[str]] = {}
         for line in self.raw_rows:
             if not line.sha:
                 continue
-            previous = seen.get(line.sha)
-            if previous is not None:
-                raise VarConfigError(
-                    f"Kind file {self.path} hash {line.sha} is on {previous} and {line.path}",
-                    advice="One hash identifies one row. Remove the extra row.",
-                )
-            seen[line.sha] = line.path
+            paths = seen.setdefault(line.sha, [])
+            if line.path not in paths:
+                paths.append(line.path)
+        self._sha_conflicts = {
+            digest: paths for digest, paths in seen.items() if len(paths) > 1
+        }
+
+    def require_unique_sha(self) -> None:
+        """Error when more than one row shares a non-empty SHA."""
+        for digest, paths in self._sha_conflicts.items():
+            raise VarConfigError(
+                f"Kind file {self.path} hash {digest} is on {paths[0]} and {paths[1]}",
+                advice="One hash identifies one row. Remove the extra row.",
+            )
+
+    def recover_duplicate_sha(self, live_paths: set[str], logger: logging.Logger) -> None:
+        """Collapse duplicate SHA rows when exactly one PATH is live in this scan."""
+        if not self._sha_conflicts:
+            return
+        remaining: dict[str, list[str]] = {}
+        for digest, paths in self._sha_conflicts.items():
+            live = [path for path in paths if path in live_paths]
+            if len(live) != 1:
+                remaining[digest] = paths
+                continue
+            kept = live[0]
+            removed = [path for path in paths if path != kept]
+            self._collapse_sha_rows(digest, kept, removed)
+            logger.warning(
+                "Kind file %s hash %s kept path %s and removed %s",
+                self.path,
+                digest,
+                kept,
+                ", ".join(removed),
+            )
+        self._sha_conflicts = remaining
+        self.require_unique_sha()
+
+    def _collapse_sha_rows(self, digest: str, kept: str, removed: list[str]) -> None:
+        kept_cells = self.rows.get(kept)
+        if kept_cells is None:
+            kept_cells = {}
+            self.rows[kept] = kept_cells
+            self.row_sha[kept] = digest
+        for path in removed:
+            discarded = self.rows.get(path, {})
+            for name, value in discarded.items():
+                if not value.strip():
+                    continue
+                current = kept_cells.get(name, "")
+                if current.strip():
+                    continue
+                kept_cells[name] = value
+        drop = {
+            index
+            for index, line in enumerate(self.raw_rows)
+            if line.sha == digest and line.path != kept
+        }
+        self.drop_indexes(drop)
+        if kept not in self.rows:
+            self.rows[kept] = kept_cells
+        self.row_sha[kept] = digest
+        for line in self.raw_rows:
+            if line.path == kept and line.sha == digest:
+                line.cells = kept_cells
+                break
+        self._identity_dirty = True
 
 
 class KindRow(NamedTuple):
@@ -833,6 +904,8 @@ class KindFiles:
         dry_run: bool,
         identity: Mapping[str, str] | None = None,
         default_identity: str = IDENTITY_PATH,
+        *,
+        recover_duplicate_sha: bool = False,
     ) -> None:
         self._templates = templates
         self._root = root_dir
@@ -843,6 +916,7 @@ class KindFiles:
         self._dry_run = dry_run
         self._identity = dict(identity or {})
         self._default_identity = default_identity
+        self._recover_duplicate_sha = recover_duplicate_sha
         self._tables: dict[Path, KindTable] = {}
         self._winners: dict[tuple[str, str], KindTable | None] = {}
         self._seen: set[tuple[str, str]] = set()
@@ -860,6 +934,8 @@ class KindFiles:
         dry_run: bool,
         identity: Mapping[str, str] | None = None,
         default_identity: str = IDENTITY_PATH,
+        *,
+        recover_duplicate_sha: bool = False,
     ) -> KindFiles:
         """Check the path list. Files are read later, when a kind is used."""
         sep = KindCsvSep.from_section(section).text
@@ -885,6 +961,7 @@ class KindFiles:
             dry_run,
             identity,
             default_identity,
+            recover_duplicate_sha=recover_duplicate_sha,
         )
 
     def bind_catalog(self, catalog: VarCatalog) -> None:
@@ -933,12 +1010,36 @@ class KindFiles:
     def stage_identity(self) -> None:
         """Apply queued path and hash edits in memory. Does not write."""
         for table in self._tables.values():
+            if not table._prepared:
+                table.prepare_identity(self._logger)
+            pending = bool(table._pending or table._path_sets or table._sha_sets)
             table._apply_edits()
+            if table.missing or table.blank:
+                if table.columns is None:
+                    table.columns = table._create_columns()
+                table._identity_dirty = True
+            elif pending:
+                table._identity_dirty = True
+
+    def identity_dirty(self) -> tuple[KindTable, ...]:
+        """Tables whose staged identity edits still need a write."""
+        return tuple(table for table in self._tables.values() if table._identity_dirty)
+
+    def recover_duplicate_hashes(self, live_paths: Mapping[Path, set[str]]) -> None:
+        """Collapse unambiguous duplicate SHA rows on loaded tables."""
+        if not self._recover_duplicate_sha:
+            return
+        if self._mode not in (KIND_MODE_AUTO, KIND_MODE_ALWAYS):
+            return
+        for path, table in self._tables.items():
+            table.recover_duplicate_sha(live_paths.get(path, set()), self._logger)
 
     def reload_tables(self) -> None:
         """Reread every loaded kind file after an identity write."""
         for table in self._tables.values():
             table.reload(self._logger)
+            if not self._recover_duplicate_sha:
+                table.require_unique_sha()
 
     @property
     def dates(self) -> KindDateFormat:
@@ -1058,6 +1159,8 @@ class KindFiles:
             )
             return cached
         table = self._hold(KindTable.read(path, self._logger, self._sep))
+        if not self._recover_duplicate_sha:
+            table.require_unique_sha()
         self._logger.debug("Loaded kind file %s for kind %s", resolved, kind)
         return table
 

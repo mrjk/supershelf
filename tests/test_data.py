@@ -902,3 +902,113 @@ glob = "**"
     assert list(tmp_path.glob("*.sqlite*")) == []
 
 
+_BANK_DIGEST = "50e49cfc799678461fb17d3c3e7fd9d7ae1fa4821e6fb0204876cc5fbe41cdec"
+
+
+def test_path_identity_rename_keeps_one_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED, {"bills/a.pdf": b"bank-2000"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\na.pdf,{_BANK_DIGEST},Kept\n",
+        encoding="utf-8",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    rows = _cells(kind)
+    assert len(rows) == 1
+    assert rows[0]["PATH"] == "bills/a.pdf"
+    assert rows[0]["SHA"] == _BANK_DIGEST
+    _dispatch(["scan", "feeds"])
+    assert len(_cells(kind)) == 1
+
+
+def test_duplicate_sha_recovers_onto_the_live_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED, {"bills/a.pdf": b"bank-2000"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\n"
+        f"a.pdf,{_BANK_DIGEST},Kept\n"
+        f"bills/a.pdf,{_BANK_DIGEST},\n",
+        encoding="utf-8",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    err = capsys.readouterr().err
+    assert "kept path bills/a.pdf" in err
+    assert "removed a.pdf" in err
+    rows = _cells(kind)
+    assert len(rows) == 1
+    assert rows[0]["PATH"] == "bills/a.pdf"
+    assert rows[0]["SHA"] == _BANK_DIGEST
+    assert rows[0]["owner"] == "Kept"
+
+
+def test_duplicate_sha_with_two_live_paths_is_an_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED, {"a.pdf": b"bank-2000", "b.pdf": b"bank-2000"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\na.pdf,{_BANK_DIGEST},One\nb.pdf,{_BANK_DIGEST},Two\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        _dispatch(["scan", "feeds"])
+    assert raised.value.code == 2
+    assert len(_cells(kind)) == 2
+
+
+def test_scan_vars_still_errors_on_duplicate_sha(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    _profile(tmp_path, _FEED, {"a.pdf": b"bank-2000"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\na.pdf,{_BANK_DIGEST},One\nb.pdf,{_BANK_DIGEST},Two\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        _dispatch(["scan", "vars"])
+    assert raised.value.code == 2
+
+
+def test_hash_identity_recovers_stuck_duplicate_sha(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_env(monkeypatch, tmp_path)
+    body = _FEED.replace("[config]\n", "[config]\nrecord_identity = \"hash\"\n", 1)
+    _profile(tmp_path, body, {"bills/a.pdf": b"bank-2000"})
+    kind = tmp_path / "invoice.csv"
+    kind.write_text(
+        f"PATH,SHA,owner\n"
+        f"a.pdf,{_BANK_DIGEST},Kept\n"
+        f"bills/a.pdf,{_BANK_DIGEST},\n",
+        encoding="utf-8",
+    )
+
+    _dispatch(["scan", "feeds"])
+
+    rows = _cells(kind)
+    assert len(rows) == 1
+    assert rows[0]["PATH"] == "bills/a.pdf"
+    assert rows[0]["owner"] == "Kept"
+
+

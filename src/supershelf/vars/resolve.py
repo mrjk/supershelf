@@ -349,6 +349,7 @@ class VarPlan:
         dry_run: bool = False,
         environ: Mapping[str, str] | None = None,
         runner: ProcessRunner | None = None,
+        recover_duplicate_sha: bool = False,
     ) -> VarPlan:
         """Load modules and var tables before any walk."""
         cls._reject_overrides(document)
@@ -383,6 +384,7 @@ class VarPlan:
             dry_run,
             identity,
             default_identity,
+            recover_duplicate_sha=recover_duplicate_sha,
         )
         names: list[str] = list(defaults.keys)
         for table in rules.values():
