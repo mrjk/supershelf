@@ -363,8 +363,13 @@ class KindTable:
 
     @classmethod
     def feed_column_name(cls, name: str) -> str:
-        """The ignored column data feed writes for this var."""
+        """The uppercase column data feed writes for this var."""
         return KindNames.feed_column_name(name)
+
+    @classmethod
+    def var_name_from_feed(cls, column: str) -> str | None:
+        """Var name for a feed column, or None when it cannot be applied."""
+        return KindNames.var_name_from_feed(column)
 
     @classmethod
     def is_feed_column(cls, name: str) -> bool:
@@ -1071,22 +1076,38 @@ class KindFiles:
         relative: str,
     ) -> dict[str, str]:
         parsed: dict[str, str] = {}
-        catalog = self._catalog
+        feeds: list[tuple[str, str]] = []
         for key, value in raw.items():
             if KindTable.is_feed_column(key):
+                name = KindTable.var_name_from_feed(key)
+                if name is not None:
+                    feeds.append((name, value))
                 continue
-            if catalog is None or catalog.type_of(match.kind, key) != TYPE_DATE:
-                parsed[key] = value
+            parsed[key] = self._store_literal(key, value, match, relative)
+        for name, value in feeds:
+            if name in parsed:
                 continue
-            try:
-                parsed[key] = self._dates.store(value)
-            except ValueError as exc:
-                raise VarResolveError(
-                    f"Profile {match.profile} input {match.index} path {relative} "
-                    f"variable {key} failed",
-                    advice=f"{value!r} does not match {self._dates.text}. {exc}",
-                ) from exc
+            parsed[name] = self._store_literal(name, value, match, relative)
         return parsed
+
+    def _store_literal(
+        self,
+        key: str,
+        value: str,
+        match: FileMatch,
+        relative: str,
+    ) -> str:
+        catalog = self._catalog
+        if catalog is None or catalog.type_of(match.kind, key) != TYPE_DATE:
+            return value
+        try:
+            return self._dates.store(value)
+        except ValueError as exc:
+            raise VarResolveError(
+                f"Profile {match.profile} input {match.index} path {relative} "
+                f"variable {key} failed",
+                advice=f"{value!r} does not match {self._dates.text}. {exc}",
+            ) from exc
 
     def _render_path(self, template: str, scope: Mapping[str, Any]) -> Path:
         return render_user_path(

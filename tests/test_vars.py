@@ -573,7 +573,7 @@ def test_kind_row_is_literal_and_follows_the_rule(tmp_path: Path) -> None:
     assert values["vendor"] == "FromKind"
 
 
-def test_feed_column_is_ignored_and_custom_cell_wins(tmp_path: Path) -> None:
+def test_custom_cell_wins_over_feed_column(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,vendor,VENDOR\na.txt,Mine,Generated\n", encoding="utf-8")
     plan = _plan(
@@ -591,7 +591,7 @@ def test_feed_column_is_ignored_and_custom_cell_wins(tmp_path: Path) -> None:
     assert "Mine" not in resolved.rule_layer.values()
 
 
-def test_empty_custom_cell_ignores_the_feed_column(tmp_path: Path) -> None:
+def test_empty_custom_cell_applies_the_feed_column(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,VENDOR\na.txt,Generated\n", encoding="utf-8")
     plan = _plan(
@@ -601,12 +601,14 @@ def test_empty_custom_cell_ignores_the_feed_column(tmp_path: Path) -> None:
         },
         tmp_path,
     )
-    values = _values(plan)
-    assert values["vendor"] == "RuleCo"
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+    values = dict(resolved.items)
+    assert values["vendor"] == "Generated"
     assert "VENDOR" not in values
+    assert resolved.sources["vendor"][-1].startswith("kind:")
 
 
-def test_wrapped_feed_columns_are_ignored(tmp_path: Path) -> None:
+def test_wrapped_feed_columns_fill_when_lowercase_empty(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text(
         "PATH,_PATH_,_SHA_,_DATE_,__DATE__\na.txt,from-feed,abc,2020-01-01,01/02/2026\n",
@@ -625,18 +627,19 @@ def test_wrapped_feed_columns_are_ignored(tmp_path: Path) -> None:
         tmp_path,
     )
     values = _values(plan)
-    assert values["path"] == "kept"
-    assert values["sha"] == "real"
+    assert values["path"] == "from-feed"
+    assert values["sha"] == "abc"
+    assert values["_date_"] == "2020-01-01"
     assert values["date"] == "2026-04-25"
     assert "__date__" not in values
 
 
-def test_uppercase_date_is_a_feed_column_and_bad_sha_stays_an_error(tmp_path: Path) -> None:
+def test_uppercase_date_feed_fills_and_bad_sha_stays_an_error(tmp_path: Path) -> None:
     kind = tmp_path / "note.csv"
     kind.write_text("PATH,DATE\na.txt,2026-04-25\n", encoding="utf-8")
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     values = _values(plan)
-    assert "date" not in values
+    assert values["date"] == "2026-04-25"
     assert "DATE" not in values
 
     kind.write_text("PATH,sha\na.txt,abc\n", encoding="utf-8")
@@ -648,6 +651,28 @@ def test_uppercase_date_is_a_feed_column_and_bad_sha_stays_an_error(tmp_path: Pa
     plan = _plan(_kind_document("{{ __config__.root_dir }}/note.csv"), tmp_path)
     with pytest.raises(VarConfigError, match="64 lowercase hex"):
         _values(plan)
+
+
+def test_feed_amount_fills_when_lowercase_empty(tmp_path: Path) -> None:
+    kind = tmp_path / "note.csv"
+    kind.write_text(
+        "PATH,DOC_AMOUNT,doc_amount\na.txt,425.39,\n",
+        encoding="utf-8",
+    )
+    plan = _plan(
+        {
+            **_kind_document("{{ __config__.root_dir }}/note.csv"),
+            "vars_schema": {"doc_amount": {"type": "float"}},
+        },
+        tmp_path,
+    )
+    resolved = plan.resolve(_file(), _match(), Path("/in"))
+    assert dict(resolved.items)["doc_amount"] == "425.39"
+    assert resolved.dump_vars()["doc_amount"]["value"] == 425.39
+    stored = json.loads(plan.snapshot(resolved))
+    assert stored["doc_amount"]["value"] == 425.39
+    assert stored["doc_amount"]["display"] == "425.39"
+    assert resolved.sources["doc_amount"][-1].startswith("kind:")
 
 
 def test_mixed_case_column_stays_an_error(tmp_path: Path) -> None:
@@ -669,7 +694,7 @@ def test_schema_append_keeps_a_feed_column(tmp_path: Path) -> None:
         },
         tmp_path,
     )
-    assert _values(plan)["vendor"] == "RuleCo"
+    assert _values(plan)["vendor"] == "Generated"
     plan.commit()
     assert kind.read_text(encoding="utf-8") == (
         f"PATH,SHA,VENDOR,vendor\na.txt,{FILE_DIGEST},Generated,\n"
@@ -1610,7 +1635,11 @@ def test_snapshot_keeps_unset_schema_vars_and_jinja_sees_them(
 ) -> None:
     plan = _plan(
         {
-            "vars_schema": {"amount": {"type": "float"}, "vendor": {"type": "text"}},
+            "vars_schema": {
+                "amount": {"type": "float"},
+                "issued": {"type": "date"},
+                "vendor": {"type": "text"},
+            },
             "default_vars": {"vendor": "Bank2000"},
             "match_rules": [{"name": "notes", "kind": "note", "filename_glob": "**"}],
         },
@@ -1624,9 +1653,14 @@ def test_snapshot_keeps_unset_schema_vars_and_jinja_sees_them(
         "display": "",
         "value_sources": [],
     }
+    assert stored["issued"]["value"] is None
     assert stored["vendor"]["value"] == "Bank2000"
-    rendered = plan.render_file("{{ amount }}|{{ vendor }}", resolved, _file())
-    assert rendered == "|Bank2000"
+    rendered = plan.render_file(
+        "{{ amount }}|{{ issued }}|{{ vendor }}",
+        resolved,
+        _file(),
+    )
+    assert rendered == "||Bank2000"
 
 
 def test_rule_typed_literal_replaces_the_default(tmp_path: Path) -> None:

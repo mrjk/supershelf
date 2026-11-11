@@ -7,7 +7,7 @@ from pathlib import Path
 
 from supershelf.constants import KIND_CSV_PATH, KIND_CSV_SHA
 from supershelf.errors import VarConfigError
-from supershelf.vars.spec import check_assignment_key
+from supershelf.vars.spec import check_assignment_key, reserved_var_name
 
 
 class KindNames:
@@ -21,11 +21,35 @@ class KindNames:
 
     @classmethod
     def feed_column_name(cls, name: str) -> str:
-        """The ignored column data feed writes for this var."""
+        """The uppercase column data feed writes for this var."""
         column = "".join(char.upper() if "a" <= char <= "z" else char for char in name)
         if column in cls._WRAPPED_FEED:
             return f"_{column}_"
         return column
+
+    @classmethod
+    def var_name_from_feed(cls, column: str) -> str | None:
+        """Var name for a feed column, or None when it cannot be applied."""
+        if not cls.is_feed_column(column):
+            return None
+        if (
+            len(column) >= 3
+            and column.startswith("_")
+            and column.endswith("_")
+            and column[1:-1] in cls._WRAPPED_FEED
+        ):
+            name = column[1:-1].lower()
+        else:
+            name = "".join(
+                char.lower() if "A" <= char <= "Z" else char for char in column
+            )
+        if reserved_var_name(name) or cls._LOWER_NAME.fullmatch(name) is None:
+            return None
+        try:
+            check_assignment_key(name, "kind file")
+        except VarConfigError:
+            return None
+        return name
 
     @classmethod
     def is_feed_column(cls, name: str) -> bool:

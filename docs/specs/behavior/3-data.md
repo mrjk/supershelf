@@ -16,7 +16,9 @@ This step does not read or write documents, events, or `vars_json`. It does not 
 
 - The plan is computed before any write. Identity updates from 2.3.2 run first. Row drop is 3.3. Feed cells are last.
 - The fed value is the final resolve display string. That is the same layering as `scan vars --overrides`: `default_vars`, rule `vars`, then kind-file cells. 2.3.1.
-- This step does not write a lowercase cell. The next resolve still uses that cell when it is set. The uppercase column is not read back. The source label is not `kind:<path>` from that feed column.
+- This step does not write a lowercase cell. The next resolve still uses that cell when it is set.
+  When the lowercase cell is empty, a non-empty feed cell applies as the kind override for that var. 2.3.2.
+  The source label is then `kind:<path>`. A non-empty lowercase cell still wins over the feed cell.
 - An unset var does not blank a cell and does not add an empty cell.
 - Namespace fields stay out. A name that starts with `__` is not a user variable.
 - `kind_overrides_mode` gates this step.
@@ -71,11 +73,11 @@ Disabled mode. `kind_overrides_mode` is `disabled`. No kind file is read or writ
 
 Shared path. Two inputs resolve the same kind file and the same relative path, and the fed `vendor` values differ. The command stops and names both inputs.
 
-Override stays put. The rule set `vendor` and the lowercase cell is empty. Feed writes the final display string into `VENDOR`. `vendor` stays empty. The next resolve still uses the rule.
+Feed fills the gap. The rule set `vendor` and the lowercase cell is empty. Feed writes the final display string into `VENDOR`. The next resolve applies that feed cell, so `vendor` is the fed text with source `kind:<path>`.
 
 Custom cell. `vendor` holds `Mine`. Feed writes `Mine` into `VENDOR`. `vendor` stays `Mine` and still wins on the next resolve.
 
-Documents left alone. Feed writes `VENDOR` and leaves `vendor` empty. No document row and no event is written.
+Documents left alone. Feed writes `VENDOR` and leaves `vendor` empty. This step still writes no document row and no event. `db import` is the step that stores the resolved value.
 
 Dry run. `scan feeds --dry-run` prints the plan and does not create `cache_file`. The kind-file notice is still logged.
 

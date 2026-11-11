@@ -77,7 +77,12 @@ class DateScope:
     """A `type: date` value in a Jinja scope. `str()` uses the profile date format."""
 
     def __init__(self, text: str, display_format: str = DATE_TEXT) -> None:
-        parsed = datetime.strptime(text, DATE_TEXT)
+        try:
+            parsed = datetime.strptime(text, DATE_TEXT)
+        except ValueError as exc:
+            raise VarCandidateError(
+                f"Date value {text!r} is not YYYY-MM-DD",
+            ) from exc
         self._parsed = parsed
         self.Y = parsed.strftime("%Y")
         self.m = parsed.strftime("%m")
@@ -159,6 +164,8 @@ class _ExtractObject:
 
 def _render_value(display: str, date_format: str, *, date: bool) -> str | DateScope:
     if date:
+        if display == "":
+            return display
         return DateScope(display, date_format)
     return display
 
